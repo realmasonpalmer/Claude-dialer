@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clarity Call Coach</title>
+  <link rel="stylesheet" href="coach.css" />
+</head>
+<body>
+  <main>
+    <section id="setup">
+      <h1>Call Coach</h1>
+      <p class="muted">Put your call on speaker. The mic hears both sides. Claude shows you what to say next.</p>
+      <label>Access code <input id="code" type="password" autocomplete="current-password" /></label>
+      <label>Microphone <select id="mic"></select></label>
+      <label>Who are you calling? (optional) <textarea id="notes" rows="2" placeholder="Jane Doe, VP Sales, Acme. Uses Salesforce."></textarea></label>
+      <button id="start" class="primary">Start listening</button>
+      <p class="consent">Tell the prospect the call is transcribed and get a yes. Some states require it.</p>
+      <p id="setupMsg" class="warn" hidden></p>
+    </section>
+
+    <section id="live" hidden>
+      <header>
+        <span id="status" class="status">Connecting...</span>
+        <span id="latency" class="muted"></span>
+        <button id="stop" class="secondary">Stop</button>
+      </header>
+      <div id="card" class="card">
+        <div class="label">Say next</div>
+        <div id="say" class="say">Waiting for them to talk...</div>
+        <div id="cue" class="cue"></div>
+      </div>
+      <div class="label">Transcript <span class="muted">(tap your own line if the labels are wrong)</span></div>
+      <ol id="transcript" class="transcript"></ol>
+      <p id="interim" class="interim"></p>
+    </section>
+  </main>
+  <script src="coach.js"></script>
+</body>
+</html>

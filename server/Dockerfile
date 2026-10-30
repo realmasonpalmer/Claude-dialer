@@ -11,7 +11,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY package.json ./
+COPY package.json playbook.md ./
+COPY public ./public
 EXPOSE 8080
 USER node
 CMD ["node", "dist/index.js"]

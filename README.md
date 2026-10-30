@@ -1,8 +1,12 @@
 # Clarity Dialer: Claude AI Sales Copilot
 
-A phone widget inside Salesforce. A rep clicks a phone number, talks to the
-prospect through their headset, and Claude coaches them in private. Claude
-never speaks to the prospect.
+Two tools. Use either one.
+
+- **Call Coach** (start here): a web page that listens to your call through one mic
+  and shows the next line to say. Works with any phone. Setup: [docs/COACH.md](docs/COACH.md).
+- **Dialer**: a phone widget inside Salesforce with click-to-call through Twilio.
+
+Claude coaches the rep in private. Claude never speaks to the prospect.
 
 ## Status
 
@@ -18,7 +22,9 @@ never speaks to the prospect.
 ## What is in this repo
 
 ```
-server/       Small Node + TypeScript backend (Twilio tokens, call approval, TwiML)
+server/       Node + TypeScript backend: Call Coach (mic -> Deepgram -> Claude) and dialer (Twilio)
+server/public The Call Coach web page
+server/playbook.md  What the coach knows about Clarity. Edit in plain English.
 salesforce/   Salesforce metadata: phone page, Apex, settings, permission set
 docs/         Plan, costs, risks and the setup steps
 ```
