@@ -107,31 +107,42 @@ struct AircallPhoneView: NSViewRepresentable {
     }
 }
 
-/// "Aircall phone" bar in the coach: Show to sign in, Hide while calling.
+/// "Aircall phone" bar in the coach: Show opens the phone on the right, Hide tucks it away.
 struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "phone.circle")
-                Text("Aircall phone").font(.callout.weight(.semibold))
-                Spacer(minLength: 0)
-                if phone.shown {
-                    Button("Reload") { phone.reload() }
-                }
-                Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }
+        HStack(spacing: 8) {
+            Image(systemName: "phone.circle")
+            Text("Aircall phone").font(.callout.weight(.semibold))
+            Spacer(minLength: 0)
+            if phone.shown {
+                Button("Reload") { phone.reload() }
             }
+            Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }
+        }
+    }
+}
+
+/// The phone itself, on the right side of the coach. Always on screen (1 point wide when
+/// hidden), so calls keep working.
+struct AircallPhoneSide: View {
+    static let width: CGFloat = 400
+    @ObservedObject var phone = AircallPhone.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
             if phone.shown {
                 Text("Sign in once. Then set yourself to Available. Calls ring here.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            // Always on screen, just tiny when hidden, so calls keep working.
             AircallPhoneView(phone: phone)
-                .frame(height: phone.shown ? 520 : 2)
-                .opacity(phone.shown ? 1 : 0.02)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
+        .padding(phone.shown ? 12 : 0)
+        .frame(width: phone.shown ? Self.width : 1)
+        .frame(maxHeight: .infinity)
+        .opacity(phone.shown ? 1 : 0.02)
         .onAppear { phone.start() }
     }
 }

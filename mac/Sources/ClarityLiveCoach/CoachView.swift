@@ -8,6 +8,8 @@ struct RootView: View {
     @EnvironmentObject var proof: ProofModel
     @EnvironmentObject var coach: CoachModel
     @AppStorage("audioCheckPassed") private var audioCheckPassed = false
+    @AppStorage("appPhone") private var appPhone = true
+    @ObservedObject private var phone = AircallPhone.shared
     @State private var screen: Screen?
 
     var body: some View {
@@ -28,8 +30,11 @@ struct RootView: View {
                 )
             }
         }
-        .frame(width: 380)
+        // Wider, not taller, when the Aircall phone is open on the right.
+        .frame(width: showPhone ? 380 + AircallPhoneSide.width : 380)
     }
+
+    private var showPhone: Bool { appPhone && phone.shown && (screen ?? firstScreen) == .coach }
 
     private var hasKeys: Bool { Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil }
     private var firstScreen: Screen { !audioCheckPassed ? .check : (hasKeys ? .coach : .keys) }
@@ -138,6 +143,14 @@ struct CoachView: View {
     private let warning = Color.orange
 
     var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            coachColumn.frame(width: 380)
+            // The Aircall phone sits to the right. Hidden = 1 point wide, but still running.
+            if appPhone { AircallPhoneSide() }
+        }
+    }
+
+    private var coachColumn: some View {
         VStack(alignment: .leading, spacing: gap) {
             topBar
             if Salesforce.isConnected { leadHeader }
