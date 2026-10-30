@@ -122,6 +122,7 @@ struct CoachView: View {
     @State private var showCalendar = false
     @State private var showHelp = false
     @State private var showAircall = false
+    @StateObject private var updater = Updater()
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
     @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
@@ -165,6 +166,7 @@ struct CoachView: View {
             coach.use(campaigns.selected)
             coach.activate(true)
         }
+        .task { await updater.check() }
         .onDisappear { coach.activate(false) }
         .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
@@ -186,6 +188,12 @@ struct CoachView: View {
         HStack(spacing: 8) {
             StatusPill(status: pillState, color: pillColor)
             Spacer()
+            if updater.updateAvailable && !updater.updating && coach.status == .ready {
+                Button("Update") { updater.update() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("A new version is ready. Click to install it (about 2 minutes, no Terminal).")
+            }
             campaignMenu
             settingsMenu
         }
@@ -212,6 +220,9 @@ struct CoachView: View {
     private var settingsMenu: some View {
         Menu {
             Button("How to use") { showHelp = true }
+            Button(updater.updateAvailable ? "Install update" : "Check for updates") {
+                if updater.updateAvailable { updater.update() } else { Task { await updater.check() } }
+            }
             Divider()
             Button(coach.lab.hasNewSuggestions ? "Script Lab (new suggestions)" : "Script Lab") {
                 openWindow(id: "script-lab")
@@ -393,6 +404,9 @@ struct CoachView: View {
     // MARK: Real warnings only, never cut off
 
     @ViewBuilder private var warnings: some View {
+        if let message = updater.message {
+            Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
         if let problem = coach.problem {
             warningText(problem)
         }
