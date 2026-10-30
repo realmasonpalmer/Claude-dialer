@@ -3,8 +3,8 @@ import AVFoundation
 import Combine
 import CoreAudio
 
-/// Phase 1 audio proof: capture the rep's mic and Chrome's call audio as two
-/// separate streams, show who is talking, and optionally save a short test recording.
+/// Phase 1 audio check, as a guided walk-through. Each step checks itself and
+/// moves on automatically: mic allowed, call connected, rep heard, prospect heard.
 @MainActor
 final class ProofModel: ObservableObject {
     enum Source: Hashable {
@@ -12,19 +12,38 @@ final class ProofModel: ObservableObject {
         case process(pid_t)
     }
 
-    @Published var micAllowed = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    enum Step: Int, CaseIterable {
+        case mic, call, you, prospect, done
+    }
+
+    /// Louder than this counts as someone talking (about -36 dB).
+    private let speechLevel: Float = 0.4
+    /// Seconds of speech needed to pass a step.
+    private let speechNeeded = 1.0
+
+    @Published private(set) var step: Step = .mic
+    @Published private(set) var stepStartedAt = Date()
+    @Published private(set) var now = Date()
+    @Published private(set) var micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     @Published var processes: [AudioProcess] = []
     @Published var source: Source = .chrome
-    @Published var isCapturing = false
-    @Published var repLevel: Float = 0
-    @Published var prospectLevel: Float = 0
-    @Published var prospectBuffers = 0 // proves the tap delivers audio even when the call is quiet
-    @Published var isRecording = false
-    @Published var recordingsFolder: URL?
+    @Published private(set) var isCapturing = false
+    @Published private(set) var repLevel: Float = 0
+    @Published private(set) var prospectLevel: Float = 0
+    @Published private(set) var repSpeech = 0.0
+    @Published private(set) var prospectSpeech = 0.0
+    @Published private(set) var bothSpeech = 0.0
+    @Published private(set) var notice: String?
+    @Published private(set) var isRecording = false
+    @Published private(set) var recordingsFolder: URL?
     @Published var error: String?
 
     private let capture = CaptureEngine()
     private var timer: Timer?
+    private var startedByHand = false
+    private var quietTicks = 0
+
+    var secondsOnStep: TimeInterval { now.timeIntervalSince(stepStartedAt) }
 
     /// Chrome uses the mic and plays sound at the same time only while a call is live.
     var chromeOnCall: Bool {
@@ -32,32 +51,107 @@ final class ProofModel: ObservableObject {
         return chrome.contains(where: \.isRunningInput) && chrome.contains(where: \.isRunningOutput)
     }
 
-    var talking: String {
-        let threshold: Float = 0.35
-        if repLevel < threshold && prospectLevel < threshold { return "No one" }
-        if repLevel >= threshold && prospectLevel >= threshold { return "Both" }
-        return repLevel > prospectLevel ? "You" : "Prospect"
-    }
+    /// True when the rep's mic also hears the prospect (speakers instead of a headset).
+    var micHearsCall: Bool { prospectSpeech > 0 && bothSpeech / prospectSpeech > 0.4 }
 
     func onAppear() {
         refreshProcesses()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshProcesses() }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
         }
-        if !micAllowed {
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                Task { @MainActor in self.micAllowed = granted }
+        if micStatus == .notDetermined { allowMic() }
+        advance()
+    }
+
+    func allowMic() {
+        if micStatus == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { _ in
+                Task { @MainActor in
+                    self.micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                    self.advance()
+                }
             }
+        } else {
+            openSettings("Privacy_Microphone")
         }
     }
 
-    func refreshProcesses() {
+    func openSettings(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func tick() {
+        now = Date()
+        refreshProcesses()
+        micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+
+        // Start listening by itself the moment the Aircall call connects.
+        if step == .call, !isCapturing, source == .chrome, chromeOnCall {
+            startCapture()
+        }
+        // Call ended before the check finished: go back and wait for a new one.
+        if isCapturing, !startedByHand, step != .done {
+            quietTicks = chromeOnCall ? 0 : quietTicks + 1
+            if quietTicks >= 6 {
+                stopCapture()
+                notice = "The call ended. Start another test call to finish."
+                go(.call)
+            }
+        }
+        advance()
+    }
+
+    private func refreshProcesses() {
         processes = AudioProcess.all()
             .filter { $0.pid != ProcessInfo.processInfo.processIdentifier }
             .sorted { $0.name < $1.name }
     }
 
-    func start() {
+    private func advance() {
+        switch step {
+        case .mic where micStatus == .authorized: go(.call)
+        case .call where isCapturing: go(.you)
+        case .you where repSpeech >= speechNeeded: go(.prospect)
+        case .prospect where prospectSpeech >= speechNeeded:
+            go(.done)
+            stopCapture()
+        default: break
+        }
+    }
+
+    private func go(_ next: Step) {
+        guard next != step else { return }
+        if next == .you { repSpeech = 0; notice = nil }
+        if next == .prospect { prospectSpeech = 0; bothSpeech = 0 }
+        step = next
+        stepStartedAt = Date()
+        now = stepStartedAt
+    }
+
+    /// Manual fallback when the call isn't detected automatically.
+    func startByHand() {
+        startedByHand = true
+        startCapture()
+        advance()
+    }
+
+    /// Restarts listening, e.g. after turning on System Audio Recording.
+    func retry() {
+        stopCapture()
+        startCapture()
+        stepStartedAt = Date()
+    }
+
+    func testAgain() {
+        stopCapture()
+        startedByHand = false
+        notice = nil
+        go(micStatus == .authorized ? .call : .mic)
+    }
+
+    private func startCapture() {
         error = nil
         refreshProcesses()
         let targets: [AudioObjectID]
@@ -67,36 +161,47 @@ final class ProofModel: ObservableObject {
         }
         guard !targets.isEmpty else {
             error = source == .chrome
-                ? "Chrome isn't using audio yet. Open Aircall in Chrome, then try again."
-                : "That app isn't using audio right now."
+                ? "Chrome isn't playing any sound yet. Start the Aircall call first."
+                : "That app isn't playing any sound right now."
             return
         }
         do {
-            try capture.start(processes: targets) { [weak self] isRep, value in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if isRep {
-                        self.repLevel = value
-                    } else {
-                        self.prospectLevel = value
-                        self.prospectBuffers += 1
-                    }
-                }
+            try capture.start(processes: targets) { [weak self] isRep, value, seconds in
+                Task { @MainActor in self?.heard(isRep: isRep, level: value, seconds: seconds) }
             }
             isCapturing = true
+            quietTicks = 0
         } catch {
-            stop()
+            stopCapture()
             self.error = error.localizedDescription
         }
     }
 
-    func stop() {
+    private func stopCapture() {
         capture.stop()
         stopRecording()
         isCapturing = false
         repLevel = 0
         prospectLevel = 0
     }
+
+    private func heard(isRep: Bool, level: Float, seconds: Double) {
+        guard isCapturing else { return }
+        let talking = level >= speechLevel
+        if isRep {
+            repLevel = level
+            if talking, step == .you { repSpeech += seconds }
+        } else {
+            prospectLevel = level
+            if talking, step == .prospect {
+                prospectSpeech += seconds
+                if repLevel >= speechLevel { bothSpeech += seconds }
+            }
+        }
+        advance()
+    }
+
+    // MARK: Optional test recording (Advanced)
 
     func toggleRecording() {
         if isRecording { stopRecording(); return }
@@ -140,19 +245,19 @@ final class CaptureEngine {
     private let tapConverter = SpeechConverter()
     let writers = WriterBox()
 
-    /// onLevel(isRep, level) is called from audio threads for every converted chunk.
-    func start(processes: [AudioObjectID], onLevel: @escaping (Bool, Float) -> Void) throws {
+    /// onLevel(isRep, level, seconds) is called from audio threads for every converted chunk.
+    func start(processes: [AudioObjectID], onLevel: @escaping (Bool, Float, Double) -> Void) throws {
         let micConverter = self.micConverter, tapConverter = self.tapConverter, writers = self.writers
         do {
             try mic.start { buffer in
                 guard let speech = micConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: true)
-                onLevel(true, level(of: speech))
+                onLevel(true, level(of: speech), Double(speech.frameLength) / speechFormat.sampleRate)
             }
             try tap.start(processes: processes) { buffer in
                 guard let speech = tapConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: false)
-                onLevel(false, level(of: speech))
+                onLevel(false, level(of: speech), Double(speech.frameLength) / speechFormat.sampleRate)
             }
         } catch {
             stop()

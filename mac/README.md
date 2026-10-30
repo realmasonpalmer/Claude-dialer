@@ -12,13 +12,15 @@ as two separate streams. Coaching comes after this passes.
 - Aircall working in Chrome inside Salesforce
 - A headset is best. Speakers work, but your mic will also pick up the prospect.
 
-## Build and open
+## Install or update
+
+From the `mac` folder:
 
 ```
-cd mac
-./scripts/build-app.sh
-open "build/Clarity Live Coach.app"
+bash scripts/install.sh
 ```
+
+It builds the app, puts it in Applications (replacing any old copy) and opens it.
 
 ## Run the audio check
 
