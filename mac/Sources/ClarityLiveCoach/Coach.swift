@@ -63,6 +63,7 @@ enum CoachPrompt {
         - Early objections are usually reflexes, not decisions. Lower the pressure and ask one question. If they repeat it firmly, respect it.
         - Ask for the objective as soon as there is real interest. Don't over-discover. Make it easy: specific, short, low commitment.
         - Use their first name at most once or twice. Silence is fine; don't fill it.
+        - Never suggest "Did I catch you at a bad time?" It tests as the worst opener.
         - Never pitch features on a cold call. Earn the next step.
 
         Selling AI and automation (when the campaign is about AI):
@@ -88,14 +89,24 @@ enum CoachPrompt {
         """
     }
 
-    static func opener(calling: String?) -> String {
-        "\(about(calling))The call has not connected yet. Give the opener the rep should say when they pick up."
+    static func opener(calling: String?, style: Opener?) -> String {
+        guard let style else {
+            return "\(about(calling))The call has not connected yet. Give the opener the rep should say when they pick up."
+        }
+        return """
+        \(about(calling))The call has not connected yet. Write the opener using this proven structure. \
+        Keep its wording and shape; only fill in the brackets. [company] is the rep's company from the campaign. \
+        If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
+        Opener: \(style.template)
+        Put the opener's name in the CUE: "\(style.name) opener".
+        """
     }
 
-    static func reply(turns: [Turn], latest: String, calling: String?) -> String {
+    static func reply(turns: [Turn], latest: String, calling: String?, style: Opener?) -> String {
         let history = turns.suffix(30).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         return """
-        \(about(calling))Call so far, oldest first:
+        \(about(calling))\(opened)Call so far, oldest first:
         \(history)
 
         The prospect just said: "\(latest)"
@@ -106,8 +117,14 @@ enum CoachPrompt {
 
     /// The Salesforce record the rep had open, from the Chrome tab title. Real data, not a guess.
     private static func about(_ calling: String?) -> String {
-        guard let calling else { return "" }
-        return "Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person. Assume nothing else about them.\n\n"
+        var lines: [String] = []
+        if let rep = UserDefaults.standard.string(forKey: "repName")?.trimmed, !rep.isEmpty {
+            lines.append("The rep's first name is \(rep).")
+        }
+        if let calling {
+            lines.append("Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person. Assume nothing else about them.")
+        }
+        return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n\n"
     }
 }
 
@@ -184,10 +201,23 @@ final class CoachModel: ObservableObject {
     @Published private(set) var calling: String?
     private var tabTicks = 0
 
+    /// Proven openers, rotated call by call, with your own scoreboard.
+    let openers = OpenerBook()
+    private var callOpener: Opener?   // the opener used on this call
+    private var goalHit = false
+    private var sawVoicemail = false
+
+    private var openerStyle: Opener? { openers.rotate ? openers.current : nil }
+
     @Published private(set) var campaign = Campaign.clarityDiscovery
     private var system = CoachPrompt.system(for: .clarityDiscovery)
 
     /// Switches (or refreshes) the campaign. Takes effect right away between calls.
+    /// Refreshes the opener after a setting changes (rotation, your name).
+    func refreshOpener() {
+        if status == .ready { prepareOpener() }
+    }
+
     func use(_ next: Campaign) {
         guard next != campaign else { return }
         campaign = next
@@ -268,10 +298,14 @@ final class CoachModel: ObservableObject {
         guard startAudio() else { return }
         status = .live
         quietTicks = 0
+        callOpener = kind == .opener ? openerStyle : nil
+        goalHit = false
+        sawVoicemail = false
     }
 
     /// Clears everything about this prospect and gets the next opener ready.
     func nextCall() {
+        scoreOpener()
         stopAudio()
         coachTask?.cancel()
         holdTask?.cancel()
@@ -284,6 +318,15 @@ final class CoachModel: ObservableObject {
         status = .ready
         calling = SalesforceTab.currentRecord()
         prepareOpener()
+    }
+
+    /// Counts the call for its opener if a real person answered (not voicemail), then rotates.
+    private func scoreOpener() {
+        defer { callOpener = nil }
+        guard let opener = callOpener, opener == openers.current, status != .ready, !sawVoicemail else { return }
+        let prospectTurns = turns.filter { $0.speaker == .prospect }.count
+        guard prospectTurns > 0 else { return } // nobody answered
+        openers.record(kept: prospectTurns >= 3, goal: goalHit)
     }
 
     func togglePause() {
@@ -382,13 +425,13 @@ final class CoachModel: ObservableObject {
         // "Sure" or "Yes" is filler while the rep talks, but a real answer to the rep's question.
         let repAsked = turns.last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
         guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else { return }
-        ask(.reply, user: CoachPrompt.reply(turns: turns, latest: said, calling: calling))
+        ask(.reply, user: CoachPrompt.reply(turns: turns, latest: said, calling: calling, style: callOpener))
     }
 
     // MARK: Claude
 
     private func prepareOpener() {
-        ask(.opener, user: CoachPrompt.opener(calling: calling))
+        ask(.opener, user: CoachPrompt.opener(calling: calling, style: openerStyle))
     }
 
     private func ask(_ kind: Kind, user: String) {
@@ -453,5 +496,7 @@ final class CoachModel: ObservableObject {
         suggestion = s
         self.kind = kind
         problem = nil
+        if s.stage == "Goal reached" { goalHit = true }
+        if s.stage == "Voicemail" { sawVoicemail = true }
     }
 }

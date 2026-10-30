@@ -116,6 +116,9 @@ struct CoachView: View {
     @EnvironmentObject var campaigns: CampaignStore
     @Environment(\.openWindow) private var openWindow
     @State private var showTranscript = false
+    @State private var showScoreboard = false
+    @State private var askName = false
+    @AppStorage("repName") private var repName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -138,6 +141,13 @@ struct CoachView: View {
         }
         .onDisappear { coach.activate(false) }
         .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
+        .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
+        .alert("Your first name", isPresented: $askName) {
+            TextField("First name", text: $repName)
+            Button("Save") { coach.refreshOpener() }
+        } message: {
+            Text("So openers say \"this is Mason\" instead of [your name].")
+        }
         .animation(.easeInOut(duration: 0.2), value: coach.status)
     }
 
@@ -147,6 +157,13 @@ struct CoachView: View {
                 campaignMenu
                 Spacer()
                 Menu {
+                    Button("Opener scoreboard") { showScoreboard = true }
+                    Toggle("Rotate proven openers", isOn: Binding(
+                        get: { coach.openers.rotate },
+                        set: { coach.openers.rotate = $0; coach.refreshOpener() }
+                    ))
+                    Button(repName.isEmpty ? "Add your name..." : "Your name: \(repName)") { askName = true }
+                    Divider()
                     Button("Run audio check", action: onAudioCheck)
                     Button("Change API keys", action: onKeys)
                 } label: {
@@ -237,6 +254,11 @@ struct CoachView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+            if coach.kind == .opener, coach.openers.rotate {
+                Text(coach.openers.current.evidence)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -316,5 +338,75 @@ struct CoachView: View {
         case .live: return .green
         case .paused: return .orange
         }
+    }
+}
+
+// MARK: - Opener scoreboard
+
+/// Your own experiment: how each opener does on your calls.
+struct ScoreboardView: View {
+    @ObservedObject var book: OpenerBook
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Opener scoreboard").font(.title2.weight(.semibold))
+            Text("Openers rotate on every call someone answers. After about 20 calls each, the leader is your best opener.")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+                GridRow {
+                    Text("Opener").bold()
+                    Text("Calls").bold()
+                    Text("Kept talking").bold()
+                    Text("Goal").bold()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                ForEach(ranked, id: \.opener.id) { row in
+                    GridRow {
+                        HStack(spacing: 6) {
+                            if row.opener.id == leaderID { Text("🏆") }
+                            if row.opener.id == book.current.id { Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color.accentColor) }
+                            Text(row.opener.name)
+                        }
+                        Text("\(row.score.calls)").monospacedDigit()
+                        Text(percent(row.score.kept, of: row.score.calls)).monospacedDigit()
+                        Text(percent(row.score.goals, of: row.score.calls)).monospacedDigit()
+                    }
+                }
+            }
+
+            Text("Kept talking = they said at least 3 things. Goal = the campaign goal was reached. Voicemails and no-answers don't count.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button("Reset scores", role: .destructive) { book.reset() }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(22)
+        .frame(width: 370)
+    }
+
+    private var ranked: [(opener: Opener, score: OpenerScore)] {
+        Opener.all.map { ($0, book.scores[$0.id] ?? OpenerScore()) }
+            .sorted { rate($0.score) > rate($1.score) }
+    }
+
+    /// Leader needs at least 5 calls so one lucky call doesn't win.
+    private var leaderID: String? {
+        ranked.first { $0.score.calls >= 5 }?.opener.id
+    }
+
+    private func rate(_ s: OpenerScore) -> Double {
+        s.calls == 0 ? -1 : (Double(s.goals) * 3 + Double(s.kept)) / Double(s.calls)
+    }
+
+    private func percent(_ part: Int, of whole: Int) -> String {
+        whole == 0 ? "-" : "\(Int((Double(part) / Double(whole) * 100).rounded()))%"
     }
 }
