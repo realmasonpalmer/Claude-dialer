@@ -19,6 +19,7 @@ final class Availability: ObservableObject {
     @Published private(set) var feedStatus: String?
     @Published private(set) var loadingFeed = false
     private var feed: CalendarFeed.Result?
+    private var calendly: Calendly.Slots?
     private var feedLoadedAt: Date?
 
     private let store = EKEventStore()
@@ -26,6 +27,7 @@ final class Availability: ObservableObject {
     private var cached: (at: Date, text: String?)?
 
     var usesFeed: Bool { feedInput != nil }
+    var usesCalendly: Bool { feedInput.map(Calendly.isLink) ?? false }
 
     var hasAccess: Bool { status == .fullAccess }
 
@@ -43,8 +45,8 @@ final class Availability: ObservableObject {
 
     /// Saves the calendar address and checks that it can be read.
     func useFeed(_ input: String) async {
-        guard CalendarFeed.feedURL(from: input) != nil else {
-            feedStatus = "That doesn't look like a calendar link or email."
+        guard Calendly.isLink(input) || CalendarFeed.feedURL(from: input) != nil else {
+            feedStatus = "That doesn't look like a calendar link, Calendly link or email."
             return
         }
         feedInput = input.trimmed
@@ -56,19 +58,32 @@ final class Availability: ObservableObject {
         Keychain.delete(.calendarFeed)
         feedInput = nil
         feed = nil
+        calendly = nil
         feedStatus = nil
         cached = nil
     }
 
     func loadFeed() async {
-        guard let input = feedInput, let url = CalendarFeed.feedURL(from: input) else { return }
+        guard let input = feedInput else { return }
         loadingFeed = true
         defer { loadingFeed = false }
         do {
-            let result = try await CalendarFeed.load(url)
-            feed = result
+            if Calendly.isLink(input) {
+                let slots = try await Calendly.load(input)
+                calendly = slots
+                feed = nil
+                let meeting = slots.meetingName.map { " Booking \"\($0)\"." } ?? ""
+                feedStatus = slots.starts.isEmpty
+                    ? "Connected to Calendly, but no open times in the next 2 weeks.\(meeting)"
+                    : "Connected to Calendly.\(meeting) \(slots.starts.count) open times in the next 2 weeks. For a different meeting type, paste its own link."
+            } else {
+                guard let url = CalendarFeed.feedURL(from: input) else { return }
+                let result = try await CalendarFeed.load(url)
+                feed = result
+                calendly = nil
+                feedStatus = "Connected. \(result.busy.count) busy blocks in the next 2 weeks."
+            }
             feedLoadedAt = Date()
-            feedStatus = "Connected. \(result.busy.count) busy blocks in the next 2 weeks."
         } catch {
             feedStatus = error.localizedDescription
         }
@@ -124,7 +139,28 @@ final class Availability: ObservableObject {
             .map { ($0.startDate!, $0.endDate!) }
     }
 
+    /// Calendly gives exact start times the owner accepts. List up to 8 per day for 5 days.
+    private func calendlyText() -> String? {
+        if let at = feedLoadedAt, Date().timeIntervalSince(at) > 600, !loadingFeed {
+            Task { await loadFeed() } // stale: refresh in the background
+        }
+        guard let slots = calendly?.starts.filter({ $0 > Date().addingTimeInterval(1800) }), !slots.isEmpty else { return nil }
+        let zone = TimeZone.current
+        var cal = Calendar.current
+        cal.timeZone = zone
+        let days = Dictionary(grouping: slots) { cal.startOfDay(for: $0) }.sorted { $0.key < $1.key }.prefix(5)
+        let lines = days.map { day, times in
+            let list = times.sorted().prefix(8).map { format($0, .dateTime.hour().minute(), zone) }.joined(separator: ", ")
+            return "\(format(day, .dateTime.weekday(.wide).month(.abbreviated).day(), zone)): \(list)"
+        }
+        let zoneName = zone.localizedName(for: .generic, locale: .current) ?? zone.identifier
+        let length = calendly?.minutes.map { " Meeting length: \($0) minutes." } ?? ""
+        return "These are exact start times open on the host's Calendly, in \(zoneName) time.\(length) Only offer these exact times.\n"
+            + lines.joined(separator: "\n")
+    }
+
     private func computeOpenTimes() -> String? {
+        if usesCalendly { return calendlyText() }
         guard endHour > startHour else { return nil }
         if usesFeed ? feed == nil : (!hasAccess || selectedIDs.isEmpty) { return nil }
         // Booking hours follow the calendar's own time zone when the link says it.
@@ -231,10 +267,10 @@ struct BookingCalendarView: View {
     private var linkSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Calendar link").font(.headline)
-            Text("Paste the calendar's link or the owner's email, like oliver@clarityconsulting.io.")
+            Text("Paste a Calendly link (like calendly.com/oliver/30min), a Google Calendar link, or the owner's email.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            TextField("Calendar link or email", text: $link)
+            TextField("Calendly link, calendar link or email", text: $link)
                 .textFieldStyle(.roundedBorder)
             HStack {
                 Button(availability.usesFeed ? "Update" : "Connect") {
@@ -253,10 +289,10 @@ struct BookingCalendarView: View {
             if let status = availability.feedStatus {
                 Text(status)
                     .font(.callout)
-                    .foregroundStyle(status.hasPrefix("Connected") ? .green : .orange)
+                    .foregroundStyle(status.hasPrefix("Connected") && !status.contains("no open") ? .green : .orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            DisclosureGroup("Steps for the calendar owner", isExpanded: $showOwnerSteps) {
+            DisclosureGroup("Steps if you use Google Calendar instead", isExpanded: $showOwnerSteps) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Done once, by the calendar's owner (for example Oliver):")
                     Text("1. Open calendar.google.com on a computer.")
@@ -276,6 +312,18 @@ struct BookingCalendarView: View {
 
     private var hoursSection: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if !availability.usesCalendly { hoursControls }
+            Text("Next open times").font(.callout.weight(.semibold))
+            Text(availability.openTimesText() ?? "No open times yet. Connect a calendar above.")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var hoursControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Booking hours").font(.headline)
             HStack {
                 Stepper("From \(hourLabel(availability.startHour))", value: $availability.startHour, in: 6...12)
@@ -289,13 +337,6 @@ struct BookingCalendarView: View {
                 Text("60 min").tag(60)
             }
             .pickerStyle(.segmented)
-
-            Text("Next open times").font(.callout.weight(.semibold))
-            Text(availability.openTimesText() ?? "No open times yet. Connect a calendar above.")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
