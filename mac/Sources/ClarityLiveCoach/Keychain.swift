@@ -8,6 +8,7 @@ enum Keychain {
     enum Key: String {
         case deepgram, anthropic
         case calendarFeed // the booking calendar's iCal address (can be a secret link)
+        case aircallID, aircallToken // Aircall API keys, for sending follow-up texts
     }
 
     /// Read each key once per launch. macOS may ask for the login password on a

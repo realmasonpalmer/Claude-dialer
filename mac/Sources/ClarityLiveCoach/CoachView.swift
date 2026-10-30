@@ -121,6 +121,7 @@ struct CoachView: View {
     @State private var showScoreboard = false
     @State private var showCalendar = false
     @State private var showHelp = false
+    @State private var showAircall = false
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
     @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
@@ -139,7 +140,13 @@ struct CoachView: View {
             scriptCard
             belowCard
             if coach.followUp != nil {
-                FollowUpCard(followUp: $coach.followUp)
+                FollowUpCard(
+                    followUp: $coach.followUp,
+                    canSend: Aircall.isSetUp,
+                    onSend: { coach.sendFollowUpText() },
+                    onLinkedIn: { coach.openLinkedIn() },
+                    onSetupAircall: { showAircall = true }
+                )
             }
             warnings
             Spacer(minLength: 0)
@@ -163,6 +170,7 @@ struct CoachView: View {
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
         .sheet(isPresented: $showCalendar) { BookingCalendarView(availability: coach.availability) }
         .sheet(isPresented: $showHelp) { HelpView() }
+        .sheet(isPresented: $showAircall) { AircallSetupView() }
         .alert("Your first name", isPresented: $askName) {
             TextField("First name", text: $repName)
             Button("Save") { coach.refreshOpener() }
@@ -211,6 +219,7 @@ struct CoachView: View {
             }
             Button("Opener scoreboard") { showScoreboard = true }
             Button("Booking calendar...") { showCalendar = true }
+            Button("Aircall texting...") { showAircall = true }
             Divider()
             Picker("Speed", selection: $speed) {
                 ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
@@ -618,17 +627,20 @@ struct ScoreboardView: View {
 
 // MARK: - Voicemail follow-ups
 
-/// After a voicemail: a text and a LinkedIn note, each with a checkbox and a copy button.
-/// Stays after the call until both are checked or it's closed.
+/// After a voicemail: send the text in one click (Aircall) and open LinkedIn with the note copied.
+/// Stays after the call until both are done or it's closed.
 struct FollowUpCard: View {
     @Binding var followUp: FollowUp?
+    var canSend: Bool
+    var onSend: () -> Void
+    var onLinkedIn: () -> Void
+    var onSetupAircall: () -> Void
 
     var body: some View {
         if let f = followUp {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Follow up\(f.prospect.map { " with \($0)" } ?? "")")
-                        .font(.headline)
+                    Text("Follow up\(f.prospect.map { " with \($0)" } ?? "")").font(.headline)
                     Spacer()
                     Button {
                         followUp = nil
@@ -638,15 +650,55 @@ struct FollowUpCard: View {
                     .buttonStyle(.borderless)
                     .help("Close")
                 }
-                item("Text", f.text, done: binding(\.textDone))
-                item("LinkedIn note", f.linkedin, done: binding(\.linkedinDone), extra: linkedInSearch(f.prospect))
+
+                // Text
+                row(done: f.textDone, title: "Text", message: f.text) {
+                    if f.textDone {
+                        Label("Sent", systemImage: "checkmark").foregroundStyle(.green)
+                    } else if canSend {
+                        HStack(spacing: 6) {
+                            TextField("Their phone", text: phoneBinding)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 130)
+                            Button("Send text") { onSend() }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(f.text.isEmpty || f.phone.isEmpty || f.textStatus == "Sending...")
+                        }
+                    } else {
+                        HStack(spacing: 12) {
+                            Button("Copy") { copy(f.text); followUp?.textDone = true }
+                            Button("Send from Aircall in one click...") { onSetupAircall() }
+                                .buttonStyle(.link)
+                        }
+                    }
+                }
+                if let status = f.textStatus, status != "Sent" {
+                    Text(status).font(.caption)
+                        .foregroundStyle(status == "Sending..." ? Color.secondary : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // LinkedIn
+                row(done: f.linkedinDone, title: "LinkedIn note", message: f.linkedin) {
+                    if f.linkedinDone {
+                        Button("Open again") { onLinkedIn() }.buttonStyle(.link)
+                    } else {
+                        Button("Open LinkedIn + copy note") { onLinkedIn() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(f.linkedin.isEmpty)
+                    }
+                }
+                if f.linkedinDone {
+                    Text("On their profile: Connect > Add a note > Command-V > Send.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(12)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
             .onChange(of: f.allDone) {
                 if f.allDone {
                     Task {
-                        try? await Task.sleep(for: .seconds(1))
+                        try? await Task.sleep(for: .seconds(4))
                         if followUp?.allDone == true { followUp = nil }
                     }
                 }
@@ -654,44 +706,28 @@ struct FollowUpCard: View {
         }
     }
 
-    private func item(_ title: String, _ message: String, done: Binding<Bool>, extra: URL? = nil) -> some View {
+    private func row<Actions: View>(done: Bool, title: String, message: String, @ViewBuilder actions: () -> Actions) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Toggle("", isOn: done)
-                .toggleStyle(.checkbox)
-                .labelsHidden()
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(done ? Color.green : Color.secondary)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text(message.isEmpty ? "Writing..." : message)
                     .font(.callout)
-                    .strikethrough(done.wrappedValue)
-                    .foregroundStyle(message.isEmpty || done.wrappedValue ? .secondary : .primary)
+                    .foregroundStyle(message.isEmpty || done ? .secondary : .primary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 12) {
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(message, forType: .string)
-                    }
-                    .disabled(message.isEmpty)
-                    if let extra {
-                        Link("Find on LinkedIn", destination: extra)
-                    }
-                }
-                .font(.caption)
-                .buttonStyle(.link)
+                actions().font(.caption)
             }
         }
     }
 
-    private func binding(_ key: WritableKeyPath<FollowUp, Bool>) -> Binding<Bool> {
-        Binding(
-            get: { followUp?[keyPath: key] ?? false },
-            set: { followUp?[keyPath: key] = $0 }
-        )
+    private var phoneBinding: Binding<String> {
+        Binding(get: { followUp?.phone ?? "" }, set: { followUp?.phone = $0 })
     }
 
-    private func linkedInSearch(_ name: String?) -> URL? {
-        guard let name, let q = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
-        return URL(string: "https://www.linkedin.com/search/results/people/?keywords=\(q)")
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }

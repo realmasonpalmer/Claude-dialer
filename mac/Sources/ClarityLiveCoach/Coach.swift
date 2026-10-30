@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Combine
 import Foundation
@@ -180,6 +181,10 @@ struct FollowUp: Equatable {
     var linkedin = ""
     var textDone = false
     var linkedinDone = false
+    /// Their phone, from the Salesforce page; editable on the card.
+    var phone = ""
+    /// "Sending...", "Sent", or an error, for the text row.
+    var textStatus: String?
 
     var allDone: Bool { textDone && linkedinDone }
 }
@@ -752,7 +757,7 @@ final class CoachModel: ObservableObject {
             return String(c[c.index(after: open)..<close])
         }
         if followUp?.prospect != name || followUp == nil {
-            followUp = FollowUp(prospect: name)
+            followUp = FollowUp(prospect: name, phone: Aircall.phone(in: recordDetails) ?? "")
         }
         if let script = voicemailScript { fillFollowUp(from: script) }
         else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
@@ -760,9 +765,51 @@ final class CoachModel: ObservableObject {
 
     private func fillFollowUp(from s: Suggestion) {
         guard var f = followUp else { return }
+        let newText = f.text.isEmpty && !s.textMessage.isEmpty
         if f.text.isEmpty { f.text = s.textMessage }
         if f.linkedin.isEmpty { f.linkedin = s.linkedin }
         followUp = f
+        // Optional: send by itself once the text is written (off unless the rep turns it on).
+        if newText, UserDefaults.standard.bool(forKey: "autoSendText"), Aircall.isSetUp, !f.phone.isEmpty {
+            sendFollowUpText()
+        }
+    }
+
+    /// Sends the follow-up text through Aircall and checks it off.
+    func sendFollowUpText() {
+        guard let f = followUp, !f.text.isEmpty, f.textStatus != "Sending..." else { return }
+        followUp?.textStatus = "Sending..."
+        Task { [weak self] in
+            do {
+                try await Aircall.sendText(to: f.phone, body: f.text)
+                self?.followUp?.textStatus = "Sent"
+                self?.followUp?.textDone = true
+            } catch {
+                self?.followUp?.textStatus = error.localizedDescription
+            }
+        }
+    }
+
+    /// Opens LinkedIn to find them, with the connection note already copied. Checks it off.
+    func openLinkedIn() {
+        guard let f = followUp else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(f.linkedin, forType: .string)
+        let query = [f.prospect, recordCompany].compactMap { $0 }.joined(separator: " ")
+        if let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let url = URL(string: "https://www.linkedin.com/search/results/people/?keywords=\(q)") {
+            NSWorkspace.shared.open(url)
+        }
+        followUp?.linkedinDone = true
+    }
+
+    /// The company line from the Salesforce page, if it shows one (helps LinkedIn find the right person).
+    private var recordCompany: String? {
+        guard let lines = recordDetails?.components(separatedBy: "\n") else { return nil }
+        for (i, line) in lines.enumerated() where ["Company", "Account Name"].contains(line.trimmingCharacters(in: .whitespaces)) {
+            if i + 1 < lines.count { return lines[i + 1].trimmingCharacters(in: .whitespaces) }
+        }
+        return nil
     }
 
     /// Writes this prospect's voicemail in the background, so it's instant when needed.
