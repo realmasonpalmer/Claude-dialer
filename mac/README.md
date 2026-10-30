@@ -2,8 +2,14 @@
 
 A floating Mac window that hears both sides of an Aircall call in Chrome and coaches the rep.
 
-**Right now this is Phase 1: the audio check.** It proves the app can hear you and the prospect
-as two separate streams. Coaching comes after this passes.
+What it does today:
+1. **Audio check** (first run): proves it hears you and the prospect as two separate streams.
+2. **Connect** (once): paste a Deepgram key and an Anthropic key. Stored in the Keychain.
+3. **Coach**: dial from Salesforce. When the call connects it starts listening by itself,
+   shows live text for both sides, and shows one line to say plus a short tip. When the call
+   ends it clears and gets the next opener ready.
+
+Not built yet: the campaign editor (one built-in Clarity campaign for now).
 
 ## Needs
 

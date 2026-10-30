@@ -46,16 +46,14 @@ final class ProofModel: ObservableObject {
     var secondsOnStep: TimeInterval { now.timeIntervalSince(stepStartedAt) }
 
     /// Chrome uses the mic and plays sound at the same time only while a call is live.
-    var chromeOnCall: Bool {
-        let chrome = processes.filter(\.isChrome)
-        return chrome.contains(where: \.isRunningInput) && chrome.contains(where: \.isRunningOutput)
-    }
+    var chromeOnCall: Bool { AudioProcess.chromeOnCall(in: processes) }
 
     /// True when the rep's mic also hears the prospect (speakers instead of a headset).
     var micHearsCall: Bool { prospectSpeech > 0 && bothSpeech / prospectSpeech > 0.4 }
 
     func onAppear() {
         refreshProcesses()
+        guard timer == nil else { advance(); return }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -166,7 +164,9 @@ final class ProofModel: ObservableObject {
             return
         }
         do {
-            try capture.start(processes: targets) { [weak self] isRep, value, seconds in
+            try capture.start(processes: targets) { [weak self] isRep, speech in
+                let value = level(of: speech)
+                let seconds = Double(speech.frameLength) / speechFormat.sampleRate
                 Task { @MainActor in self?.heard(isRep: isRep, level: value, seconds: seconds) }
             }
             isCapturing = true
@@ -245,19 +245,20 @@ final class CaptureEngine {
     private let tapConverter = SpeechConverter()
     let writers = WriterBox()
 
-    /// onLevel(isRep, level, seconds) is called from audio threads for every converted chunk.
-    func start(processes: [AudioObjectID], onLevel: @escaping (Bool, Float, Double) -> Void) throws {
+    /// onChunk(isRep, speech) is called from audio threads with each 16 kHz mono chunk.
+    /// The buffer is safe to keep: it is a fresh conversion output.
+    func start(processes: [AudioObjectID], onChunk: @escaping (Bool, AVAudioPCMBuffer) -> Void) throws {
         let micConverter = self.micConverter, tapConverter = self.tapConverter, writers = self.writers
         do {
             try mic.start { buffer in
                 guard let speech = micConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: true)
-                onLevel(true, level(of: speech), Double(speech.frameLength) / speechFormat.sampleRate)
+                onChunk(true, speech)
             }
             try tap.start(processes: processes) { buffer in
                 guard let speech = tapConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: false)
-                onLevel(false, level(of: speech), Double(speech.frameLength) / speechFormat.sampleRate)
+                onChunk(false, speech)
             }
         } catch {
             stop()

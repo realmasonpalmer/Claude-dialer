@@ -59,6 +59,17 @@ struct AudioProcess: Identifiable, Hashable {
 
     var isChrome: Bool { bundleID.hasPrefix("com.google.Chrome") }
 
+    /// Chrome uses the mic and plays sound at the same time only while a call is live.
+    static func chromeOnCall(in processes: [AudioProcess]) -> Bool {
+        let chrome = processes.filter(\.isChrome)
+        return chrome.contains(where: \.isRunningInput) && chrome.contains(where: \.isRunningOutput)
+    }
+
+    /// Every process except this app, sorted by name.
+    static func others() -> [AudioProcess] {
+        all().filter { $0.pid != ProcessInfo.processInfo.processIdentifier }.sorted { $0.name < $1.name }
+    }
+
     static func all() -> [AudioProcess] {
         let system = AudioObjectID(kAudioObjectSystemObject)
         guard let ids = try? readObjectList(system, kAudioHardwarePropertyProcessObjectList) else { return [] }

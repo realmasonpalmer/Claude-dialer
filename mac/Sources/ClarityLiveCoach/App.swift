@@ -4,16 +4,14 @@ import SwiftUI
 @main
 struct ClarityLiveCoachApp: App {
     @StateObject private var proof = ProofModel()
+    @StateObject private var coach = CoachModel()
 
     var body: some Scene {
         WindowGroup("Clarity Live Coach") {
-            AudioCheckView()
+            RootView()
                 .environmentObject(proof)
-                .frame(width: 360)
-                .onAppear {
-                    proof.onAppear()
-                    keepOnTop()
-                }
+                .environmentObject(coach)
+                .onAppear { keepOnTop() }
         }
         .windowResizability(.contentSize)
     }
@@ -32,6 +30,7 @@ struct ClarityLiveCoachApp: App {
 /// One step at a time. Each step says what to do, checks itself, and moves on.
 /// Help appears only when a step takes longer than it should.
 struct AudioCheckView: View {
+    var onFinish: () -> Void = {}
     @EnvironmentObject var model: ProofModel
     @State private var showAdvanced = false
 
@@ -135,8 +134,11 @@ struct AudioCheckView: View {
                     Text("Tip: your mic also picks up the call. A headset keeps the two voices apart.")
                         .font(.callout).foregroundStyle(.orange).multilineTextAlignment(.center)
                 }
-                Button("Test again") { model.testAgain() }
+                Button("Next: set up the coach") { onFinish() }
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                Button("Test again") { model.testAgain() }
+                    .buttonStyle(.link)
             }
         }
     }
