@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Sends follow-up texts through Aircall's official API, from the rep's Aircall number.
-/// Uses "send in agent conversation", so the text also shows in the Aircall app.
+/// Uses Aircall's "native send" (send in agent conversation), so the text also shows in the Aircall app.
 /// Needs Aircall's Professional plan and a number registered for texting (US A2P).
 enum Aircall {
     struct Number: Identifiable, Hashable {
@@ -9,6 +9,9 @@ enum Aircall {
         let name: String
         let digits: String
     }
+
+    /// Aircall answered 404: that address or number doesn't exist for this account.
+    struct NotFound: Error {}
 
     struct AircallError: LocalizedError {
         let message: String
@@ -39,6 +42,7 @@ enum Aircall {
         let (data, response) = try await URLSession.shared.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        if code == 404 { throw NotFound() }
         guard (200..<300).contains(code) else {
             let detail = (json["message"] as? String) ?? (json["error"] as? String) ?? String(data: data, encoding: .utf8) ?? ""
             throw AircallError(message: code == 401 || code == 403
@@ -49,7 +53,12 @@ enum Aircall {
     }
 
     static func numbers() async throws -> [Number] {
-        let json = try await request("/numbers?per_page=50")
+        let json: [String: Any]
+        do {
+            json = try await request("/numbers?per_page=50")
+        } catch is NotFound {
+            throw AircallError(message: "Aircall couldn't find your numbers (404). Check the API ID and token.")
+        }
         return ((json["numbers"] as? [[String: Any]]) ?? []).compactMap { n in
             guard let id = n["id"] as? Int else { return nil }
             return Number(id: id, name: (n["name"] as? String) ?? "Number", digits: (n["digits"] as? String) ?? "")
@@ -60,8 +69,18 @@ enum Aircall {
     static func sendText(to phone: String, body: String) async throws {
         guard let numberID else { throw AircallError(message: "Pick which Aircall number sends texts.") }
         guard let to = e164(phone) else { throw AircallError(message: "That phone number doesn't look right.") }
-        _ = try await request("/numbers/\(numberID)/messages/send-in-agent-conversation",
-                              method: "POST", body: ["to": to, "body": body])
+        // Native send shows the text in the Aircall app. The plain send is the backup
+        // (it only works if the number was set up for API messaging).
+        let paths = ["/numbers/\(numberID)/messages/native/send", "/numbers/\(numberID)/messages/send"]
+        for path in paths {
+            do {
+                _ = try await request(path, method: "POST", body: ["to": to, "body": body])
+                return
+            } catch is NotFound {
+                continue // try the next address
+            }
+        }
+        throw AircallError(message: "Aircall couldn't find texting for this number (404). In Aircall, check that this number can send texts, then pick it again in Aircall texting.")
     }
 
     /// "(555) 555-0123" -> "+15555550123". US and Canada only.
