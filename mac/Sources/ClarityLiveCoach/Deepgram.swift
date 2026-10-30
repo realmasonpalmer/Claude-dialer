@@ -10,11 +10,19 @@ final class DeepgramStream: @unchecked Sendable {
     }
 
     // Tuned for speed: 300 ms of silence ends a statement, words stream as they are heard.
-    private static let url = URL(string: "wss://api.deepgram.com/v1/listen?" + [
+    private static let params = [
         "model=nova-3", "encoding=linear16", "sample_rate=16000", "channels=1",
         "interim_results=true", "endpointing=300", "utterance_end_ms=1000",
         "vad_events=true", "smart_format=true",
-    ].joined(separator: "&"))!
+    ]
+
+    /// Words the transcriber should expect, so "Claude" isn't heard as "cloud".
+    static let defaultKeyterms = ["Claude", "Anthropic", "Clarity", "Salesforce", "Aircall", "RevOps", "CRM", "Agentforce"]
+
+    private static func url(keyterms: [String]) -> URL {
+        let terms = keyterms.compactMap { $0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) }.map { "keyterm=\($0)" }
+        return URL(string: "wss://api.deepgram.com/v1/listen?" + (params + terms).joined(separator: "&"))!
+    }
 
     private let task: URLSessionWebSocketTask
     private let onEvent: (Event) -> Void
@@ -23,8 +31,8 @@ final class DeepgramStream: @unchecked Sendable {
     private var keepAlive: DispatchSourceTimer?
     private var closed = false
 
-    init(apiKey: String, onEvent: @escaping (Event) -> Void) {
-        var request = URLRequest(url: Self.url)
+    init(apiKey: String, keyterms: [String] = [], onEvent: @escaping (Event) -> Void) {
+        var request = URLRequest(url: Self.url(keyterms: keyterms))
         request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
         task = URLSession.shared.webSocketTask(with: request)
         self.onEvent = onEvent

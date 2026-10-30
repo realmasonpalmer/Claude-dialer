@@ -202,6 +202,12 @@ struct CoachView: View {
                     .background(Color.accentColor.opacity(0.18), in: Capsule())
             }
             Spacer()
+            if let calling = coach.calling {
+                Text(calling.replacingOccurrences(of: "\"", with: ""))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
     }
 

@@ -40,6 +40,7 @@ enum CoachPrompt {
         The rep makes about 100 dials a day and can get overwhelmed. Make the next sentence obvious so they can stay calm and present.
 
         The transcript is labeled Rep and Prospect. It is live speech-to-text, so expect small errors.
+        Speech-to-text often hears "Claude" as "cloud" or "clod". Read words in context.
 
         How to coach:
         1. One line at a time, 10 to 20 words. Easy to say out loud on the first read.
@@ -54,6 +55,27 @@ enum CoachPrompt {
         10. If it is voicemail or a gatekeeper, use the campaign's guidance for that.
         11. If talk is flowing well or the rep is mid-thought, answer SKIP.
 
+        Cold call method (adapt it to the campaign):
+        - Opener: honest that it's a cold call, ask for a few seconds. Calm and slow beats slick.
+        - Reason for the call: lead with a problem their peers have, not the product. Then ask if it's true for them.
+        - Discovery: one question at a time. Follow up on their answer before moving on. Get the cost of the problem in their words: time, money, risk.
+        - Keep them talking: repeat their last few words as a question, or name what they seem to feel ("Sounds like that rollout was frustrating").
+        - Early objections are usually reflexes, not decisions. Lower the pressure and ask one question. If they repeat it firmly, respect it.
+        - Ask for the objective as soon as there is real interest. Don't over-discover. Make it easy: specific, short, low commitment.
+        - Use their first name at most once or twice. Silence is fine; don't fill it.
+        - Never pitch features on a cold call. Earn the next step.
+
+        Selling AI and automation (when the campaign is about AI):
+        Buyers are skeptical and busy. Talk about outcomes in their words, like hours back, cleaner data and more selling time, not about AI itself.
+        - "We already use ChatGPT or Copilot": good start. Ask how much of the team uses it daily, and if it's connected to their real systems.
+        - "Security, legal or IT won't allow it": very fair. Ask what they'd need to see to be comfortable.
+        - "We tried AI and it didn't stick": common. Ask what got in the way. Adoption usually fails on process and habits, not tech.
+        - "AI is hype": agree there's a lot of noise. Ask about one boring manual task they'd love to be gone.
+        - "We're building it in-house": ask if they're building tools or driving adoption, and what's slower than hoped.
+        - "Not a priority": ask what is a priority this quarter. Connect only if there's a real link.
+        - "Will it replace my people?": no. It gives them time back for the work they were hired to do.
+        Never claim features, security certifications, prices or results the campaign doesn't state.
+
         Answer in exactly this format and nothing else:
         SAY: <the line the rep should say next>
         CUE: <why, or how to say it, under 10 words>
@@ -66,20 +88,26 @@ enum CoachPrompt {
         """
     }
 
-    static func opener() -> String {
-        "The call has not connected yet. Give the opener the rep should say when they pick up."
+    static func opener(calling: String?) -> String {
+        "\(about(calling))The call has not connected yet. Give the opener the rep should say when they pick up."
     }
 
-    static func reply(turns: [Turn], latest: String) -> String {
+    static func reply(turns: [Turn], latest: String, calling: String?) -> String {
         let history = turns.suffix(30).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         return """
-        Call so far, oldest first:
+        \(about(calling))Call so far, oldest first:
         \(history)
 
         The prospect just said: "\(latest)"
 
         What should the rep say next?
         """
+    }
+
+    /// The Salesforce record the rep had open, from the Chrome tab title. Real data, not a guess.
+    private static func about(_ calling: String?) -> String {
+        guard let calling else { return "" }
+        return "Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person. Assume nothing else about them.\n\n"
     }
 }
 
@@ -152,6 +180,9 @@ final class CoachModel: ObservableObject {
     @Published private(set) var latency: Double?
     @Published private(set) var problem: String?
     @Published private(set) var thinking = false
+    /// Who the rep is calling, from the Salesforce tab title (e.g. Lead "Jane Doe").
+    @Published private(set) var calling: String?
+    private var tabTicks = 0
 
     @Published private(set) var campaign = Campaign.clarityDiscovery
     private var system = CoachPrompt.system(for: .clarityDiscovery)
@@ -170,6 +201,7 @@ final class CoachModel: ObservableObject {
     private var startedByHand = false
     private var quietTicks = 0
     private var reconnects = 0
+    private var useKeyterms = true // turned off if Deepgram ever rejects them
 
     private var uncoached = ""          // prospect words not yet answered
     private var seq = 0                 // newest request id; older ones are stale
@@ -204,6 +236,17 @@ final class CoachModel: ObservableObject {
     private func tick() {
         guard active else { return }
         let onCall = AudioProcess.chromeOnCall(in: AudioProcess.others())
+        // Between calls, notice which record is open so the opener uses their name.
+        if status == .ready, !onCall {
+            tabTicks += 1
+            if tabTicks % 2 == 0 {
+                let record = SalesforceTab.currentRecord()
+                if record != calling {
+                    calling = record
+                    prepareOpener()
+                }
+            }
+        }
         switch status {
         case .ready where onCall:
             startCall()
@@ -239,6 +282,7 @@ final class CoachModel: ObservableObject {
         latestProspect = ""
         latency = nil
         status = .ready
+        calling = SalesforceTab.currentRecord()
         prepareOpener()
     }
 
@@ -285,7 +329,7 @@ final class CoachModel: ObservableObject {
     }
 
     private func openStream(_ speaker: Speaker, key: String) -> DeepgramStream {
-        DeepgramStream(apiKey: key) { [weak self] event in
+        DeepgramStream(apiKey: key, keyterms: useKeyterms ? DeepgramStream.defaultKeyterms : []) { [weak self] event in
             Task { @MainActor in self?.handle(event, from: speaker) }
         }
     }
@@ -311,6 +355,7 @@ final class CoachModel: ObservableObject {
                 return
             }
             reconnects += 1
+            useKeyterms = false // reconnect with the plainest settings
             streams.replace(speaker, with: openStream(speaker, key: key))
         }
     }
@@ -334,14 +379,16 @@ final class CoachModel: ObservableObject {
         latestProspect = said
         // A plain "Hello?" is already answered by the opener on screen.
         let onlyGreeting = kind == .opener && turns.count <= 1 && said.split(separator: " ").count <= 4
-        guard !onlyGreeting, isMeaningful(said) || turns.count <= 2 else { return }
-        ask(.reply, user: CoachPrompt.reply(turns: turns, latest: said))
+        // "Sure" or "Yes" is filler while the rep talks, but a real answer to the rep's question.
+        let repAsked = turns.last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
+        guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else { return }
+        ask(.reply, user: CoachPrompt.reply(turns: turns, latest: said, calling: calling))
     }
 
     // MARK: Claude
 
     private func prepareOpener() {
-        ask(.opener, user: CoachPrompt.opener())
+        ask(.opener, user: CoachPrompt.opener(calling: calling))
     }
 
     private func ask(_ kind: Kind, user: String) {

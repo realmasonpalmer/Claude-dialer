@@ -22,6 +22,8 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Clarity Live Coach listens to your side of the call to coach you in real time.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Clarity Live Coach reads the title of your Salesforce tab in Chrome so it knows who you're calling.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>Clarity Live Coach listens to the call audio playing in Chrome so it can hear the prospect.</string>
 </dict>
