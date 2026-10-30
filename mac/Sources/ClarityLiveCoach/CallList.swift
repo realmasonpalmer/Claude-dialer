@@ -155,6 +155,30 @@ final class CallList: ObservableObject {
         return true
     }
 
+    /// Everything the app sees about the list, for troubleshooting. No lead details beyond names.
+    func debugReport() -> String {
+        let url = SalesforceChrome.url() ?? "(no Salesforce tab found)"
+        let title = SalesforceChrome.title() ?? "(none)"
+        let result: String
+        switch SalesforceChrome.readList() {
+        case .blocked: result = "blocked (Chrome setting off, or the page script failed)"
+        case .noSalesforceTab: result = "no Salesforce tab"
+        case .noList: result = "no list on screen"
+        case .list(let found): result = "\(found.count) records on screen, first: \(found.prefix(3).map(\.name).joined(separator: ", "))"
+        }
+        return """
+        Clarity Live Coach - Next debug
+        Tab address: \(url)
+        Tab title: \(title)
+        List on screen: \(result)
+        Saved list: \(records.count) records, first: \(records.prefix(3).map(\.name).joined(separator: ", "))
+        Current position: \(currentIndex().map { String($0 + 1) } ?? "not found") (last opened: \(lastIndex + 1))
+        Up next: \(upNext().map { "\($0.record.name) at \($0.position)" } ?? "none")
+        Called today: \(calledToday.count)
+        Chrome blocked: \(chromeBlocked)
+        """
+    }
+
     // MARK: Called today
 
     /// Called when a call connects on the record that's open.

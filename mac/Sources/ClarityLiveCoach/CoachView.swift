@@ -235,6 +235,10 @@ struct CoachView: View {
                 .disabled(coach.status == .ready)
             Button("Start listening now") { coach.startByHand() }
             Button("Reset who's been called today") { coach.callList.clearCalledToday() }
+            Button("Copy Next debug info") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(coach.callList.debugReport(), forType: .string)
+            }
                 .disabled(coach.status != .ready)
             Button("Run audio check", action: onAudioCheck)
             Button("Change API keys", action: onKeys)
