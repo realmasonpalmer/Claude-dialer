@@ -26,13 +26,19 @@
         <button id="stop" class="secondary">Stop</button>
       </header>
       <div id="card" class="card">
-        <div class="label">Say next</div>
-        <div id="say" class="say">Waiting for them to talk...</div>
+        <div class="label"><span id="stage" class="stage" hidden></span><span id="kind">Say next</span></div>
+        <div id="say" class="say">Getting your opener ready...</div>
         <div id="cue" class="cue"></div>
       </div>
-      <div class="label">Transcript <span class="muted">(tap your own line if the labels are wrong)</span></div>
-      <ol id="transcript" class="transcript"></ol>
-      <p id="interim" class="interim"></p>
+      <div class="next">
+        <input id="nextNotes" placeholder="Next person (optional): name, title, company" />
+        <button id="nextCall" class="primary">Next call</button>
+      </div>
+      <details id="transcriptBox">
+        <summary>Transcript <span class="muted">(tap your own line if the labels are wrong)</span></summary>
+        <ol id="transcript" class="transcript"></ol>
+        <p id="interim" class="interim"></p>
+      </details>
     </section>
   </main>
   <script src="coach.js"></script>

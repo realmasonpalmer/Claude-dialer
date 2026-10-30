@@ -8,10 +8,11 @@ It works with any phone: Aircall, Zoom, your cell on speaker.
 1. Put the call on **speaker** so the mic hears both of you. (A headset will not work. The mic can't hear the other person.)
 2. Open the coach page. Enter the access code. Pick your mic.
 3. Optional: type who you are calling.
-4. Click **Start listening**.
+4. Click **Start listening**. Your opener shows up before they even pick up.
 5. Tell the prospect the call is transcribed and get a yes.
-6. Read the big line. Say it in your own words.
-7. If the transcript labels you wrong, tap one of your own lines. The app fixes it.
+6. Read the big line. Say it in your own words. The colored tag shows where you are: Opener, Objection, Book it and so on.
+7. Done with the call? Type the next person (optional) and hit **Next call**. The screen clears and a new opener appears. The mic stays on, so you can dial all day without restarting.
+8. If the transcript labels you wrong, open it and tap one of your own lines.
 
 ## Mic tips
 
@@ -35,10 +36,17 @@ Where the time goes:
 1. Deepgram waits 0.3 seconds of silence to decide they finished.
 2. Claude writes the line, and the words show up as they arrive.
 
+Built in:
+- Your opener is ready before the call connects, so the hardest moment has zero wait.
+- A plain "Hello?" doesn't trigger a new line, because the opener already covers it.
+- Old requests get cancelled the moment they say something new.
+
 Ways to make it faster:
 - Set `CLAUDE_MODEL=claude-haiku-5-5`. Fastest. Try it and compare tips.
 - Keep `CLAUDE_EFFORT=low`.
 - Host the server in a US East region, close to Deepgram and Anthropic.
+- Next to test: Deepgram **Flux**, a newer model that detects end of turn faster and can start Claude early.
+  We still need to confirm it can tell two speakers apart on one mic before switching.
 
 ## Set it up (about 20 minutes)
 
@@ -56,7 +64,8 @@ You do not need Twilio or any Salesforce setup for the coach.
 
 ## Change what the coach knows
 
-Edit `server/playbook.md` in plain English: offer, who you call, objections, tone. Redeploy.
+Edit `server/playbook.md` in plain English: offer, who you call, call flow, objections, gatekeeper, voicemail, tone. Redeploy.
+The best upgrade is real lines from your best calls. Paste what works into the playbook.
 
 ## Cost (rough)
 

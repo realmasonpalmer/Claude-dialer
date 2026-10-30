@@ -18,18 +18,22 @@ export interface SessionDeps {
   log?: (entry: Record<string, unknown>) => void;
 }
 
+// A short "Hello?" right after the opener is on screen needs no new line.
+const GREETING_MAX_WORDS = 4;
+
 /**
- * One browser tab listening to one call. Audio in, suggestions out.
- * Nothing is stored: the transcript lives in memory and is gone when the tab closes.
+ * One browser tab, many calls. Audio in, suggestions out.
+ * Nothing is stored: the transcript lives in memory and is gone on "Next call" or when the tab closes.
  */
 export function runSession(browser: WebSocket, deps: SessionDeps) {
-  const convo = new Conversation();
+  let convo = new Conversation();
   const log = deps.log ?? ((e) => console.log(JSON.stringify(e)));
   let notes = "";
   let interim = "";
   let streamStartedAt = 0; // wall clock when audio began; Deepgram times are relative to it
   let current: CoachRun | null = null;
   let seq = 0;
+  let openerReady = false;
   let closed = false;
   let retries = 0;
   let timeOffset = 0; // each new transcriber stream restarts its clock at 0
@@ -40,40 +44,44 @@ export function runSession(browser: WebSocket, deps: SessionDeps) {
   const pushTranscript = () => send({ type: "transcript", turns: convo.view(), interim, rep: convo.repSpeaker });
 
   function learnRep(speaker: number | null) {
-    if (speaker === null || speaker === convo.repSpeaker) return;
+    if (speaker === null || convo.turns.length === 0 || speaker === convo.repSpeaker) return;
     const before = convo.repSpeaker;
     convo.setRep(speaker, false);
     if (before !== convo.repSpeaker) pushTranscript();
   }
 
-  function maybeCoach() {
-    if (!convo.shouldCoach()) return;
-    convo.markCoached();
-    current?.abort(); // a newer statement makes the old suggestion stale
-
+  /** Asks Claude for the next line. Any newer request cancels this one. */
+  function generate(kind: "opener" | "reply") {
+    current?.abort();
     const id = ++seq;
-    const speechEndedAt = streamStartedAt + convo.lastWordEnd() * 1000;
+    const askedAt = Date.now();
+    const speechEndedAt = kind === "reply" ? streamStartedAt + convo.lastWordEnd() * 1000 : askedAt;
+    const forConvo = convo;
     let shownFirstWords = false;
 
     const run = deps.coach.suggest(convo.transcript(), notes, (s) => {
+      if (forConvo !== convo) return;
       learnRep(s.rep); // REP is Claude's first line, so we learn who the rep is right away
       if (id !== seq) return;
       if (s.say && !shownFirstWords) {
         shownFirstWords = true;
-        send({ type: "latency", id, speechEndToFirstWordMs: Date.now() - speechEndedAt });
+        if (kind === "reply") send({ type: "latency", id, speechEndToFirstWordMs: Date.now() - speechEndedAt });
       }
-      send({ type: "suggestion", id, say: s.say, cue: s.cue, skip: s.skip, done: false });
+      send({ type: "suggestion", id, kind, say: s.say, cue: s.cue, stage: s.stage, skip: s.skip, done: false });
     });
     current = run;
 
     run.done
       .then((result) => {
+        if (forConvo !== convo) return;
         learnRep(result.suggestion.rep);
         if (result.aborted || id !== seq) return;
-        const { say, cue, skip } = result.suggestion;
-        send({ type: "suggestion", id, say, cue, skip, done: true });
+        const { say, cue, stage, skip } = result.suggestion;
+        if (kind === "opener" && say) openerReady = true;
+        send({ type: "suggestion", id, kind, say, cue, stage, skip, done: true });
         log({
           event: "coach",
+          kind,
           firstTokenMs: result.firstTokenMs,
           totalMs: result.totalMs,
           speechEndToDoneMs: Date.now() - speechEndedAt,
@@ -88,6 +96,30 @@ export function runSession(browser: WebSocket, deps: SessionDeps) {
       .finally(() => {
         if (current === run) current = null;
       });
+  }
+
+  function maybeCoach() {
+    if (!convo.shouldCoach()) return;
+    const isGreeting =
+      openerReady && convo.turns.length === 1 && convo.newProspectWords().length <= GREETING_MAX_WORDS;
+    convo.markCoached();
+    if (isGreeting) return; // the opener on screen already answers "Hello?"
+    generate("reply");
+  }
+
+  /** Clears the call but keeps the mic and transcription running. */
+  function nextCall() {
+    current?.abort();
+    current = null;
+    const previous = convo;
+    convo = new Conversation();
+    if (previous.repSpeaker !== null) convo.setRep(previous.repSpeaker, previous.repLocked); // same mic stream, same speaker ids
+    convo.skipThrough(previous.lastWordEnd());
+    interim = "";
+    openerReady = false;
+    send({ type: "reset" });
+    pushTranscript();
+    generate("opener");
   }
 
   function openTranscriber(): Transcriber {
@@ -142,7 +174,14 @@ export function runSession(browser: WebSocket, deps: SessionDeps) {
     } catch {
       return;
     }
-    if (msg.type === "notes" && typeof msg.notes === "string") notes = msg.notes.slice(0, 2000);
+    if (msg.type === "notes" && typeof msg.notes === "string") {
+      notes = msg.notes.slice(0, 2000);
+      if (convo.turns.length === 0) generate("opener"); // fresh opener for the new prospect
+    }
+    if (msg.type === "nextCall") {
+      if (typeof msg.notes === "string") notes = msg.notes.slice(0, 2000);
+      nextCall();
+    }
     if (msg.type === "setRep" && Number.isInteger(msg.speaker)) {
       convo.setRep(msg.speaker, true);
       pushTranscript();

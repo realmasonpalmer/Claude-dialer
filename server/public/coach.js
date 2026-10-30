@@ -109,11 +109,8 @@
     pending = null;
     shown = { id: 0, at: 0 };
     repSpeaker = null;
-    $('say').textContent = 'Waiting for them to talk...';
-    $('cue').textContent = '';
+    clearCall();
     $('transcript').innerHTML = '';
-    $('interim').textContent = '';
-    $('latency').textContent = '';
     $('live').hidden = true;
     $('setup').hidden = false;
   }
@@ -127,6 +124,27 @@
     else if (msg.type === 'transcript') renderTranscript(msg);
     else if (msg.type === 'latency') $('latency').textContent = (msg.speechEndToFirstWordMs / 1000).toFixed(1) + 's';
     else if (msg.type === 'suggestion') offer(msg);
+    else if (msg.type === 'reset') clearCall();
+  }
+
+  function clearCall() {
+    clearTimeout(holdTimer);
+    pending = null;
+    shown = { id: 0, at: 0 };
+    $('say').textContent = 'Getting your opener ready...';
+    $('cue').textContent = '';
+    $('kind').textContent = 'Say next';
+    $('stage').hidden = true;
+    $('latency').textContent = '';
+    $('interim').textContent = '';
+  }
+
+  function nextCall() {
+    if (!ws || ws.readyState !== 1) return;
+    var who = $('nextNotes').value.trim();
+    $('notes').value = who;
+    $('nextNotes').value = '';
+    ws.send(JSON.stringify({ type: 'nextCall', notes: who }));
   }
 
   // Suggestions: stream the current one in place, but hold a brand new one
@@ -135,6 +153,7 @@
     if (s.skip || !s.say) return; // keep the last good line on screen
     if (s.id === shown.id) return paint(s);
     if (s.id < shown.id) return;
+    if (s.kind === 'opener') return show(s); // nothing to read yet, show it now
     var waited = Date.now() - shown.at;
     if (!shown.id || waited >= HOLD_MS) return show(s);
     pending = s;
@@ -154,6 +173,8 @@
   function paint(s) {
     $('say').textContent = s.say;
     $('cue').textContent = s.cue || '';
+    $('kind').textContent = s.kind === 'opener' ? 'When they pick up' : 'Say next';
+    if (s.stage) { $('stage').textContent = s.stage; $('stage').hidden = false; }
   }
 
   function renderTranscript(msg) {
@@ -174,6 +195,8 @@
 
   $('start').addEventListener('click', start);
   $('stop').addEventListener('click', stop);
+  $('nextCall').addEventListener('click', nextCall);
+  $('nextNotes').addEventListener('keydown', function (e) { if (e.key === 'Enter') nextCall(); });
   $('notes').addEventListener('change', sendNotes);
   $('transcript').addEventListener('click', function (e) {
     var li = e.target.closest('li[data-speaker]');

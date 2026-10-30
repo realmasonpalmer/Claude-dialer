@@ -28,9 +28,17 @@ export class Conversation {
   repSpeaker: number | null = null;
   repLocked = false; // true once the rep taps "that's me"
   private coachedThrough = -1; // end time of the last word we coached on
+  private ignoreThrough = -1; // words from the previous call that arrive late
+
+  /** Starts a new call on a running stream: ignore anything said before t. */
+  skipThrough(t: number) {
+    this.ignoreThrough = t;
+    this.coachedThrough = t;
+  }
 
   addFinalWords(words: Word[]) {
     for (const word of words) {
+      if (word.end <= this.ignoreThrough) continue;
       const last = this.turns.at(-1);
       if (last && last.speaker === word.speaker) last.words.push(word);
       else this.turns.push({ speaker: word.speaker, words: [word] });
