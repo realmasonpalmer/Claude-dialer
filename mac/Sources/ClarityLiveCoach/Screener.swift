@@ -37,21 +37,34 @@ enum Screener {
 }
 
 /// Spots voicemail greetings and full mailboxes from the prospect's words, instantly.
-/// Only strong phrases count, so a gatekeeper saying "she's not available" doesn't trigger it.
+/// Strong phrases count any time. Early phrases ("you've reached", "not available") only count
+/// at the start of a call before the rep has spoken, when it can't be a gatekeeper answering a question.
 enum Voicemail {
-    private static let phrases = [
+    private static let strong = [
         "leave a message", "leave your message", "leave me a message", "leave a voicemail", "leave a brief message",
-        "after the tone", "after the beep", "at the tone", "at the beep", "voicemail", "voice mail", "mailbox",
-        "record your message", "please leave", "can't take your call", "cannot take your call",
-        "not available to take your call", "can't come to the phone", "cannot come to the phone",
-        "away from my desk", "get back to you as soon as",
+        "leave your name", "message after", "after the tone", "after the beep", "at the tone", "at the beep",
+        "voicemail", "voice mail", "mailbox", "record your message", "please leave", "can't take your call",
+        "cannot take your call", "not available to take your call", "can't come to the phone",
+        "cannot come to the phone", "get back to you as soon as", "return your call", "forwarded to an automated",
+        "automated voice", "voice messaging", "is not available. please", "sorry i missed your call",
+        "sorry i can't answer", "sorry i cannot answer", "missed your call",
+    ]
+    private static let early = [
+        "you've reached", "you have reached", "not available", "unavailable", "unable to answer", "unable to take",
+        "can't get to the phone", "can't answer", "away from my desk", "away from the phone", "out of the office",
+        "subscriber", "wireless customer", "the person you are trying", "the person you're trying",
+        "the number you have dialed", "is not reachable",
     ]
     private static let fullPhrases = [
         "mailbox is full", "mailbox full", "cannot accept any messages", "not accepting messages",
         "has not been set up", "hasn't been set up", "not set up yet",
     ]
 
-    static func detects(_ text: String) -> Bool { contains(text, phrases) || mailboxFull(text) }
+    /// - Parameter earlyInCall: true in the first seconds after pickup, before the rep has said anything.
+    static func detects(_ text: String, earlyInCall: Bool) -> Bool {
+        contains(text, strong) || mailboxFull(text) || (earlyInCall && contains(text, early))
+    }
+
     static func mailboxFull(_ text: String) -> Bool { contains(text, fullPhrases) }
 
     private static func contains(_ text: String, _ list: [String]) -> Bool {

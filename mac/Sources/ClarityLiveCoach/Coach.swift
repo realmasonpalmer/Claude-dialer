@@ -311,7 +311,18 @@ final class CoachModel: ObservableObject {
     private var confirmedAt: Date?
 
     /// A new line never replaces one the rep has had less than this long to read.
-    private let hold: TimeInterval = 2.5
+    private let hold: TimeInterval = 4
+    /// A line stays until the rep has said it (about 4 words heard from the rep),
+    /// or this many seconds pass. New lines wait, so nothing changes mid-read.
+    private let lockSeconds: TimeInterval = 15
+    private var repWordsSinceShown = 0
+    private var repWordsInCall = 0
+
+    /// True while the line on screen is new and the rep hasn't said it yet.
+    private var lineIsFresh: Bool {
+        (kind == .reply || kind == .opener) && !suggestion.say.isEmpty
+            && repWordsSinceShown < 4 && Date().timeIntervalSince(shownAt) < lockSeconds
+    }
 
     private var active = false
 
@@ -373,6 +384,8 @@ final class CoachModel: ObservableObject {
         goalHit = false
         sawVoicemail = false
         stagesSeen = []
+        repWordsInCall = 0
+        repWordsSinceShown = 0
         offeredTimes = []
         codeByDate = [:]
         nextOffer = []
@@ -479,11 +492,14 @@ final class CoachModel: ObservableObject {
         switch event {
         case .transcript(let text, let isFinal, let speechFinal):
             if speaker == .prospect {
-                if Voicemail.detects(text) {
-                    if !voicemailActive || (Voicemail.mailboxFull(text) && !mailboxFullShown) {
-                        showVoicemail(mailboxFull: Voicemail.mailboxFull(text))
+                // Check the recent words together, so a phrase split across chunks still matches.
+                let recent = String(((turns.last { $0.speaker == .prospect }?.text ?? "") + " " + text).suffix(400))
+                let early = repWordsInCall < 3 && Date().timeIntervalSince(firstProspectAt ?? Date()) < 15
+                if Voicemail.detects(recent, earlyInCall: early) {
+                    if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
+                        showVoicemail(mailboxFull: Voicemail.mailboxFull(recent))
                     }
-                } else if !voicemailActive, !screenerActive, !stagesSeen.contains("Screener"), Screener.detects(text) {
+                } else if !voicemailActive, !screenerActive, !stagesSeen.contains("Screener"), Screener.detects(recent) {
                     showScreenerLine()
                 }
             }
@@ -512,6 +528,11 @@ final class CoachModel: ObservableObject {
 
     private func addFinal(_ text: String, from speaker: Speaker) {
         lastWordsAt = Date()
+        if speaker == .rep {
+            let count = text.split(separator: " ").count
+            repWordsSinceShown += count
+            repWordsInCall += count
+        }
         if speaker == .prospect, firstProspectAt == nil { firstProspectAt = Date() }
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
@@ -555,6 +576,19 @@ final class CoachModel: ObservableObject {
             ?? fresh.dropFirst().first { $0.timeIntervalSince(first) >= 3 * 3600 }
             ?? fresh.dropFirst().first
         return [first] + (second.map { [$0] } ?? [])
+    }
+
+    /// The rep asked for a different line right now. Skips the wait and the hold.
+    func newLine() {
+        guard status == .live, !voicemailActive else { return }
+        let latest = uncoached.trimmed.isEmpty ? (turns.last { $0.speaker == .prospect }?.text ?? "") : uncoached.trimmed
+        uncoached = ""
+        shownAt = .distantPast // no hold for a line the rep asked for
+        repWordsSinceShown = 99
+        ask(.reply, user: CoachPrompt.reply(
+            turns: turns, latest: latest, calling: calling, details: recordDetails, style: callOpener,
+            openTimes: bookingText()
+        ) + "\nThe rep asked for a different line than the last one.")
     }
 
     /// The rep clicked "Other times": count the current pair as turned down.
@@ -629,7 +663,7 @@ final class CoachModel: ObservableObject {
     /// start Claude now instead of waiting for the end-of-speech signal.
     private func scheduleEarlyStart() {
         specTimer?.cancel()
-        guard status == .live, !screenerActive, !voicemailActive else { return }
+        guard status == .live, !screenerActive, !voicemailActive, !lineIsFresh else { return }
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
         guard let last = text.last, ".?!".contains(last), isMeaningful(text) else { return }
         specTimer = Task { [weak self] in
@@ -649,6 +683,7 @@ final class CoachModel: ObservableObject {
         specTimer?.cancel()
         let said = uncoached.trimmingCharacters(in: .whitespaces)
         guard !said.isEmpty else { return }
+        if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
         // Started early on exactly these words? Then the answer is already on its way.
         if let basis = specBasis {
             specBasis = nil
@@ -674,6 +709,12 @@ final class CoachModel: ObservableObject {
                 show(opener, id: seq, kind: .opener)
                 return
             }
+        }
+        // The rep hasn't said the line on screen yet: keep it. Their words stay queued
+        // and are answered once the rep has spoken and they reply.
+        if lineIsFresh {
+            latestProspect = said
+            return
         }
         uncoached = ""
         latestProspect = said
@@ -769,6 +810,7 @@ final class CoachModel: ObservableObject {
         pending = nil
         shownID = id
         shownAt = Date()
+        repWordsSinceShown = 0
         suggestion = s
         self.kind = kind
         problem = nil

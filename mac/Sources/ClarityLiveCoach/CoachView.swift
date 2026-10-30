@@ -315,6 +315,9 @@ struct CoachView: View {
     private var controls: some View {
         HStack {
             Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
+            Button("New line") { coach.newLine() }
+                .keyboardShortcut("j", modifiers: .command)
+                .help("Get a different line now (Command-J)")
             Button("Next call") { coach.nextCall() }
                 .keyboardShortcut("n", modifiers: .command)
             Spacer()
