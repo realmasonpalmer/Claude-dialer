@@ -347,6 +347,7 @@ final class CoachModel: ObservableObject {
     /// Points the coach at the lead on screen: name, details, opener, voicemail.
     func applyLead() {
         guard let d = leads.details else { return }
+        if d.id != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
         appliedLeadID = d.id
         calling = "\(d.object) \"\(d.name)\""
         recordDetails = d.promptText
@@ -407,11 +408,61 @@ final class CoachModel: ObservableObject {
             }
             return
         }
-        if status != .ready { nextCall() }
+        if status != .ready { endCall() }
         if callList.openNext() {
             suggestion = Suggestion()
             calling = nil // forces a fresh read once the new page loads
             tabTicks = 1  // read on the very next tick
+            if UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true {
+                dialFromSalesforcePage(expecting: callList.lastOpenedID)
+            }
+        }
+    }
+
+    // MARK: Double dial
+
+    /// Calls per lead today, and whether the last call reached a person.
+    private var attempts: [String: Int] = [:]
+    @Published private(set) var currentAttemptKey: String?
+    @Published private(set) var lastCallAnswered = true
+    var currentAttempts: Int { currentAttemptKey.flatMap { attempts[$0] } ?? 0 }
+
+    /// After a first try nobody answered (or voicemail), offer to call right back.
+    var shouldOfferRedial: Bool {
+        status == .ready && currentAttemptKey != nil && !lastCallAnswered && currentAttempts < 2
+    }
+
+    /// Who the current lead is, for counting tries.
+    private func recordKey() -> String? {
+        if leads.isActive { return leads.details?.id }
+        return SalesforceChrome.url().flatMap(CallList.recordID) ?? calling
+    }
+
+    /// Calls the same person again right away.
+    func redial() {
+        guard status == .ready, currentAttemptKey != nil else { return }
+        if leads.isActive {
+            dial()
+        } else if SalesforceChrome.clickToDial() {
+            waitingForNewCall = false // a new call, even if Chrome still holds the mic
+        } else {
+            problem = "Couldn't find their phone number on the Salesforce page. Click it yourself."
+        }
+    }
+
+    /// Waits for the lead's Salesforce page to load, then clicks its phone number (Aircall in Salesforce dials).
+    private func dialFromSalesforcePage(expecting id: String?) {
+        Task { [weak self] in
+            for _ in 0..<16 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, self.status == .ready else { return }
+                if let id, SalesforceChrome.url().flatMap(CallList.recordID) != id { continue } // not loaded yet
+                if SalesforceChrome.clickToDial() {
+                    self.waitingForNewCall = false // this is a new call, even if Chrome still holds the mic
+                    return
+                }
+            }
+            self?.problem = "Couldn't find a phone number to click on that Salesforce page. Click it yourself."
         }
     }
 
@@ -547,6 +598,7 @@ final class CoachModel: ObservableObject {
                 let record = SalesforceTab.currentRecord()
                 if record != calling {
                     calling = record
+                    if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
                     recordDetails = nil
                     prepareOpener()
                     // Salesforce fills in the page after the title changes: read the details a moment later.
@@ -641,6 +693,10 @@ final class CoachModel: ObservableObject {
         problem = nil
         guard startAudio() else { return }
         if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
+        if let key = recordKey() {
+            currentAttemptKey = key
+            attempts[key, default: 0] += 1
+        }
         status = .live
         quietTicks = 0
         availability.refresh() // fresh free times for this call
@@ -670,6 +726,11 @@ final class CoachModel: ObservableObject {
 
     /// Clears everything about this prospect and gets the next opener ready.
     func nextCall() {
+        if status != .ready {
+            // Reached a person = they spoke, and it wasn't a voicemail or only a screener.
+            let theySpoke = turns.contains { $0.speaker == .prospect }
+            lastCallAnswered = theySpoke && !sawVoicemail && !screenerActive
+        }
         history = []
         historyIndex = nil
         journeyStep = 0
@@ -891,7 +952,10 @@ final class CoachModel: ObservableObject {
             mailboxFullShown = true
             show(Suggestion(say: "Mailbox is full. Hang up and dial the next one.", cue: "No message possible.",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
-        } else if let script = voicemailScript {
+        } else if var script = voicemailScript {
+            if currentAttempts < 2 {
+                script.cue = "1st try: hang up and Redial now (Command-R). Leave this on the 2nd try."
+            }
             show(script, id: seq, kind: .voicemail)
         } else {
             // Not written yet: ask now. The beep usually gives a few seconds.

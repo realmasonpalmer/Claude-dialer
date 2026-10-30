@@ -522,41 +522,57 @@ struct CoachView: View {
                 .disabled(!coach.leads.canGoBack)
                 .help("Previous lead")
 
-                Button {
-                    coach.dial()
-                } label: {
-                    HStack {
-                        Image(systemName: coach.dialing ? "hourglass" : "phone.fill")
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(coach.dialing ? "CALLING..." : "CALL").font(.caption2.weight(.bold)).opacity(0.8)
-                            Text(callTitle).font(.callout.weight(.semibold)).lineLimit(1)
-                        }
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 2)
+                let first = coach.leads.details.map { $0.firstName ?? $0.name } ?? ""
+                let nextName = coach.leads.nextRow?.name
+                if coach.shouldOfferRedial {
+                    // 1st try, no answer: call right back.
+                    bigButton("Redial \(first)", icon: "arrow.clockwise") { coach.redial() }
+                        .keyboardShortcut("r", modifiers: .command)
+                        .disabled(!canCall)
+                    smallButton(nextName.map { "Call \($0)" } ?? "No one left") { coach.nextLead() }
+                        .keyboardShortcut("n", modifiers: .command)
+                        .disabled(nextName == nil || coach.dialing)
+                } else if coach.currentAttempts == 0 {
+                    // Haven't called them yet.
+                    bigButton(coach.dialing ? "Calling..." : callTitle, icon: "phone.fill") { coach.dial() }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(!canCall)
+                    smallButton(nextName.map { "Call \($0)" } ?? "No one left") { coach.nextLead() }
+                        .keyboardShortcut("n", modifiers: .command)
+                        .disabled(nextName == nil || coach.dialing)
+                } else {
+                    // Two tries done (or they answered): on to the next person.
+                    bigButton(nextName.map { "Call \($0)" } ?? "No one left", icon: "phone.arrow.right") { coach.nextLead() }
+                        .keyboardShortcut("n", modifiers: .command)
+                        .disabled(nextName == nil || coach.dialing)
+                    smallButton("Redial") { coach.redial() }
+                        .keyboardShortcut("r", modifiers: .command)
+                        .disabled(!canCall)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!canCall)
-                .help("Call from the Aircall app (Command-Return)")
-
-                Button {
-                    coach.nextLead()
-                } label: {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(nextDials ? "CALL NEXT" : "NEXT").font(.caption2.weight(.bold)).opacity(0.8)
-                        Text(coach.leads.nextRow?.name ?? "No one left").font(.callout.weight(.semibold)).lineLimit(1)
-                    }
-                    .frame(maxWidth: 130, alignment: .leading)
-                }
-                .keyboardShortcut("n", modifiers: .command)
-                .disabled(coach.leads.nextRow == nil || coach.dialing)
-                .help(coach.leads.nextRow.map { nextDials ? "Call \($0.name) now (Command-N)" : "Next: \($0.name)" } ?? "No one left on this list")
             }
             .controlSize(.large)
         }
+    }
+
+    private func bigButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                Text(title).font(.callout.weight(.semibold)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+    }
+
+    private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).lineLimit(1).frame(maxWidth: 120)
+        }
+        .controlSize(.large)
     }
 
     private var canCall: Bool {
@@ -568,7 +584,7 @@ struct CoachView: View {
         guard let d = coach.leads.details else { return "Loading..." }
         if d.doNotCall { return "Do Not Call" }
         if !Aircall.canPlaceCalls { return "Set up Aircall calling first" }
-        return d.callNumber.map { "\(d.firstName ?? d.name)  \($0)" } ?? "No phone number"
+        return d.callNumber != nil ? "Call \(d.name)" : "No phone number"
     }
 
     /// During a call (or without the Salesforce list): Back and Next as before.
@@ -583,26 +599,33 @@ struct CoachView: View {
             .disabled(!backEnabled)
             .help(coach.status == .ready ? "Previous lead" : "Show the line before this one")
 
-            Button {
-                coach.status == .ready ? coach.nextLead() : coach.advanceStep()
-            } label: {
-                HStack {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("NEXT").font(.caption2.weight(.bold)).opacity(0.8)
-                        Text(nextTitle).font(.callout.weight(.semibold)).lineLimit(1)
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.right")
+            if coach.status == .ready && coach.shouldOfferRedial {
+                // 1st try, no answer: call right back.
+                bigButton("Redial \(currentName)", icon: "arrow.clockwise") { coach.redial() }
+                    .keyboardShortcut("r", modifiers: .command)
+                smallButton(nextTitle) { coach.nextLead() }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .disabled(!nextEnabled)
+            } else {
+                bigButton(nextTitle, icon: coach.status == .ready ? (nextDials ? "phone.arrow.right" : "arrow.right") : "arrow.right") {
+                    coach.status == .ready ? coach.nextLead() : coach.advanceStep()
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 2)
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(!nextEnabled)
+                if coach.status == .ready && coach.currentAttemptKey != nil {
+                    smallButton("Redial") { coach.redial() }
+                        .keyboardShortcut("r", modifiers: .command)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut("n", modifiers: .command)
-            .disabled(!nextEnabled)
         }
         .controlSize(.large)
+    }
+
+    /// The person on screen now, from the Salesforce tab (e.g. Lead "Burcin Sonmezer").
+    private var currentName: String {
+        guard let calling = coach.calling, let open = calling.firstIndex(of: "\""), let close = calling.lastIndex(of: "\""),
+              open < close else { return "them" }
+        return String(calling[calling.index(after: open)..<close])
     }
 
     private var backEnabled: Bool {
@@ -621,7 +644,7 @@ struct CoachView: View {
             return coach.nextStepName.map { "\($0) question" } ?? "New line"
         }
         switch coach.callList.state {
-        case .ready(let name, let position, let total): return "\(name)  (\(position)/\(total), \(coach.callList.leftToCall) left)"
+        case .ready(let name, _, _): return nextDials ? "Call \(name)" : "Next: \(name)"
         case .needsList: return "Open a lead list in Salesforce"
         case .needsChromeSetting: return "Needs a Chrome setting"
         case .endOfList: return "Everyone here is called"
@@ -700,7 +723,10 @@ struct HelpView: View {
                     "It lets the coach read the open lead and click Next for you.",
                 ])
                 section("Shortcuts", [
-                    "Command-N: Next",
+                    "Command-N: Call the next person",
+                    "Command-R: Redial (double dial)",
+                    "Command-T: Send the follow-up text",
+                    "Command-L: Open LinkedIn with the note copied",
                     "Command-E: End call (the coach also ends it when Aircall says the call is over)",
                     "Command-J: a different line now",
                 ])
@@ -831,6 +857,7 @@ struct FollowUpCard: View {
                                 .frame(width: 130)
                             Button("Send text") { onSend() }
                                 .buttonStyle(.borderedProminent)
+                                .keyboardShortcut("t", modifiers: .command)
                                 .disabled(f.text.isEmpty || f.phone.isEmpty || f.textStatus == "Sending...")
                         }
                     } else {
@@ -853,6 +880,7 @@ struct FollowUpCard: View {
                         Button("Open again") { onLinkedIn() }.buttonStyle(.link)
                     } else {
                         Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
+                            .keyboardShortcut("l", modifiers: .command)
                             .buttonStyle(.borderedProminent)
                             .disabled(f.linkedin.isEmpty)
                     }

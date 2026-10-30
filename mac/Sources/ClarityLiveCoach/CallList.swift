@@ -140,6 +140,9 @@ final class CallList: ObservableObject {
         return open(records[previous], at: previous)
     }
 
+    /// The record Next or Back opened last (to know when its page has loaded).
+    private(set) var lastOpenedID: String?
+
     private func open(_ record: Record, at index: Int) -> Bool {
         // Click it in the list like the rep would (keeps split view); else go to its address.
         guard SalesforceChrome.click(recordID: record.id) || SalesforceChrome.open(record.url) else {
@@ -149,6 +152,7 @@ final class CallList: ObservableObject {
             return false
         }
         lastIndex = index
+        lastOpenedID = record.id
         message = nil
         save()
         refreshUpNext()
@@ -318,6 +322,19 @@ enum SalesforceChrome {
         return "ok"
         """)
         return true
+    }
+
+    /// Clicks the first phone number on the open record (Salesforce's click-to-dial), which makes the
+    /// Aircall panel in Salesforce dial it, just like the rep clicking it. Skips the split view list.
+    static func clickToDial() -> Bool {
+        let js = deepFind + "function inside(n,r){while(n){if(n===r)return true;n=n.parentNode||n.host;}return false;}"
+            + "(function(){var lr=listRoot(),els=deep(document,'lightning-click-to-dial',[]);"
+            + "for(var i=0;i<els.length;i++){var el=els[i];"
+            + "if(!el.getClientRects().length||(lr&&inside(el,lr)))continue;"
+            + "var t=(el.shadowRoot||el).querySelector('a,button');"
+            + "if(t){t.click();return 'ok';}}"
+            + "return 'no';})()"
+        return javascript(js) == "ok"
     }
 
     /// The LinkedIn profile link on the open record (Lead "Linkedin" / Contact "LinkedIn" field), if shown.
