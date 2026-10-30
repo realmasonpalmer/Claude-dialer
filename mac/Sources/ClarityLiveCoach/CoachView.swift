@@ -32,6 +32,8 @@ struct RootView: View {
         }
         // Wider, not taller, when the Aircall phone is open on the right.
         .frame(width: showPhone ? 380 + AircallPhoneSide.width : 380)
+        // Never taller than the screen.
+        .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 40)
     }
 
     private var showPhone: Bool { appPhone && phone.shown && (screen ?? firstScreen) == .coach }

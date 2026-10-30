@@ -94,6 +94,11 @@ struct AircallPhoneView: NSViewRepresentable {
         if phone.webView.superview !== box { place(phone.webView, in: box) }
     }
 
+    /// Takes only the space it's given; never asks for more (so the window doesn't grow).
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+
     private func place(_ web: WKWebView, in box: NSView) {
         web.removeFromSuperview()
         web.translatesAutoresizingMaskIntoConstraints = false
@@ -141,7 +146,6 @@ struct AircallPhoneSide: View {
         }
         .padding(phone.shown ? 12 : 0)
         .frame(width: phone.shown ? Self.width : 1)
-        .frame(maxHeight: .infinity)
         .opacity(phone.shown ? 1 : 0.02)
         .onAppear { phone.start() }
     }
