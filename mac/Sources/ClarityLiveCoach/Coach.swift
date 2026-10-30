@@ -449,11 +449,44 @@ final class CoachModel: ObservableObject {
         cancelAutoNext()
         if leads.isActive {
             dial()
-        } else if SalesforceChrome.clickToDial() {
-            waitingForNewCall = false // a new call, even if Chrome still holds the mic
-        } else {
+        } else if !callFromPage() {
             problem = "No mobile number on this Salesforce page. Click Next."
         }
+    }
+
+    /// The Call button for the lead open in Salesforce.
+    func callOpenLead() {
+        cancelAutoNext()
+        if !callFromPage() { problem = "No mobile number on this Salesforce page. Click Next." }
+    }
+
+    /// Calls the Mobile number on the open Salesforce page, right from the app (through the
+    /// Aircall desktop app). Only if Aircall calling isn't set up does it click the number in Salesforce.
+    /// Returns false when the page has no Mobile number.
+    @discardableResult
+    func callFromPage() -> Bool {
+        guard status == .ready, !dialing else { return false }
+        if Aircall.canPlaceCalls {
+            guard let mobile = SalesforceChrome.mobileNumber() else { return false }
+            dialing = true
+            dialError = nil
+            Task { [weak self] in
+                do {
+                    try await Aircall.startCall(to: mobile)
+                    guard let self else { return }
+                    self.dialing = false
+                    self.callList.markCurrentCalled()
+                    self.pendingDialSince = Date()
+                } catch {
+                    self?.dialing = false
+                    self?.problem = error.localizedDescription
+                }
+            }
+            return true
+        }
+        guard SalesforceChrome.clickToDial() else { return false }
+        waitingForNewCall = false // a new call, even if Chrome still holds the mic
+        return true
     }
 
     private var noMobileSkips = 0
@@ -465,8 +498,7 @@ final class CoachModel: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard let self, self.status == .ready else { return }
                 if let id, SalesforceChrome.url().flatMap(CallList.recordID) != id { continue } // not loaded yet
-                if SalesforceChrome.clickToDial() {
-                    self.waitingForNewCall = false // this is a new call, even if Chrome still holds the mic
+                if self.callFromPage() {
                     self.noMobileSkips = 0
                     return
                 }

@@ -614,7 +614,15 @@ struct CoachView: View {
             .disabled(!backEnabled)
             .help(coach.status == .ready ? "Previous lead" : "Show the line before this one")
 
-            if coach.status == .ready && coach.shouldOfferRedial {
+            if coach.status == .ready && coach.calling != nil && coach.currentAttemptKey == nil {
+                // A lead is open in Salesforce and not called yet: call their Mobile right from here.
+                bigButton(coach.dialing ? "Calling..." : "Call \(currentName)", icon: "phone.fill") {
+                    coach.callOpenLead()
+                }
+                .disabled(coach.dialing)
+                smallButton(nextTitle) { coach.nextLead() }
+                    .disabled(!nextEnabled || coach.dialing)
+            } else if coach.status == .ready && coach.shouldOfferRedial {
                 // 1st try, no answer: call right back.
                 bigButton("Redial \(currentName)", icon: "arrow.clockwise") { coach.redial() }
                     .keyboardShortcut("r", modifiers: .command)
