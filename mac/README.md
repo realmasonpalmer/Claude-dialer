@@ -1,0 +1,49 @@
+# Clarity Live Coach (Mac)
+
+A floating Mac window that hears both sides of an Aircall call in Chrome and coaches the rep.
+
+**Right now this is Phase 1: the audio check.** It proves the app can hear you and the prospect
+as two separate streams. Coaching comes after this passes.
+
+## Needs
+
+- macOS 14.4 or newer (Apple menu > About This Mac)
+- Xcode Command Line Tools: run `xcode-select --install` in Terminal (free, about 10 minutes)
+- Aircall working in Chrome inside Salesforce
+- A headset is best. Speakers work, but your mic will also pick up the prospect.
+
+## Build and open
+
+```
+cd mac
+./scripts/build-app.sh
+open "build/Clarity Live Coach.app"
+```
+
+## Run the audio check
+
+1. Open the app. Click **Allow** for the microphone.
+2. Call a teammate (or your own cell) from Aircall in Salesforce. Tell them you're testing.
+3. In the app, check that **Call detected in Chrome** turns green.
+4. Click **Start**. macOS asks to allow **System Audio Recording**. Click Allow.
+   If you miss it: System Settings > Privacy & Security > Screen & System Audio Recording >
+   "System Audio Recording Only" > turn on Clarity Live Coach. Then click Stop and Start.
+5. Talk. The **You** bar should move. Have them talk. The **Prospect** bar should move.
+6. Check **Talking now** switches between You and Prospect.
+7. Click **Record test**, talk back and forth for 20 seconds, click **Stop test recording**.
+8. Click **Show recordings**. Play `you.wav` and `prospect.wav`.
+
+**Pass** = `you.wav` has your voice, `prospect.wav` has theirs, and **Talking now** follows along.
+Then click **Delete recordings**.
+
+Send back: pass or fail, your macOS version, your headset model, and any red error text.
+
+## If it fails
+
+| What you see | Try |
+| --- | --- |
+| "Chrome isn't using audio yet" | Start the Aircall call first, then press Start |
+| Prospect bar never moves | Allow System Audio Recording (step 4), then Stop and Start |
+| Prospect bar never moves, permission is on | The call audio may come from the Aircall desktop app, not Chrome. Pick it in "Hear the call from" |
+| You bar never moves | Allow the mic in System Settings > Privacy & Security > Microphone |
+| Asked for permission again after a rebuild | Normal for unsigned test builds |

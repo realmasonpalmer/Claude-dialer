@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>io.clarityconsulting.livecoach</string>
+    <key>CFBundleName</key>
+    <string>Clarity Live Coach</string>
+    <key>CFBundleDisplayName</key>
+    <string>Clarity Live Coach</string>
+    <key>CFBundleExecutable</key>
+    <string>ClarityLiveCoach</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.4</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Clarity Live Coach listens to your side of the call to coach you in real time.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Clarity Live Coach listens to the call audio playing in Chrome so it can hear the prospect.</string>
+</dict>
+</plist>
