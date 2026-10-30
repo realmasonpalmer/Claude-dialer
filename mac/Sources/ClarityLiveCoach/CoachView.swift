@@ -122,6 +122,7 @@ struct CoachView: View {
     @State private var showCalendar = false
     @State private var showHelp = false
     @State private var showAircall = false
+    @State private var showSalesforce = false
     @StateObject private var updater = Updater()
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
@@ -137,6 +138,7 @@ struct CoachView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: gap) {
             topBar
+            if Salesforce.isConnected { leadHeader }
             StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: coach.status != .ready)
             scriptCard
             belowCard
@@ -173,6 +175,9 @@ struct CoachView: View {
         .sheet(isPresented: $showCalendar) { BookingCalendarView(availability: coach.availability) }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showAircall) { AircallSetupView() }
+        .sheet(isPresented: $showSalesforce) {
+            SalesforceConnectView(onConnected: { Task { await coach.leads.start() } })
+        }
         .alert("Your first name", isPresented: $askName) {
             TextField("First name", text: $repName)
             Button("Save") { coach.refreshOpener() }
@@ -240,7 +245,8 @@ struct CoachView: View {
             }
             Button("Opener scoreboard") { showScoreboard = true }
             Button("Booking calendar...") { showCalendar = true }
-            Button("Aircall texting...") { showAircall = true }
+            Button(Salesforce.isConnected ? "Salesforce (connected)..." : "Connect Salesforce...") { showSalesforce = true }
+            Button("Aircall calling and texting...") { showAircall = true }
             Divider()
             Picker("Speed", selection: $speed) {
                 ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
@@ -255,7 +261,10 @@ struct CoachView: View {
             Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
                 .disabled(coach.status == .ready)
             Button("Start listening now (new call)") { coach.startByHand() }
-            Button("Reset who's been called today") { coach.callList.clearCalledToday() }
+            Button("Reset who's been called today") {
+                coach.callList.clearCalledToday()
+                coach.leads.clearCalledToday()
+            }
             Button("Copy Next debug info") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(coach.callList.debugReport(), forType: .string)
@@ -300,6 +309,54 @@ struct CoachView: View {
         campaigns.editing = campaign
         openWindow(id: "campaign-editor")
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: Who's up (Salesforce list)
+
+    private var leadHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Menu {
+                    ForEach(coach.leads.views) { view in
+                        Button(view.title) { Task { await coach.leads.open(view) } }
+                    }
+                    Divider()
+                    Button("Reload list") { Task { await coach.leads.reload() } }
+                } label: {
+                    Text(coach.leads.selected?.label ?? "Pick a list").font(.caption.weight(.semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(coach.status != .ready)
+                if coach.leads.loading { ProgressView().controlSize(.mini) }
+                Spacer()
+                if coach.leads.isActive {
+                    Text("\(coach.leads.index + 1) of \(coach.leads.rows.count) · \(coach.leads.leftToCall) left")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let d = coach.leads.details {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(d.name).font(.headline).lineLimit(1)
+                    Text([d.title, d.company].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if let url = Salesforce.recordURL(d.id) {
+                        Link(destination: url) { Image(systemName: "arrow.up.right.square") }
+                            .help("Open in Salesforce")
+                    }
+                }
+                if d.doNotCall {
+                    warningText("Do Not Call is checked in Salesforce. Skip this one.")
+                } else if let last = d.recent.first {
+                    Text("Last: \(last)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            } else if let error = coach.leads.error {
+                warningText(error)
+            } else if coach.leads.selected == nil && !coach.leads.loading {
+                Text("Pick a Salesforce list above to start calling.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 
     // MARK: The hero: what to say
@@ -440,7 +497,80 @@ struct CoachView: View {
 
     // MARK: Navigation: always here, always the same two buttons
 
-    private var navigation: some View {
+    @ViewBuilder private var navigation: some View {
+        if coach.status == .ready && coach.leads.isActive {
+            leadNavigation
+        } else {
+            stepNavigation
+        }
+    }
+
+    /// Between calls with the Salesforce list: Back, a big Call button, Next.
+    private var leadNavigation: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let error = coach.dialError {
+                warningText(error)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    coach.previousLead()
+                } label: {
+                    Image(systemName: "chevron.left").frame(width: 28, height: 28)
+                }
+                .disabled(!coach.leads.canGoBack)
+                .help("Previous lead")
+
+                Button {
+                    coach.dial()
+                } label: {
+                    HStack {
+                        Image(systemName: coach.dialing ? "hourglass" : "phone.fill")
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(coach.dialing ? "CALLING..." : "CALL").font(.caption2.weight(.bold)).opacity(0.8)
+                            Text(callTitle).font(.callout.weight(.semibold)).lineLimit(1)
+                        }
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!canCall)
+                .help("Call from the Aircall app (Command-Return)")
+
+                Button {
+                    coach.nextLead()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Next")
+                        Image(systemName: "chevron.right")
+                    }
+                    .frame(height: 28)
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(coach.leads.nextRow == nil)
+                .help(coach.leads.nextRow.map { "Next: \($0.name)" } ?? "No one left on this list")
+            }
+            .controlSize(.large)
+        }
+    }
+
+    private var canCall: Bool {
+        guard let d = coach.leads.details, !d.doNotCall, d.callNumber != nil, !coach.dialing else { return false }
+        return Aircall.canPlaceCalls
+    }
+
+    private var callTitle: String {
+        guard let d = coach.leads.details else { return "Loading..." }
+        if d.doNotCall { return "Do Not Call" }
+        if !Aircall.canPlaceCalls { return "Set up Aircall calling first" }
+        return d.callNumber.map { "\(d.firstName ?? d.name)  \($0)" } ?? "No phone number"
+    }
+
+    /// During a call (or without the Salesforce list): Back and Next as before.
+    private var stepNavigation: some View {
         HStack(spacing: 8) {
             Button {
                 coach.status == .ready ? coach.previousLead() : coach.back()
@@ -546,8 +676,14 @@ struct HelpView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("How to use").font(.title2.weight(.semibold))
+                section("Calling from the app (recommended)", [
+                    "Gear > Connect Salesforce, then pick your list at the top.",
+                    "Gear > Aircall calling and texting: pick your number and yourself.",
+                    "Keep the Aircall desktop app open. Click Call (Command-Return). Next loads the next lead.",
+                    "Calls log to Salesforce through Aircall, made by you, like always.",
+                ])
                 section("Calling", [
-                    "Click a phone number in Salesforce. The coach starts on its own when the call connects.",
+                    "Or click a phone number in Salesforce. The coach starts on its own when the call connects.",
                     "Read the big line. Say it in your own words.",
                     "Tell them the call is transcribed. Some states require it.",
                 ])

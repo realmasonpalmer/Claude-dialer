@@ -332,10 +332,56 @@ final class CoachModel: ObservableObject {
     let callList = CallList()
     private var detailsTask: Task<Void, Never>?
     private var listWatcher: AnyCancellable?
+    private var leadsWatcher: AnyCancellable?
+    private var leadDetailsWatcher: AnyCancellable?
+
+    // MARK: Lead list (Salesforce) and dialing (Aircall)
+
+    /// The call list from a Salesforce list view. When active, Chrome isn't needed at all.
+    let leads = LeadQueue()
+    private var appliedLeadID: String?
+    private var pendingDialSince: Date?
+    @Published private(set) var dialing = false
+    @Published var dialError: String?
+
+    /// Points the coach at the lead on screen: name, details, opener, voicemail.
+    func applyLead() {
+        guard let d = leads.details else { return }
+        appliedLeadID = d.id
+        calling = "\(d.object) \"\(d.name)\""
+        recordDetails = d.promptText
+        prepareOpener()
+        prepareVoicemail()
+    }
+
+    /// Calls the lead from the Aircall desktop app.
+    func dial(_ number: String? = nil) {
+        guard status == .ready, !dialing, let d = leads.details, !d.doNotCall,
+              let phone = number ?? d.callNumber else { return }
+        dialing = true
+        dialError = nil
+        Task { [weak self] in
+            do {
+                try await Aircall.startCall(to: phone)
+                guard let self else { return }
+                self.dialing = false
+                self.leads.markCurrentCalled()
+                self.pendingDialSince = Date()
+            } catch {
+                self?.dialing = false
+                self?.dialError = error.localizedDescription
+            }
+        }
+    }
 
     /// Ends the call (if any) and opens the next lead on the rep's list. The coach then
     /// picks up the new record and writes a fresh opener and voicemail for it.
     func previousLead() {
+        if leads.isActive {
+            if status != .ready { endCall() }
+            Task { await leads.back() }
+            return
+        }
         if status != .ready { nextCall() }
         if callList.openPrevious() {
             suggestion = Suggestion()
@@ -345,6 +391,11 @@ final class CoachModel: ObservableObject {
     }
 
     func nextLead() {
+        if leads.isActive {
+            if status != .ready { endCall() }
+            Task { await leads.next() }
+            return
+        }
         if status != .ready { nextCall() }
         if callList.openNext() {
             suggestion = Suggestion()
@@ -444,6 +495,16 @@ final class CoachModel: ObservableObject {
         // Redraw the coach when the call list changes (it lives in its own object).
         if listWatcher == nil {
             listWatcher = callList.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+            leadsWatcher = leads.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+            // A new lead loaded between calls: write its opener and voicemail.
+            leadDetailsWatcher = leads.$details.sink { [weak self] details in
+                guard let details else { return }
+                Task { @MainActor in
+                    guard let self, self.status == .ready, details.id != self.appliedLeadID else { return }
+                    self.applyLead()
+                }
+            }
+            Task { await leads.start() }
         }
         if suggestion.say.isEmpty, !thinking { prepareOpener() }
         guard timer == nil else { return }
@@ -456,9 +517,18 @@ final class CoachModel: ObservableObject {
 
     private func tick() {
         guard active else { return }
-        let onCall = AudioProcess.chromeOnCall(in: AudioProcess.others())
+        let onCall = AudioProcess.anyCallApp(in: AudioProcess.others())
         // Between calls, notice which record is open so the opener uses their name.
-        if status == .ready, !onCall || waitingForNewCall {
+        // Dialed from the app: start listening once the Aircall app picks up the call (or after 8 s).
+        if let since = pendingDialSince, status == .ready {
+            if AudioProcess.aircallAppOnCall(in: AudioProcess.others()) || Date().timeIntervalSince(since) > 8 {
+                pendingDialSince = nil
+                waitingForNewCall = false
+                startCall()
+            }
+            return
+        }
+        if status == .ready, !leads.isActive, !onCall || waitingForNewCall {
             tabTicks += 1
             if tabTicks % 2 == 0 {
                 callList.captureIfListView()
@@ -559,7 +629,7 @@ final class CoachModel: ObservableObject {
     private func startCall() {
         problem = nil
         guard startAudio() else { return }
-        callList.markCurrentCalled() // so Next skips them today
+        if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
         status = .live
         quietTicks = 0
         availability.refresh() // fresh free times for this call
@@ -603,10 +673,14 @@ final class CoachModel: ObservableObject {
         latestProspect = ""
         latency = nil
         status = .ready
-        calling = SalesforceTab.currentRecord()
-        recordDetails = calling == nil ? nil : SalesforceTab.pageText()
-        prepareOpener()
-        prepareVoicemail()
+        if leads.isActive {
+            applyLead()
+        } else {
+            calling = SalesforceTab.currentRecord()
+            recordDetails = calling == nil ? nil : SalesforceTab.pageText()
+            prepareOpener()
+            prepareVoicemail()
+        }
     }
 
     /// Scores the call if a real person answered (not voicemail): credits the opener,
@@ -648,9 +722,9 @@ final class CoachModel: ObservableObject {
             problem = "Add your Deepgram key in Settings."
             return false
         }
-        let chrome = AudioProcess.others().filter(\.isChrome).map(\.id)
+        let chrome = AudioProcess.callAudioTargets(in: AudioProcess.others())
         guard !chrome.isEmpty else {
-            problem = "Chrome isn't playing any sound. Start the Aircall call first."
+            problem = "Can't hear the call yet. Open the Aircall app (or Aircall in Chrome) and start the call."
             return false
         }
         streams.set(rep: openStream(.rep, key: deepgramKey), prospect: openStream(.prospect, key: deepgramKey))
@@ -823,8 +897,10 @@ final class CoachModel: ObservableObject {
             return String(c[c.index(after: open)..<close])
         }
         // A fresh card for every voicemail, so nothing (like an old error) carries over.
-        followUp = FollowUp(prospect: name, phone: Aircall.phone(in: recordDetails) ?? "",
-                            linkedinURL: Self.linkedInProfile(details: recordDetails))
+        let lead = leads.isActive ? leads.details : nil
+        followUp = FollowUp(prospect: lead?.name ?? name,
+                            phone: lead?.callNumber ?? Aircall.phone(in: recordDetails) ?? "",
+                            linkedinURL: lead?.linkedIn ?? Self.linkedInProfile(details: recordDetails))
         if let script = voicemailScript { fillFollowUp(from: script) }
         else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
     }
@@ -862,7 +938,7 @@ final class CoachModel: ObservableObject {
         guard let f = followUp else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(f.linkedin, forType: .string)
-        if let profile = f.linkedinURL ?? Self.linkedInProfile(details: recordDetails) {
+        if let profile = f.linkedinURL ?? (leads.isActive ? nil : Self.linkedInProfile(details: recordDetails)) {
             NSWorkspace.shared.open(profile)
         } else {
             let query = [f.prospect, recordCompany].compactMap { $0 }.joined(separator: " ")

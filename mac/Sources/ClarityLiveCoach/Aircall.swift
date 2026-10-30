@@ -22,6 +22,44 @@ enum Aircall {
         Keychain.read(.aircallID) != nil && Keychain.read(.aircallToken) != nil && numberID != nil
     }
 
+    struct User: Identifiable, Hashable {
+        let id: Int
+        let name: String
+        let email: String
+    }
+
+    /// The Aircall person calls are placed as (so Salesforce shows "made by" them).
+    static var userID: Int? {
+        let id = UserDefaults.standard.integer(forKey: "aircallUserID")
+        return id == 0 ? nil : id
+    }
+
+    static var canPlaceCalls: Bool { isSetUp && userID != nil }
+
+    static func users() async throws -> [User] {
+        let json = try await request("/users?per_page=50")
+        return ((json["users"] as? [[String: Any]]) ?? []).compactMap { u in
+            guard let id = u["id"] as? Int else { return nil }
+            return User(id: id, name: (u["name"] as? String) ?? "User", email: (u["email"] as? String) ?? "")
+        }
+    }
+
+    /// Starts a call from the rep's Aircall desktop app (Aircall Workspace), like clicking the number there.
+    /// Aircall API: POST /v1/users/:id/calls { number_id, to }. The app must be open and the rep available.
+    static func startCall(to phone: String) async throws {
+        guard let userID, let numberID else { throw AircallError(message: "Pick your Aircall user and number in Aircall settings.") }
+        guard let to = e164(phone) else { throw AircallError(message: "That phone number doesn't look right.") }
+        do {
+            _ = try await request("/users/\(userID)/calls", method: "POST", body: ["number_id": numberID, "to": to])
+        } catch let failed as NotFound {
+            throw AircallError(message: failed.detail.hasPrefix("400")
+                ? "Aircall couldn't dial that number, or your Aircall number isn't active."
+                : "Aircall said: \(failed.detail)")
+        } catch let error as AircallError where error.message.contains("405") {
+            throw AircallError(message: "Aircall says you're not available. Open the Aircall app, set yourself Available, and make sure you're not on a call.")
+        }
+    }
+
     static var numberID: Int? {
         let id = UserDefaults.standard.integer(forKey: "aircallNumberID")
         return id == 0 ? nil : id
@@ -149,6 +187,8 @@ struct AircallSetupView: View {
     @State private var token = Keychain.read(.aircallToken) ?? ""
     @State private var numbers: [Aircall.Number] = []
     @State private var selected = Aircall.numberID ?? 0
+    @State private var users: [Aircall.User] = []
+    @State private var selectedUser = Aircall.userID ?? 0
     @State private var status: String?
     @State private var working = false
     @AppStorage("autoSendText") private var autoSend = false
@@ -157,8 +197,8 @@ struct AircallSetupView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Aircall texting").font(.title2.weight(.semibold))
-                Text("Sends your follow-up text from your Aircall number in one click. Needs Aircall's Professional plan.")
+                Text("Aircall").font(.title2.weight(.semibold))
+                Text("Places calls from the Aircall desktop app and sends follow-up texts in one click. Texting needs Aircall's Professional plan.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -175,10 +215,19 @@ struct AircallSetupView: View {
                 }
 
                 if !numbers.isEmpty {
-                    Picker("Send texts from", selection: $selected) {
+                    Picker("Your Aircall number", selection: $selected) {
                         ForEach(numbers) { n in Text("\(n.name)  \(n.digits)").tag(n.id) }
                     }
                     .onChange(of: selected) { UserDefaults.standard.set(selected, forKey: "aircallNumberID") }
+                }
+                if !users.isEmpty {
+                    Picker("Calls are made as", selection: $selectedUser) {
+                        Text("Choose yourself").tag(0)
+                        ForEach(users) { u in Text(u.name).tag(u.id) }
+                    }
+                    .onChange(of: selectedUser) { UserDefaults.standard.set(selectedUser, forKey: "aircallUserID") }
+                    Text("Pick yourself, so Salesforce logs calls as made by you.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 if let status {
@@ -235,6 +284,7 @@ struct AircallSetupView: View {
         defer { working = false }
         do {
             numbers = try await Aircall.numbers()
+            users = (try? await Aircall.users()) ?? []
             if !numbers.contains(where: { $0.id == selected }), let first = numbers.first {
                 selected = first.id
                 UserDefaults.standard.set(first.id, forKey: "aircallNumberID")

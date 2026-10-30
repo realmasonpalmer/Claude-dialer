@@ -59,10 +59,33 @@ struct AudioProcess: Identifiable, Hashable {
 
     var isChrome: Bool { bundleID.hasPrefix("com.google.Chrome") }
 
+    /// The Aircall desktop app (Aircall Workspace) or one of its helper processes.
+    var isAircallApp: Bool { bundleID.lowercased().contains("aircall") || name.lowercased().contains("aircall") }
+
     /// Chrome uses the mic and plays sound at the same time only while a call is live.
     static func chromeOnCall(in processes: [AudioProcess]) -> Bool {
         let chrome = processes.filter(\.isChrome)
         return chrome.contains(where: \.isRunningInput) && chrome.contains(where: \.isRunningOutput)
+    }
+
+    /// Same check for the Aircall desktop app.
+    static func aircallAppOnCall(in processes: [AudioProcess]) -> Bool {
+        let app = processes.filter(\.isAircallApp)
+        return app.contains(where: \.isRunningInput) && app.contains(where: \.isRunningOutput)
+    }
+
+    /// A call is live in the Aircall desktop app or in Chrome (Aircall inside Salesforce).
+    static func anyCallApp(in processes: [AudioProcess]) -> Bool {
+        aircallAppOnCall(in: processes) || chromeOnCall(in: processes)
+    }
+
+    /// Which processes to listen to for the prospect: the Aircall app if it's on a call or open, else Chrome.
+    static func callAudioTargets(in processes: [AudioProcess]) -> [AudioObjectID] {
+        let aircall = processes.filter(\.isAircallApp)
+        if aircallAppOnCall(in: processes) || (!aircall.isEmpty && !chromeOnCall(in: processes)) {
+            return aircall.map(\.id)
+        }
+        return processes.filter(\.isChrome).map(\.id)
     }
 
     /// Every process except this app, sorted by name.

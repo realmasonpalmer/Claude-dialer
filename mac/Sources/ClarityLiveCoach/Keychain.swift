@@ -11,7 +11,8 @@ enum Keychain {
     enum Key: String, CaseIterable {
         case deepgram, anthropic
         case calendarFeed // the booking calendar's address (can be a secret link)
-        case aircallID, aircallToken // Aircall API keys, for sending follow-up texts
+        case aircallID, aircallToken // Aircall API keys, for texts and placing calls
+        case sfClientID, sfAccess, sfRefresh, sfInstance // Salesforce sign-in
     }
 
     private static var cache: [String: String]?
