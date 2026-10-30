@@ -128,6 +128,7 @@ struct CoachView: View {
     @AppStorage("repName") private var repName = ""
     @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
     @AppStorage("wholeLine") private var wholeLine = true
+    @AppStorage("nextDials") private var nextDials = true
 
     // One visual system: blue = actions, green = listening, amber = real warnings.
     private let margin: CGFloat = 16
@@ -252,6 +253,7 @@ struct CoachView: View {
                 ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
             }
             Toggle("Show each line all at once", isOn: $wholeLine)
+            Toggle("Next calls right away", isOn: $nextDials)
             Toggle("Rotate proven openers", isOn: Binding(
                 get: { coach.openers.rotate },
                 set: { coach.openers.rotate = $0; coach.refreshOpener() }
@@ -544,14 +546,14 @@ struct CoachView: View {
                     coach.nextLead()
                 } label: {
                     HStack(spacing: 4) {
-                        Text("Next")
-                        Image(systemName: "chevron.right")
+                        Text(nextDials ? "Next & call" : "Next")
+                        Image(systemName: nextDials ? "phone.arrow.right" : "chevron.right")
                     }
                     .frame(height: 28)
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(coach.leads.nextRow == nil)
-                .help(coach.leads.nextRow.map { "Next: \($0.name)" } ?? "No one left on this list")
+                .disabled(coach.leads.nextRow == nil || coach.dialing)
+                .help(coach.leads.nextRow.map { nextDials ? "Call \($0.name) now (Command-N)" : "Next: \($0.name)" } ?? "No one left on this list")
             }
             .controlSize(.large)
         }
@@ -679,7 +681,8 @@ struct HelpView: View {
                 section("Calling from the app (recommended)", [
                     "Gear > Connect Salesforce, then pick your list at the top.",
                     "Gear > Aircall calling and texting: pick your number and yourself.",
-                    "Keep the Aircall desktop app open. Click Call (Command-Return). Next loads the next lead.",
+                    "Keep the Aircall desktop app open. Call (Command-Return) dials the lead on screen.",
+                    "Next & call (Command-N) loads the next lead and dials right away. Turn it off in the gear menu.",
                     "Calls log to Salesforce through Aircall, made by you, like always.",
                 ])
                 section("Calling", [

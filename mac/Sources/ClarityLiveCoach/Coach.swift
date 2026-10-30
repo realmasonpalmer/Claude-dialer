@@ -393,7 +393,18 @@ final class CoachModel: ObservableObject {
     func nextLead() {
         if leads.isActive {
             if status != .ready { endCall() }
-            Task { await leads.next() }
+            Task { [weak self] in
+                guard let self else { return }
+                guard await self.leads.next() else { return }
+                // Skip Do Not Call records automatically (up to 20 in a row).
+                var skipped = 0
+                while self.leads.details?.doNotCall == true, skipped < 20, await self.leads.next() { skipped += 1 }
+                // "Next calls right away" (on by default): dial as soon as the lead is loaded.
+                if UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true, self.leads.details?.doNotCall == false {
+                    self.applyLead()
+                    self.dial()
+                }
+            }
             return
         }
         if status != .ready { nextCall() }
