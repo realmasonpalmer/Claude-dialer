@@ -497,6 +497,7 @@ final class CoachModel: ObservableObject {
     private func startCall() {
         problem = nil
         guard startAudio() else { return }
+        callList.markCurrentCalled() // so Next skips them today
         status = .live
         quietTicks = 0
         availability.refresh() // fresh free times for this call

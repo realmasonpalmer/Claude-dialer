@@ -234,6 +234,7 @@ struct CoachView: View {
             Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
                 .disabled(coach.status == .ready)
             Button("Start listening now") { coach.startByHand() }
+            Button("Reset who's been called today") { coach.callList.clearCalledToday() }
                 .disabled(coach.status != .ready)
             Button("Run audio check", action: onAudioCheck)
             Button("Change API keys", action: onKeys)
@@ -460,10 +461,10 @@ struct CoachView: View {
             return coach.nextStepName.map { "\($0) question" } ?? "New line"
         }
         switch coach.callList.state {
-        case .ready(let name, let position, let total): return "\(name)  (\(position)/\(total))"
+        case .ready(let name, let position, let total): return "\(name)  (\(position)/\(total), \(coach.callList.leftToCall) left)"
         case .needsList: return "Open a lead list in Salesforce"
         case .needsChromeSetting: return "Needs a Chrome setting"
-        case .endOfList: return "End of list"
+        case .endOfList: return "Everyone here is called"
         }
     }
 }

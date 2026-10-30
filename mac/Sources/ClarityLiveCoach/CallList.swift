@@ -1,7 +1,13 @@
 import AppKit
 
-/// Remembers the order of leads on the rep's Salesforce list view, so "Next" can open the next one.
-/// Works by reading the open Chrome tab (needs Chrome's "Allow JavaScript from Apple Events").
+/// Knows the rep's Salesforce call list: the order, where they are, who's been called today,
+/// and who to call next. Reads the Salesforce tab in Chrome (not Salesforce itself).
+///
+/// Built to be reliable in Lightning:
+/// - finds the Salesforce tab even when another tab (like LinkedIn) is in front
+/// - looks inside Salesforce's sealed components (shadow DOM), where list rows live
+/// - only reads the list area: the split view panel or the list view page, never related lists
+/// - ignores hidden pages Salesforce keeps loaded in the background
 @MainActor
 final class CallList: ObservableObject {
     struct Record: Codable, Equatable {
@@ -12,12 +18,17 @@ final class CallList: ObservableObject {
 
     @Published private(set) var records: [Record] = []
     @Published private(set) var message: String?
-    /// Who "Next" will open, refreshed every couple of seconds (reading Chrome is too slow to do on every redraw).
+    /// Who "Next" will open (refreshed every couple of seconds; reading Chrome is too slow for every redraw).
     @Published private(set) var upNextInfo: (name: String, position: Int)?
     /// Chrome won't let the app read the page (its "Allow JavaScript from Apple Events" setting is off).
     @Published private(set) var chromeBlocked = false
+    /// Records called today, by Salesforce ID.
+    @Published private(set) var calledToday: Set<String> = []
 
-    /// What the Next button should show.
+    private var lastIndex: Int
+    private var lastCapture = Date.distantPast
+    private var calledDay: String
+
     enum State: Equatable {
         case needsChromeSetting
         case needsList
@@ -31,170 +42,294 @@ final class CallList: ObservableObject {
         if let next = upNextInfo { return .ready(name: next.name, position: next.position, total: records.count) }
         return .endOfList
     }
-    private var lastIndex: Int
-    private var lastCapture = Date.distantPast
+
+    /// How many on this list haven't been called today.
+    var leftToCall: Int { records.filter { !calledToday.contains($0.id) }.count }
 
     init() {
-        lastIndex = UserDefaults.standard.integer(forKey: "callListIndex")
-        if let data = UserDefaults.standard.data(forKey: "callList"),
-           let saved = try? JSONDecoder().decode([Record].self, from: data) {
+        let d = UserDefaults.standard
+        lastIndex = d.object(forKey: "callListIndex") as? Int ?? -1
+        if let data = d.data(forKey: "callList"), let saved = try? JSONDecoder().decode([Record].self, from: data) {
             records = saved
         }
+        calledDay = d.string(forKey: "calledDay") ?? ""
+        calledToday = Set(d.stringArray(forKey: "calledToday") ?? [])
+        resetCalledIfNewDay()
     }
 
-    /// Learns the list order whenever a Salesforce list is on screen: table view, or the
-    /// left panel of split view (where the address is the record, not the list). Checked every few seconds.
+    // MARK: Learning the list
+
+    /// Reads the list from the Salesforce tab (split view panel or list view page). Every few seconds.
     func captureIfListView() {
-        guard Date().timeIntervalSince(lastCapture) > 4,
-              let url = ChromeTab.url(), url.contains("force.com") else { return }
+        guard Date().timeIntervalSince(lastCapture) > 3 else { return }
         lastCapture = Date()
-        let onListPage = url.contains("/list") || url.contains("filterName=")
-        // Reading the page fails only when Chrome blocks it.
-        guard let found = ChromeTab.listRecords() else {
+        switch SalesforceChrome.readList() {
+        case .blocked:
             if !chromeBlocked { chromeBlocked = true }
-            return
-        }
-        if chromeBlocked { chromeBlocked = false }
-        // A record page alone shows few leads; a list (or split view's panel) shows many.
-        guard found.count >= (onListPage ? 2 : 5) else { return }
-        if found != records {
+        case .noSalesforceTab, .noList:
+            if chromeBlocked { chromeBlocked = false }
+        case .list(let found):
+            if chromeBlocked { chromeBlocked = false }
+            guard !found.isEmpty, found != records else { return }
+            // Same list, more rows loaded (scrolling)? Keep our place. A different list? Start over.
+            let sameList = found.first?.id == records.first?.id
             records = found
-            lastIndex = -1
+            if !sameList { lastIndex = -1 }
             message = nil
             save()
         }
     }
 
+    // MARK: Where we are and who's next
+
+    /// The record open in the Salesforce tab right now, if it's on the list.
+    func currentIndex() -> Int? {
+        if let url = SalesforceChrome.url(), let id = Self.recordID(from: url),
+           let i = records.firstIndex(where: { $0.id == id }) {
+            return i
+        }
+        // Some split views keep the list address; fall back to the name in the tab title.
+        if let title = SalesforceChrome.title(), let name = title.components(separatedBy: " | ").first {
+            let matches = records.indices.filter { records[$0].name == name }
+            return matches.first { $0 > lastIndex } ?? matches.first
+        }
+        return nil
+    }
+
+    /// The next record after the current one that hasn't been called today.
+    func upNext() -> (record: Record, position: Int)? {
+        guard !records.isEmpty else { return nil }
+        let from = currentIndex() ?? lastIndex
+        var i = from + 1
+        while i < records.count {
+            if !calledToday.contains(records[i].id) { return (records[i], i + 1) }
+            i += 1
+        }
+        return nil
+    }
+
     func refreshUpNext() {
-        let next = upNext()
-        let info = next.map { (name: $0.record.name, position: $0.position) }
+        resetCalledIfNewDay()
+        let info = upNext().map { (name: $0.record.name, position: $0.position) }
         if info?.name != upNextInfo?.name || info?.position != upNextInfo?.position { upNextInfo = info }
     }
 
-    /// The record after the one open now (or after the last one opened). nil at the end.
-    func upNext() -> (record: Record, position: Int)? {
-        guard !records.isEmpty else { return nil }
-        let currentID = ChromeTab.url().flatMap(Self.recordID)
-        let from = currentID.flatMap { id in records.firstIndex { $0.id == id } } ?? lastIndex
-        let next = from + 1
-        return next < records.count ? (records[next], next + 1) : nil
-    }
+    // MARK: Moving
 
-    /// Opens the record before the one open now.
-    @discardableResult
-    func openPrevious() -> Bool {
-        guard !records.isEmpty else { return false }
-        let currentID = ChromeTab.url().flatMap(Self.recordID)
-        let from = currentID.flatMap { id in records.firstIndex { $0.id == id } } ?? (lastIndex + 1)
-        let previous = from - 1
-        guard previous >= 0, previous < records.count else { return false }
-        let record = records[previous]
-        guard ChromeTab.click(recordID: record.id) || ChromeTab.open(record.url) else { return false }
-        lastIndex = previous
-        message = nil
-        save()
-        refreshUpNext()
-        return true
-    }
-
-    /// Opens the next record in the active Chrome tab. Returns false with a message if it can't.
+    /// Opens the next lead that hasn't been called today.
     @discardableResult
     func openNext() -> Bool {
         guard !records.isEmpty else {
-            message = "Open your lead list in Salesforce once, so Next knows the order."
+            message = "Open your lead list in Salesforce first."
             return false
         }
         guard let (record, position) = upNext() else {
-            message = "That was the last one on your list. Open the list again to keep going."
+            message = "Everyone left on this list has been called today."
             return false
         }
+        return open(record, at: position - 1)
+    }
+
+    /// Opens the lead before the one open now (called or not).
+    @discardableResult
+    func openPrevious() -> Bool {
+        guard !records.isEmpty else { return false }
+        let from = currentIndex() ?? (lastIndex + 1)
+        let previous = from - 1
+        guard previous >= 0, previous < records.count else { return false }
+        return open(records[previous], at: previous)
+    }
+
+    private func open(_ record: Record, at index: Int) -> Bool {
         // Click it in the list like the rep would (keeps split view); else go to its address.
-        guard ChromeTab.click(recordID: record.id) || ChromeTab.open(record.url) else {
-            message = "Couldn't open it. In Chrome, turn on View > Developer > Allow JavaScript from Apple Events."
+        guard SalesforceChrome.click(recordID: record.id) || SalesforceChrome.open(record.url) else {
+            message = chromeBlocked
+                ? "Chrome needs one setting: View > Developer > Allow JavaScript from Apple Events."
+                : "Couldn't find your Salesforce tab in Chrome."
             return false
         }
-        lastIndex = position - 1
+        lastIndex = index
         message = nil
         save()
         refreshUpNext()
         return true
     }
 
+    // MARK: Called today
+
+    /// Called when a call connects on the record that's open.
+    func markCurrentCalled() {
+        resetCalledIfNewDay()
+        guard let i = currentIndex() else { return }
+        lastIndex = i
+        calledToday.insert(records[i].id)
+        save()
+        refreshUpNext()
+    }
+
+    func clearCalledToday() {
+        calledToday = []
+        save()
+        refreshUpNext()
+    }
+
+    private func resetCalledIfNewDay() {
+        let today = Date().formatted(.iso8601.year().month().day())
+        if calledDay != today {
+            calledDay = today
+            calledToday = []
+            save()
+        }
+    }
+
     static func recordID(from url: String) -> String? {
-        guard let range = url.range(of: #"/lightning/r/(?:[A-Za-z0-9_]+/)?([A-Za-z0-9]{15,18})/view"#, options: .regularExpression) else { return nil }
-        let match = String(url[range])
-        return match.split(separator: "/").dropLast().last.map(String.init)
+        guard let r = url.range(of: "/lightning/r/") else { return nil }
+        let parts = url[r.upperBound...].split(separator: "/").map(String.init)
+        // /lightning/r/Lead/00Q.../view  or  /lightning/r/00Q.../view
+        let id = parts.count > 2 && parts[2].hasPrefix("view") ? parts[1] : parts.first
+        return id.flatMap { $0.count >= 15 ? String($0.prefix(18)) : nil }
     }
 
     private func save() {
-        UserDefaults.standard.set(lastIndex, forKey: "callListIndex")
-        if let data = try? JSONEncoder().encode(records) { UserDefaults.standard.set(data, forKey: "callList") }
+        let d = UserDefaults.standard
+        d.set(lastIndex, forKey: "callListIndex")
+        if let data = try? JSONEncoder().encode(records) { d.set(data, forKey: "callList") }
+        d.set(calledDay, forKey: "calledDay")
+        d.set(Array(calledToday), forKey: "calledToday")
     }
 }
 
-/// Small helpers for the active Chrome tab.
-enum ChromeTab {
+/// Talks to the Salesforce tab in Chrome, wherever it is (not just the tab in front).
+enum SalesforceChrome {
+    enum ListResult {
+        case list([CallList.Record])
+        case noList
+        case noSalesforceTab
+        case blocked
+    }
+
     private static var chromeRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty
     }
 
-    private static func run(_ source: String) -> String? {
+    /// Runs an AppleScript action against the Salesforce tab. The action uses `theTab`
+    /// (and `theWindow`, `theIndex`). Prefers a Salesforce tab that's showing; else the first one found.
+    /// Returns "NOSF" if no Salesforce tab is open, nil if the script failed.
+    private static func run(_ action: String) -> String? {
         guard chromeRunning else { return nil }
+        let source = """
+        tell application "Google Chrome"
+            set theTab to missing value
+            set theWindow to missing value
+            set theIndex to 0
+            repeat with w in windows
+                if (URL of active tab of w) contains ".force.com" then
+                    set theTab to active tab of w
+                    set theWindow to w
+                    set theIndex to active tab index of w
+                    exit repeat
+                end if
+            end repeat
+            if theTab is missing value then
+                repeat with w in windows
+                    set i to 0
+                    repeat with t in tabs of w
+                        set i to i + 1
+                        if (URL of t) contains ".force.com" then
+                            set theTab to t
+                            set theWindow to w
+                            set theIndex to i
+                            exit repeat
+                        end if
+                    end repeat
+                    if theTab is not missing value then exit repeat
+                end repeat
+            end if
+            if theTab is missing value then return "NOSF"
+            \(action)
+        end tell
+        """
         return NSAppleScript(source: source)?.executeAndReturnError(nil).stringValue
     }
 
     static func url() -> String? {
-        run("""
-        tell application "Google Chrome"
-            if (count of windows) is 0 then return ""
-            return URL of active tab of front window
-        end tell
-        """).flatMap { $0.isEmpty ? nil : $0 }
+        guard let r = run("return URL of theTab"), r != "NOSF", !r.isEmpty else { return nil }
+        return r
     }
 
+    static func title() -> String? {
+        guard let r = run("return title of theTab"), r != "NOSF", !r.isEmpty else { return nil }
+        return r
+    }
+
+    /// Runs JavaScript in the Salesforce tab. nil if Chrome blocks it or there's no Salesforce tab.
+    static func javascript(_ js: String) -> String? {
+        guard !js.contains("\""), !js.contains("\\") else { return nil } // keep the script safe to embed
+        guard let r = run("return execute theTab javascript \"\(js)\""), r != "NOSF" else { return nil }
+        return r
+    }
+
+    /// Shows the Salesforce tab and goes to an address.
     static func open(_ url: String) -> Bool {
         guard url.hasPrefix("https://"), !url.contains("\"") else { return false }
         return run("""
-        tell application "Google Chrome"
-            if (count of windows) is 0 then return "no"
-            set URL of active tab of front window to "\(url)"
-            return "ok"
-        end tell
+        set URL of theTab to "\(url)"
+        set active tab index of theWindow to theIndex
+        set index of theWindow to 1
+        return "ok"
         """) == "ok"
     }
 
-    /// Clicks the link for this record on the page (split view or table view). False if it isn't on screen.
+    /// Clicks the record's link in the list (split view or table view) and shows the tab.
     static func click(recordID: String) -> Bool {
         guard recordID.allSatisfy({ $0.isLetter || $0.isNumber }) else { return false }
-        let js = "(function(){var links=document.querySelectorAll('a[href*=lightning]');"
+        let js = deepFind + "(function(){var links=deep(listRoot()||document,'a[href]',[]);"
             + "for(var i=0;i<links.length;i++){var a=links[i];"
-            + "if(a.href.indexOf('\(recordID)')>=0&&(a.textContent||'').trim()){a.click();return 'ok';}}"
+            + "if(a.getClientRects().length&&a.href.indexOf('\(recordID)')>=0&&(a.textContent||'').trim()){a.click();return 'ok';}}"
             + "return 'no';})()"
-        return run("""
-        tell application "Google Chrome"
-            if (count of windows) is 0 then return "no"
-            return execute active tab of front window javascript "\(js)"
-        end tell
-        """) == "ok"
+        guard javascript(js) == "ok" else { return false }
+        _ = run("""
+        set active tab index of theWindow to theIndex
+        set index of theWindow to 1
+        return "ok"
+        """)
+        return true
     }
 
-    /// Record links on a list view, in screen order, without duplicates.
-    static func listRecords() -> [CallList.Record]? {
-        // Plain JavaScript with single quotes only, so it drops into AppleScript without escaping.
-        let js = "JSON.stringify((function(){var seen={},out=[];"
-            + "document.querySelectorAll('a[href*=lightning]').forEach(function(a){"
-            + "var h=a.href,k=h.indexOf('/lightning/r/');if(k<0)return;"
-            + "var p=h.substring(k+13).split('/');"
-            + "var id=(p.length>2&&p[2].indexOf('view')==0)?p[1]:p[0];"
+    /// The visible list's Lead and Contact rows, in screen order.
+    static func readList() -> ListResult {
+        guard chromeRunning, let tabURL = url() else { return .noSalesforceTab }
+        guard tabURL.contains("lightning") else { return .noList }
+        let js = deepFind + "(function(){var root=listRoot();"
+            + "var onList=location.href.indexOf('/list')>=0||location.href.indexOf('filterName=')>=0;"
+            + "if(!root&&!onList)return JSON.stringify({ok:true,records:[]});"
+            + "var anchors=deep(root||document,'a[href]',[]),seen={},out=[];"
+            + "for(var k=0;k<anchors.length;k++){var a=anchors[k];"
+            + "if(!a.getClientRects().length)continue;"
+            + "var h=a.href||'',p=h.indexOf('/lightning/r/');if(p<0)continue;"
+            + "var parts=h.substring(p+13).split('/');"
+            + "var id=(parts.length>2&&parts[2].indexOf('view')==0)?parts[1]:parts[0];"
             + "var name=(a.textContent||'').trim();"
-            + "if(name&&!seen[id]&&(id.indexOf('00Q')==0||id.indexOf('003')==0)){seen[id]=1;out.push({id:id,name:name,url:h});}"
-            + "});return out;})())"
-        guard let raw = run("""
-        tell application "Google Chrome"
-            if (count of windows) is 0 then return ""
-            return execute active tab of front window javascript "\(js)"
-        end tell
-        """), let data = raw.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode([CallList.Record].self, from: data)
+            + "if(!name||seen[id])continue;"
+            + "if(id.indexOf('00Q')!=0&&id.indexOf('003')!=0)continue;"
+            + "seen[id]=1;out.push({id:id,name:name,url:h});}"
+            + "return JSON.stringify({ok:true,records:out});})()"
+        guard let raw = javascript(js) else { return .blocked }
+        struct Answer: Decodable { let ok: Bool; let records: [CallList.Record] }
+        guard let data = raw.data(using: .utf8), let answer = try? JSONDecoder().decode(Answer.self, from: data) else {
+            return .blocked
+        }
+        return answer.records.isEmpty ? .noList : .list(answer.records)
     }
+
+    /// JavaScript helpers: `deep` searches inside Salesforce's sealed components (shadow roots);
+    /// `listRoot` finds the visible split view list panel, if there is one.
+    /// Single quotes only, so it drops into AppleScript without escaping.
+    private static let deepFind = "function deep(root,sel,out){var l=root.querySelectorAll(sel);"
+        + "for(var i=0;i<l.length;i++)out.push(l[i]);"
+        + "var all=root.querySelectorAll('*');"
+        + "for(var j=0;j<all.length;j++){if(all[j].shadowRoot)deep(all[j].shadowRoot,sel,out);}"
+        + "return out;}"
+        + "function listRoot(){var s=deep(document,'.slds-split-view',[]);"
+        + "for(var i=0;i<s.length;i++){if(s[i].getClientRects().length)return s[i];}return null;}"
 }

@@ -4,35 +4,18 @@ import AppKit
 /// e.g. "Jane Doe | Lead | Salesforce" -> "Lead \"Jane Doe\"".
 /// This is not a Salesforce integration: it only reads the tab title, with your permission.
 enum SalesforceTab {
-    private static let script = NSAppleScript(source: """
-    tell application "Google Chrome"
-        if (count of windows) is 0 then return ""
-        return title of active tab of front window
-    end tell
-    """)
-
     /// Runs on the main thread. Returns nil if Chrome isn't open or no record is showing.
+    /// Reads the Salesforce tab even when another tab (like LinkedIn) is in front.
     @MainActor
     static func currentRecord() -> String? {
-        // Never launch Chrome just to read a title.
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty == false,
-              let title = script?.executeAndReturnError(nil).stringValue else { return nil }
-        return parse(title)
+        SalesforceChrome.title().flatMap(parse)
     }
-
-    private static let pageScript = NSAppleScript(source: """
-    tell application "Google Chrome"
-        if (count of windows) is 0 then return ""
-        return execute active tab of front window javascript "document.body.innerText.slice(0, 12000)"
-    end tell
-    """)
 
     /// The visible text of the open Salesforce record (title, company, notes...), trimmed.
     /// Needs Chrome's View > Developer > "Allow JavaScript from Apple Events". Returns nil without it.
     @MainActor
     static func pageText() -> String? {
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty == false,
-              let raw = pageScript?.executeAndReturnError(nil).stringValue, !raw.isEmpty else { return nil }
+        guard let raw = SalesforceChrome.javascript("document.body.innerText.slice(0, 12000)"), !raw.isEmpty else { return nil }
         let lines = raw.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { $0.count > 1 }
