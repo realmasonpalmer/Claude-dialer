@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Decides which screen to show: audio check (first run), keys (once), then the coach.
@@ -112,6 +113,8 @@ struct CoachView: View {
     var onAudioCheck: () -> Void
     var onKeys: () -> Void
     @EnvironmentObject var coach: CoachModel
+    @EnvironmentObject var campaigns: CampaignStore
+    @Environment(\.openWindow) private var openWindow
     @State private var showTranscript = false
 
     var body: some View {
@@ -129,12 +132,66 @@ struct CoachView: View {
             transcript
         }
         .padding(18)
-        .onAppear { coach.activate(true) }
+        .onAppear {
+            coach.use(campaigns.selected)
+            coach.activate(true)
+        }
         .onDisappear { coach.activate(false) }
+        .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
         .animation(.easeInOut(duration: 0.2), value: coach.status)
     }
 
     private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                campaignMenu
+                Spacer()
+                Menu {
+                    Button("Run audio check", action: onAudioCheck)
+                    Button("Change API keys", action: onKeys)
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+            statusRow
+        }
+    }
+
+    /// Pick a campaign, or create and edit one. Locked during a call.
+    private var campaignMenu: some View {
+        Menu {
+            ForEach(campaigns.campaigns) { campaign in
+                Button {
+                    campaigns.selectedID = campaign.id
+                } label: {
+                    if campaign.id == campaigns.selected.id {
+                        Label(campaign.name, systemImage: "checkmark")
+                    } else {
+                        Text(campaign.name)
+                    }
+                }
+            }
+            Divider()
+            Button("Edit this campaign...") { edit(campaigns.selected) }
+            Button("New campaign...") { edit(Campaign()) }
+        } label: {
+            Text(campaigns.selected.name).font(.headline).lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: false, vertical: true)
+        .disabled(coach.status != .ready)
+        .help(coach.status == .ready ? "Choose or edit a campaign" : "Finish the call to switch campaigns")
+    }
+
+    private func edit(_ campaign: Campaign) {
+        campaigns.editing = campaign
+        openWindow(id: "campaign-editor")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    private var statusRow: some View {
         HStack(spacing: 8) {
             Circle().fill(statusColor).frame(width: 8, height: 8)
             Text(statusText).font(.callout.weight(.medium))
@@ -145,14 +202,6 @@ struct CoachView: View {
                     .background(Color.accentColor.opacity(0.18), in: Capsule())
             }
             Spacer()
-            Menu {
-                Button("Run audio check", action: onAudioCheck)
-                Button("Change API keys", action: onKeys)
-            } label: {
-                Image(systemName: "gearshape")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
     }
 

@@ -62,10 +62,7 @@ enum CoachPrompt {
         Or, when no help is needed:
         SKIP
 
-        # Campaign: \(campaign.name)
-        Objective: \(campaign.objective)
-
-        \(campaign.playbook)
+        \(campaign.promptText)
         """
     }
 
@@ -156,8 +153,16 @@ final class CoachModel: ObservableObject {
     @Published private(set) var problem: String?
     @Published private(set) var thinking = false
 
-    let campaign = Campaign.clarityDiscovery
-    private lazy var system = CoachPrompt.system(for: campaign)
+    @Published private(set) var campaign = Campaign.clarityDiscovery
+    private var system = CoachPrompt.system(for: .clarityDiscovery)
+
+    /// Switches (or refreshes) the campaign. Takes effect right away between calls.
+    func use(_ next: Campaign) {
+        guard next != campaign else { return }
+        campaign = next
+        system = CoachPrompt.system(for: next)
+        if status == .ready { prepareOpener() }
+    }
 
     private let capture = CaptureEngine()
     private let streams = StreamBox()

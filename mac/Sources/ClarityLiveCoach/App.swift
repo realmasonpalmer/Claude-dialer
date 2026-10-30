@@ -5,25 +5,23 @@ import SwiftUI
 struct ClarityLiveCoachApp: App {
     @StateObject private var proof = ProofModel()
     @StateObject private var coach = CoachModel()
+    @StateObject private var campaigns = CampaignStore()
 
     var body: some Scene {
         WindowGroup("Clarity Live Coach") {
             RootView()
                 .environmentObject(proof)
                 .environmentObject(coach)
-                .onAppear { keepOnTop() }
+                .environmentObject(campaigns)
+                .onAppear { keepWindowsOnTop() } // float above Salesforce
         }
         .windowResizability(.contentSize)
-    }
 
-    /// Float above Salesforce so the coach is always visible.
-    private func keepOnTop() {
-        DispatchQueue.main.async {
-            for window in NSApplication.shared.windows {
-                window.level = .floating
-                window.collectionBehavior.insert(.canJoinAllSpaces)
-            }
+        Window("Campaign", id: "campaign-editor") {
+            CampaignEditorView()
+                .environmentObject(campaigns)
         }
+        .defaultSize(width: 600, height: 760)
     }
 }
 

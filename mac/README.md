@@ -9,7 +9,10 @@ What it does today:
    shows live text for both sides, and shows one line to say plus a short tip. When the call
    ends it clears and gets the next opener ready.
 
-Not built yet: the campaign editor (one built-in Clarity campaign for now).
+4. **Campaigns**: click the campaign name at the top of the coach. Pick one, edit it, or make a new one.
+   Paste any cold call script, set the goal, and click "Sort it into sections for me". Claude fills in
+   the sections (opening, discovery, objections, closing...). Edit anything, then Save. Campaigns are saved in
+   ~/Library/Application Support/Clarity Live Coach/Campaigns.
 
 ## Needs
 
