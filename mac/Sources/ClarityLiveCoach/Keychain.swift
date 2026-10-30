@@ -7,6 +7,7 @@ enum Keychain {
 
     enum Key: String {
         case deepgram, anthropic
+        case calendarFeed // the booking calendar's iCal address (can be a secret link)
     }
 
     /// Read each key once per launch. macOS may ask for the login password on a
@@ -34,6 +35,16 @@ enum Keychain {
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    static func delete(_ key: Key) {
+        lock.lock(); cache[key] = nil; lock.unlock()
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key.rawValue,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     @discardableResult
