@@ -298,8 +298,9 @@ struct SalesforceConnectView: View {
                         Text("2. Name: Clarity Live Coach. Contact email: yours.")
                         Text("3. Check Enable OAuth. Callback URL: \(Salesforce.redirectURI)")
                         Text("4. Scopes: \"Manage user data via APIs (api)\" and \"Perform requests at any time (refresh_token, offline_access)\".")
-                        Text("5. Check \"Require Proof Key for Code Exchange (PKCE)\". Uncheck \"Require secret for Web Server Flow\".")
-                        Text("6. Create. Then open it > Settings > OAuth Settings > Consumer Key and Secret. Copy the Consumer Key here.")
+                        Text("5. Check \"Require Proof Key for Code Exchange (PKCE)\". Uncheck \"Require secret for Web Server Flow\" and \"Require secret for Refresh Token Flow\".")
+                        Text("6. Create. Then open it > Settings > OAuth Settings > Consumer Key and Secret. Salesforce emails a code. Copy the Consumer Key here.")
+                        Text("7. Wait 10 minutes. New apps take a few minutes to start working.")
                     }
                     .font(.caption)
                     .textSelection(.enabled)

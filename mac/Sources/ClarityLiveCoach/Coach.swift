@@ -176,6 +176,8 @@ enum CoachPrompt {
 // MARK: - Voicemail follow-ups
 
 struct FollowUp: Equatable {
+    /// Which record this is for, so a 2nd-try voicemail keeps what the 1st try already sent.
+    var key: String?
     var prospect: String?
     var text = ""
     var linkedin = ""
@@ -378,6 +380,7 @@ final class CoachModel: ObservableObject {
     /// Ends the call (if any) and opens the next lead on the rep's list. The coach then
     /// picks up the new record and writes a fresh opener and voicemail for it.
     func previousLead() {
+        cancelAutoNext()
         if leads.isActive {
             if status != .ready { endCall() }
             Task { await leads.back() }
@@ -392,6 +395,7 @@ final class CoachModel: ObservableObject {
     }
 
     func nextLead() {
+        cancelAutoNext()
         if leads.isActive {
             if status != .ready { endCall() }
             Task { [weak self] in
@@ -441,6 +445,7 @@ final class CoachModel: ObservableObject {
     /// Calls the same person again right away.
     func redial() {
         guard status == .ready, currentAttemptKey != nil else { return }
+        cancelAutoNext()
         if leads.isActive {
             dial()
         } else if SalesforceChrome.clickToDial() {
@@ -637,9 +642,49 @@ final class CoachModel: ObservableObject {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        // 2nd try went to voicemail: they've had both calls. Move on by itself.
+        let moveOn = sawVoicemail && currentAttempts >= 2
         nextCall()
         waitingForNewCall = true
         endedAt = Date()
+        if moveOn { startAutoNext() }
+    }
+
+    // MARK: Auto next
+
+    /// Seconds left before the app moves to the next lead by itself. Nil = not counting.
+    @Published private(set) var autoNextIn: Int?
+    private var autoNextTask: Task<Void, Never>?
+
+    /// Who's next, for the countdown banner.
+    var nextLeadName: String? {
+        if leads.isActive { return leads.nextRow?.name }
+        if case .ready(let name, _, _) = callList.state { return name }
+        return nil
+    }
+
+    /// Counts down 5 seconds, then loads the next lead (and calls them, if "Next calls right away" is on).
+    private func startAutoNext() {
+        guard nextLeadName != nil else { return }
+        autoNextTask?.cancel()
+        autoNextTask = Task { [weak self] in
+            for left in stride(from: 5, through: 1, by: -1) {
+                self?.autoNextIn = left
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                // A call started some other way: stop counting.
+                if self.status != .ready { self.cancelAutoNext(); return }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.nextLead()
+        }
+    }
+
+    /// The rep clicked Wait (or moved on by hand).
+    func cancelAutoNext() {
+        autoNextTask?.cancel()
+        autoNextTask = nil
+        autoNextIn = nil
     }
     private var endedAt = Date.distantPast
 
@@ -719,6 +764,8 @@ final class CoachModel: ObservableObject {
         openerBeforeScreener = nil
         voicemailActive = false
         mailboxFullShown = false
+        followUpThisCall = false
+        cancelAutoNext()
         if voicemailScript == nil { prepareVoicemail() }
         firstProspectAt = nil
         lastWordsAt = nil
@@ -950,11 +997,12 @@ final class CoachModel: ObservableObject {
         startFollowUp()
         if mailboxFull {
             mailboxFullShown = true
-            show(Suggestion(say: "Mailbox is full. Hang up and dial the next one.", cue: "No message possible.",
+            show(Suggestion(say: currentAttempts < 2 ? "Mailbox is full. Hang up and click Redial." : "Mailbox is full. Hang up. The next call starts by itself.",
+                            cue: "No message possible.",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
         } else if var script = voicemailScript {
             if currentAttempts < 2 {
-                script.cue = "1st try: hang up and Redial now (Command-R). Leave this on the 2nd try."
+                script.cue = "1st try: hang up and click Redial. Leave this message on the 2nd try."
             }
             show(script, id: seq, kind: .voicemail)
         } else {
@@ -972,24 +1020,31 @@ final class CoachModel: ObservableObject {
             return String(c[c.index(after: open)..<close])
         }
         // A fresh card for every voicemail, so nothing (like an old error) carries over.
+        // Same person as last time (2nd try): keep what was already sent, so they don't get it twice.
         let lead = leads.isActive ? leads.details : nil
-        followUp = FollowUp(prospect: lead?.name ?? name,
+        let key = recordKey()
+        let earlier = followUp?.key != nil && followUp?.key == key ? followUp : nil
+        followUpThisCall = true
+        followUp = FollowUp(key: key,
+                            prospect: lead?.name ?? name,
+                            text: earlier?.text ?? "",
+                            linkedin: earlier?.linkedin ?? "",
+                            textDone: earlier?.textDone ?? false,
+                            linkedinDone: earlier?.linkedinDone ?? false,
                             phone: lead?.callNumber ?? Aircall.phone(in: recordDetails) ?? "",
                             linkedinURL: lead?.linkedIn ?? Self.linkedInProfile(details: recordDetails))
         if let script = voicemailScript { fillFollowUp(from: script) }
         else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
     }
 
+    private var followUpThisCall = false
+
+    /// Fills in the text and LinkedIn note. The rep sends each one with a button.
     private func fillFollowUp(from s: Suggestion) {
-        guard var f = followUp else { return }
-        let newText = f.text.isEmpty && !s.textMessage.isEmpty
+        guard followUpThisCall, var f = followUp else { return }
         if f.text.isEmpty { f.text = s.textMessage }
         if f.linkedin.isEmpty { f.linkedin = s.linkedin }
         followUp = f
-        // Optional: send by itself once the text is written (off unless the rep turns it on).
-        if newText, UserDefaults.standard.bool(forKey: "autoSendText"), Aircall.isSetUp, !f.phone.isEmpty {
-            sendFollowUpText()
-        }
     }
 
     /// Sends the follow-up text through Aircall and checks it off.

@@ -191,7 +191,6 @@ struct AircallSetupView: View {
     @State private var selectedUser = Aircall.userID ?? 0
     @State private var status: String?
     @State private var working = false
-    @AppStorage("autoSendText") private var autoSend = false
     @State private var testPhone = ""
 
     var body: some View {
@@ -257,8 +256,7 @@ struct AircallSetupView: View {
                 }
 
                 Divider()
-                Toggle("Send the text by itself after a voicemail", isOn: $autoSend)
-                Text("Off: you click Send (recommended). On: it sends as soon as the voicemail is detected. Texting rules still apply: skip Do Not Call leads and stop if anyone replies STOP. Not legal advice.")
+                Text("After a 2nd-try voicemail, you get a Send text button. Do Not Call leads are skipped. If anyone texts back STOP, don't text them again.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 

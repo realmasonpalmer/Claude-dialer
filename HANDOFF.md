@@ -69,6 +69,12 @@ Older, unused parts of the repo: `salesforce/` (an Open CTI dialer) and `server/
 - Aircall logs calls as Tasks owned by the shared **Leadership** user; the person is in `aircall__Made_By__c` (e.g. "Mason Palmer"). Dashboard formulas (`Call_Connect__c`, `Call_Outcome__c`, ...) require `aircall__CallId__c`.
 - Shared logins exist (Leadership, Consultant). Mason is not a Salesforce user.
 
+## Done 2026-10-30 (second chat)
+
+- After any voicemail: the follow-up card shows a **Send text** button and an **Open profile + copy note** button. No auto-send (the old toggle is gone; Mason wants buttons). A 2nd-try card keeps what the 1st try already sent, so no double texts.
+- After a **2nd-try voicemail**, when the call ends, a bar says "Calling [next] in 5" and counts down, then runs Next. A **Wait** button stops it. Any Redial/Next/Back click cancels it.
+- Help text and cues now name buttons, not keyboard shortcuts.
+
 ## Next tasks (Mason said yes to 1 and 2)
 
 1. **After a 2nd-try voicemail:** send the follow-up text automatically, then move on to the next lead when the call ends. (There's already an optional "Send the text by itself" toggle in Aircall settings, off by default because of texting rules; Mason wants less manual work. Keep a way to skip Do Not Call.)

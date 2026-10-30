@@ -154,6 +154,7 @@ struct CoachView: View {
             }
             warnings
             Spacer(minLength: 0)
+            if let left = coach.autoNextIn { autoNextBar(left) }
             navigation
         }
         .padding(.horizontal, margin)
@@ -202,7 +203,7 @@ struct CoachView: View {
                 }
                 .controlSize(.small)
                 .keyboardShortcut("e", modifiers: .command)
-                .help("Call's over: reset for the next one (Command-E)")
+                .help("Call's over: reset for the next one")
             }
             if updater.updateAvailable && !updater.updating && coach.status == .ready {
                 Button("Update") { updater.update() }
@@ -497,6 +498,20 @@ struct CoachView: View {
         .foregroundStyle(warning)
     }
 
+    /// After a 2nd-try voicemail: "Calling Jane in 4", with a button to stay.
+    private func autoNextBar(_ left: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "timer")
+            Text("\(nextDials ? "Calling" : "Next:") \(coach.nextLeadName ?? "next lead") in \(left)")
+                .font(.callout.weight(.semibold))
+            Spacer(minLength: 0)
+            Button("Wait") { coach.cancelAutoNext() }
+                .controlSize(.large)
+        }
+        .padding(10)
+        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     // MARK: Navigation: always here, always the same two buttons
 
     @ViewBuilder private var navigation: some View {
@@ -704,8 +719,8 @@ struct HelpView: View {
                 section("Calling from the app (recommended)", [
                     "Gear > Connect Salesforce, then pick your list at the top.",
                     "Gear > Aircall calling and texting: pick your number and yourself.",
-                    "Keep the Aircall desktop app open. Call (Command-Return) dials the lead on screen.",
-                    "Next & call (Command-N) loads the next lead and dials right away. Turn it off in the gear menu.",
+                    "Keep the Aircall desktop app open. The big Call button dials the lead on screen.",
+                    "Call [next name] loads the next lead and dials right away. Turn it off in the gear menu.",
                     "Calls log to Salesforce through Aircall, made by you, like always.",
                 ])
                 section("Calling", [
@@ -722,13 +737,11 @@ struct HelpView: View {
                     "In Chrome's top menu: View > Developer > Allow JavaScript from Apple Events.",
                     "It lets the coach read the open lead and click Next for you.",
                 ])
-                section("Shortcuts", [
-                    "Command-N: Call the next person",
-                    "Command-R: Redial (double dial)",
-                    "Command-T: Send the follow-up text",
-                    "Command-L: Open LinkedIn with the note copied",
-                    "Command-E: End call (the coach also ends it when Aircall says the call is over)",
-                    "Command-J: a different line now",
+                section("Double dial", [
+                    "1st try, no answer or voicemail: hang up and click Redial.",
+                    "2nd try, voicemail: leave the message on screen.",
+                    "After a voicemail: click Send text, then Open profile + copy note.",
+                    "When the call ends, the app calls the next person in 5 seconds. Click Wait to stay.",
                 ])
                 HStack {
                     Spacer()
@@ -886,7 +899,7 @@ struct FollowUpCard: View {
                     }
                 }
                 if f.linkedinDone {
-                    Text("On their profile: Connect > Add a note > Command-V > Send.")
+                    Text("On their profile: click Connect, then Add a note. Right-click the box, click Paste, then Send.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
