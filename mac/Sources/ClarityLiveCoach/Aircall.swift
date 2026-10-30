@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Sends follow-up texts through Aircall's official API, from the rep's Aircall number.
-/// Uses Aircall's "native send" (send in agent conversation), so the text also shows in the Aircall app.
+/// Uses Aircall's "Send Message in agent conversation" (native send), so the text also shows in the Aircall app.
 /// Needs Aircall's Professional plan and a number registered for texting (US A2P).
 enum Aircall {
     struct Number: Identifiable, Hashable {
@@ -10,7 +10,7 @@ enum Aircall {
         let digits: String
     }
 
-    /// Aircall answered 404: that address or number doesn't exist for this account.
+    /// Aircall answered 400/404/422: bad number, line or message (detail says which).
     struct NotFound: Error { let detail: String }
 
     struct AircallError: LocalizedError {
@@ -43,14 +43,20 @@ enum Aircall {
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         if code == 404 || code == 400 || code == 422 {
-            // Wrong address or wrong field names for this account: worth trying the next format.
-            throw NotFound(detail: "\(code) " + (String(data: data, encoding: .utf8).map { String($0.prefix(160)) } ?? ""))
+            throw NotFound(detail: "\(code) " + (String(data: data, encoding: .utf8).map { String($0.prefix(200)) } ?? ""))
         }
         guard (200..<300).contains(code) else {
             let detail = (json["message"] as? String) ?? (json["error"] as? String) ?? String(data: data, encoding: .utf8) ?? ""
-            throw AircallError(message: code == 401 || code == 403
-                ? "Aircall said no (\(code)). Check the API keys, and that your plan includes API texting."
-                : "Aircall error \(code): \(detail.prefix(200))")
+            let lower = detail.lowercased()
+            let message: String
+            if code == 401 { message = "Aircall didn't accept the API keys (401). Check the API ID and token." }
+            else if lower.contains("messaging public api is not enabled") { message = "Texting through the API isn't turned on for your Aircall account. It needs the Professional plan; ask your Aircall admin or Customer Success Manager." }
+            else if lower.contains("public api sms is not enabled") { message = "API texting isn't turned on for this Aircall number. Ask your Aircall admin to enable it." }
+            else if lower.contains("line does not belong") { message = "That number isn't on your Aircall account. Pick it again in Aircall texting." }
+            else if lower.contains("limit") { message = "This Aircall number hit its texting limit. Try again later." }
+            else if lower.contains("not verified") || lower.contains("not active") { message = "Your Aircall account isn't verified or active for texting yet." }
+            else { message = "Aircall error \(code): \(detail.prefix(200))" }
+            throw AircallError(message: message)
         }
         return json
     }
@@ -72,26 +78,26 @@ enum Aircall {
     static func sendText(to phone: String, body: String) async throws {
         guard let numberID else { throw AircallError(message: "Pick which Aircall number sends texts.") }
         guard let to = e164(phone) else { throw AircallError(message: "That phone number doesn't look right.") }
-        // "In agent conversation" (native) sends show in the Aircall app and need no setup on the number.
-        // Aircall's docs show two shapes (per-number path with to/body, or a shared path with
-        // lineId/externalNumber/text, as their WhatsApp version uses). Try each, stop at the first success.
-        let attempts: [(path: String, body: [String: Any])] = [
-            ("/numbers/\(numberID)/messages/native/send", ["to": to, "body": body]),
-            ("/messages/send/sms/native", ["lineId": numberID, "externalNumber": to, "text": body]),
-            ("/messages/native/send", ["lineId": numberID, "externalNumber": to, "text": body]),
-            ("/numbers/\(numberID)/messages/native/send", ["externalNumber": to, "text": body]),
-        ]
-        var tried: [String] = []
-        for attempt in attempts {
-            do {
-                _ = try await request(attempt.path, method: "POST", body: attempt.body)
-                UserDefaults.standard.set(attempt.path, forKey: "aircallWorkingPath") // for troubleshooting
-                return
-            } catch let notFound as NotFound {
-                tried.append("\(attempt.path): \(notFound.detail)")
-            }
+        // Aircall API reference: "Send Message in agent conversation".
+        // POST /v1/numbers/:id/messages/native/send  { to, body }. No setup needed on the number;
+        // the text shows in the Aircall app so anyone on the line can continue the conversation.
+        do {
+            _ = try await request("/numbers/\(numberID)/messages/native/send", method: "POST", body: ["to": to, "body": body])
+        } catch let failed as NotFound {
+            throw AircallError(message: plainWords(failed.detail))
         }
-        throw AircallError(message: "Aircall couldn't send (number \(numberID)). " + tried.joined(separator: " | "))
+    }
+
+    /// Aircall's documented errors, in plain words.
+    private static func plainWords(_ detail: String) -> String {
+        let d = detail.lowercased()
+        if d.hasPrefix("404") { return "Aircall can't find that number (404). Pick your number again in Aircall texting." }
+        if d.contains("not sms capable") { return "That Aircall number (or their phone) can't receive texts." }
+        if d.contains("not covered") || d.contains("carrier line") { return "Aircall can't text that phone number." }
+        if d.contains("ivr") { return "That Aircall number is a phone menu line and can't text. Pick another number." }
+        if d.contains("not allowed") { return "Aircall blocked texting this person (they may have opted out)." }
+        if d.contains("1600") { return "The text is too long." }
+        return "Aircall said: \(detail)"
     }
 
     /// "(555) 555-0123" -> "+15555550123". US and Canada only.
