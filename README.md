@@ -1,47 +1,49 @@
-# Clarity Dialer: Claude AI Sales Copilot
+# Clarity Live Coach
 
-Two tools. Use either one.
+A **Mac app** that sits next to Aircall and Salesforce and coaches a cold caller live.
+It is **not** a dialer, a phone system, a Salesforce plugin, or an AI that talks on calls.
 
-- **Call Coach** (start here): a web page that listens to your call through one mic
-  and shows the next line to say. Works with any phone. Setup: [docs/COACH.md](docs/COACH.md).
-- **Dialer**: a phone widget inside Salesforce with click-to-call through Twilio.
+- **Calls happen in Aircall** (the Aircall panel in Salesforce, or the Aircall desktop app).
+- **Leads live in Salesforce.** The app reads them; it never changes Salesforce.
+- **Claude coaches the rep privately.** It never speaks to the prospect.
 
-Claude coaches the rep in private. Claude never speaks to the prospect.
+The whole app is in [`mac/`](mac/) (Swift + SwiftUI, macOS 14.4+).
+Start a new chat by reading [`HANDOFF.md`](HANDOFF.md).
 
-## Status
+## What the app does
 
-| Milestone | State |
-| --- | --- |
-| 1. Phone widget + click-to-call test call | Built. Needs setup and a live test call. |
-| 2. Live transcript (consent first) | Next |
-| 3. Claude coaching | After transcript |
-| 4. AI summary, disposition, follow-up | Basic manual version is in milestone 1 |
-| 5. Warm transfer to Mason | Later |
-| 6. Dashboard | Later |
+1. **Hears both sides of the call.** Your mic = you. The call audio from Chrome or the Aircall
+   desktop app = the prospect. Live transcript with Deepgram.
+2. **Shows one line to say next** (big), with a short tip. Lines stay until you've said them.
+   Stage bar: Opener > Discovery > Value > Close.
+3. **Works your list.** "Call [name]" opens the next lead and dials it through Aircall.
+   **Double dial:** no answer on the 1st try shows "Redial [name]"; after the 2nd try,
+   "Call [next person]". End call button; calls also end when Aircall says so.
+4. **Catches voicemails and call screeners** instantly. Voicemail script is written ahead for each
+   lead (leave it on the 2nd try). Screener line: "This is [you] calling for [them]."
+5. **Follow-ups after a voicemail:** one-click text through Aircall, and LinkedIn opens on
+   their profile with the connection note copied.
+6. **Books meetings on Oliver's Calendly:** offers two real open times, new ones if declined.
+7. **Campaigns:** paste a script, set the goal; Claude sorts it into sections.
+8. **Openers:** 5 research-backed openers, rotated by results, with a scoreboard.
+9. **Script Lab:** every call is scored; Claude suggests script edits with the numbers behind them.
 
-## What is in this repo
+Two ways it finds the lead you're calling:
+- **Chrome version (works today):** reads the Salesforce tab in Chrome, learns your list
+  (split view or table view), and clicks the phone number so Aircall dials.
+- **Salesforce-list version (optional, needs setup):** connect Salesforce once and pick a list
+  view inside the app; calls go through the Aircall desktop app.
 
-```
-server/       Node + TypeScript backend: Call Coach (mic -> Deepgram -> Claude) and dialer (Twilio)
-server/public The Call Coach web page
-server/playbook.md  What the coach knows about Clarity. Edit in plain English.
-salesforce/   Salesforce metadata: phone page, Apex, settings, permission set
-docs/         Plan, costs, risks and the setup steps
-```
+## Install and update
 
-## How a call works
+- **First time:** download this branch as a ZIP, open Terminal in the `mac` folder, run
+  `bash scripts/install.sh`. It builds the app, puts it in Applications, and opens it.
+- **After that:** click the blue **Update** button in the app (shows between calls when
+  there's a new version). No Terminal.
+- Opening the app: Applications, Spotlight ("Clarity"), or the Dock. Never Terminal.
 
-1. Rep clicks a phone number on a Lead or Contact.
-2. The phone panel opens in the utility bar.
-3. Salesforce checks: Do Not Call, suppression list, calling hours, number is on the record.
-4. If all good, the backend gives a one-time ticket for that number only.
-5. The browser dials through Twilio. The rep talks on their headset.
-6. When the call ends, a Task is saved right away. The rep picks what happened and hits Save.
+## Out of scope (removed)
 
-Setup: [docs/SETUP.md](docs/SETUP.md). Plan, costs and risks: [docs/PLAN.md](docs/PLAN.md).
-
-## Run the backend tests
-
-```
-cd server && npm install && npm test
-```
+Earlier ideas that are **no longer part of this project** and were deleted from the repo:
+a Salesforce phone widget (Open CTI + Twilio) meant to replace Aircall, a Twilio dialer
+server, and a web-page coach. Don't bring them back unless asked.

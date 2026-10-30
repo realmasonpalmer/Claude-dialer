@@ -19,7 +19,9 @@ A native macOS app, **Clarity Live Coach** (`mac/`, Swift + SwiftUI, macOS 14.4+
 - asks Claude for one line to say next plus a short tip,
 - works through the rep's Salesforce lead list and dials.
 
-Older, unused parts of the repo: `salesforce/` (an Open CTI dialer) and `server/` (a web coach). Leave them alone unless asked.
+**Scope:** the app coaches and helps work the list. Calls still go through Aircall; leads still live in Salesforce.
+Earlier ideas were deleted from the repo on purpose and are out of scope: a Salesforce phone widget (Open CTI + Twilio)
+meant to replace Aircall, a Twilio dialer server, and a web-page coach. Don't rebuild them unless Mason asks.
 
 ## How Mason installs and updates
 
