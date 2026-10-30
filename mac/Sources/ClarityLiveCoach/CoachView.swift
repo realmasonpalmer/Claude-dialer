@@ -244,7 +244,7 @@ struct CoachView: View {
                     .lineLimit(2)
             }
             HStack {
-                Text(coach.kind == .opener ? "WHEN THEY PICK UP" : "SAY NEXT")
+                Text(coach.kind == .opener ? "WHEN THEY PICK UP" : coach.kind == .screener ? "CALL SCREENER" : "SAY NEXT")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()

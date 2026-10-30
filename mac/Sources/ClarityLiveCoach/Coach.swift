@@ -30,7 +30,7 @@ struct Suggestion: Equatable {
 // MARK: - Prompt
 
 enum CoachPrompt {
-    static let stages = ["Opener", "Gatekeeper", "Voicemail", "Discovery", "Objection", "Closing", "Goal reached", "Exit"]
+    static let stages = ["Opener", "Screener", "Gatekeeper", "Voicemail", "Discovery", "Objection", "Closing", "Goal reached", "Exit"]
 
     /// Stays byte-for-byte the same for a campaign, so Claude can cache it.
     static func system(for campaign: Campaign) -> String {
@@ -53,6 +53,8 @@ enum CoachPrompt {
         8. Move toward the campaign objective. Once it is reached, help the rep confirm details and wrap up. Stop selling.
         9. After two clear no's, a request not to be called, or no fit: help the rep exit politely.
         10. If it is voicemail or a gatekeeper, use the campaign's guidance for that.
+        If an automated call screener answers (for example "say your name and why you're calling"), the rep says only:
+        "This is [rep's first name] calling for [prospect's first name]." Then waits. Stage: Screener.
         11. If talk is flowing well or the rep is mid-thought, answer SKIP.
 
         Cold call method (adapt it to the campaign):
@@ -196,7 +198,7 @@ final class StreamBox: @unchecked Sendable {
 @MainActor
 final class CoachModel: ObservableObject {
     enum Status { case ready, live, paused }
-    enum Kind { case opener, reply }
+    enum Kind { case opener, reply, screener }
 
     @Published private(set) var status: Status = .ready
     @Published private(set) var suggestion = Suggestion()
@@ -217,6 +219,8 @@ final class CoachModel: ObservableObject {
     private var goalHit = false
     private var sawVoicemail = false
     private var stagesSeen: Set<String> = []
+    private var screenerActive = false       // a screener is talking; wait for the real person
+    private var openerBeforeScreener: Suggestion?
     private var firstProspectAt: Date?
     private var lastWordsAt: Date?
 
@@ -321,6 +325,8 @@ final class CoachModel: ObservableObject {
         goalHit = false
         sawVoicemail = false
         stagesSeen = []
+        screenerActive = false
+        openerBeforeScreener = nil
         firstProspectAt = nil
         lastWordsAt = nil
     }
@@ -347,7 +353,8 @@ final class CoachModel: ObservableObject {
     private func scoreOpener() {
         defer { callOpener = nil }
         let prospectTurns = turns.filter { $0.speaker == .prospect }.count
-        guard status != .ready, !sawVoicemail, prospectTurns > 0, let start = firstProspectAt else { return }
+        // Skip voicemails, no-answers, and calls where only a screener ever talked.
+        guard status != .ready, !sawVoicemail, !screenerActive, prospectTurns > 0, let start = firstProspectAt else { return }
         let talk = max(0, (lastWordsAt ?? start).timeIntervalSince(start))
         let score = CallScore.compute(talkSeconds: talk, stages: stagesSeen, goal: goalHit)
         let usedOpener = callOpener.flatMap { $0 == openers.current ? $0 : nil }
@@ -415,6 +422,9 @@ final class CoachModel: ObservableObject {
         guard status == .live else { return }
         switch event {
         case .transcript(let text, let isFinal, let speechFinal):
+            if speaker == .prospect, !screenerActive, stagesSeen.contains("Screener") == false, Screener.detects(text) {
+                showScreenerLine()
+            }
             if isFinal {
                 reconnects = 0
                 interim[speaker] = nil
@@ -450,10 +460,36 @@ final class CoachModel: ObservableObject {
         }
     }
 
+    /// Instant line for a call screener. No Claude call, no waiting.
+    private func showScreenerLine() {
+        screenerActive = true
+        coachTask?.cancel()
+        holdTask?.cancel()
+        pending = nil
+        if kind == .opener { openerBeforeScreener = suggestion }
+        seq += 1
+        show(Suggestion(say: Screener.line(calling: calling),
+                        cue: "Call screener. Say it slowly and clearly, then wait.",
+                        stage: "Screener"),
+             id: seq, kind: .screener)
+    }
+
     /// The prospect stopped talking. Decide if the rep needs a new line.
     private func prospectFinished() {
         let said = uncoached.trimmingCharacters(in: .whitespaces)
         guard !said.isEmpty else { return }
+        if screenerActive {
+            uncoached = ""
+            if Screener.detects(said) { return } // still the screener talking
+            // A real person picked up after the screener: back to the opener.
+            screenerActive = false
+            latestProspect = said
+            if let opener = openerBeforeScreener {
+                seq += 1
+                show(opener, id: seq, kind: .opener)
+                return
+            }
+        }
         uncoached = ""
         latestProspect = said
         // A plain "Hello?" is already answered by the opener on screen.
