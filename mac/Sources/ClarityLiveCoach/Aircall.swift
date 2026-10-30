@@ -42,7 +42,10 @@ enum Aircall {
         let (data, response) = try await URLSession.shared.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-        if code == 404 { throw NotFound(detail: String(data: data, encoding: .utf8).map { String($0.prefix(160)) } ?? "") }
+        if code == 404 || code == 400 || code == 422 {
+            // Wrong address or wrong field names for this account: worth trying the next format.
+            throw NotFound(detail: "\(code) " + (String(data: data, encoding: .utf8).map { String($0.prefix(160)) } ?? ""))
+        }
         guard (200..<300).contains(code) else {
             let detail = (json["message"] as? String) ?? (json["error"] as? String) ?? String(data: data, encoding: .utf8) ?? ""
             throw AircallError(message: code == 401 || code == 403
@@ -69,17 +72,23 @@ enum Aircall {
     static func sendText(to phone: String, body: String) async throws {
         guard let numberID else { throw AircallError(message: "Pick which Aircall number sends texts.") }
         guard let to = e164(phone) else { throw AircallError(message: "That phone number doesn't look right.") }
-        // Native send shows the text in the Aircall app. The plain send is the backup
-        // (it only works if the number was set up for API messaging).
-        let paths = ["/numbers/\(numberID)/messages/native/send", "/numbers/\(numberID)/messages/send"]
+        // "In agent conversation" (native) sends show in the Aircall app and need no setup on the number.
+        // Aircall's docs show two shapes (per-number path with to/body, or a shared path with
+        // lineId/externalNumber/text, as their WhatsApp version uses). Try each, stop at the first success.
+        let attempts: [(path: String, body: [String: Any])] = [
+            ("/numbers/\(numberID)/messages/native/send", ["to": to, "body": body]),
+            ("/messages/send/sms/native", ["lineId": numberID, "externalNumber": to, "text": body]),
+            ("/messages/native/send", ["lineId": numberID, "externalNumber": to, "text": body]),
+            ("/numbers/\(numberID)/messages/native/send", ["externalNumber": to, "text": body]),
+        ]
         var tried: [String] = []
-        for path in paths {
+        for attempt in attempts {
             do {
-                _ = try await request(path, method: "POST", body: ["to": to, "body": body])
+                _ = try await request(attempt.path, method: "POST", body: attempt.body)
+                UserDefaults.standard.set(attempt.path, forKey: "aircallWorkingPath") // for troubleshooting
                 return
             } catch let notFound as NotFound {
-                tried.append("\(path): 404 \(notFound.detail)")
-                continue // try the next address
+                tried.append("\(attempt.path): \(notFound.detail)")
             }
         }
         throw AircallError(message: "Aircall couldn't send (number \(numberID)). " + tried.joined(separator: " | "))
