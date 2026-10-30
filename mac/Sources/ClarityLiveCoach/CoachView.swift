@@ -303,8 +303,37 @@ struct CoachView: View {
         }
     }
 
+    /// Ends the call and opens the next lead on the rep's Salesforce list.
+    private var nextButton: some View {
+        Button {
+            coach.nextLead()
+        } label: {
+            Label("Next", systemImage: "arrow.right.circle.fill")
+        }
+        .buttonStyle(.borderedProminent)
+        .keyboardShortcut("n", modifiers: .command)
+        .help("End this call and open the next lead on your list (Command-N)")
+    }
+
+    /// "Up next: Jane Doe · 4 of 50", or how to set up the list.
+    @ViewBuilder private var upNextLine: some View {
+        if let message = coach.callList.message {
+            Text(message).font(.caption).foregroundStyle(.orange)
+        } else if let next = coach.callList.upNextInfo {
+            Text("Up next: \(next.name) · \(next.position) of \(coach.callList.records.count)")
+                .font(.caption).foregroundStyle(.secondary)
+        } else if coach.callList.records.isEmpty {
+            Text("Open your lead list in Salesforce once, so Next knows the order.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
     private var readyHelp: some View {
         VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                nextButton
+                upNextLine
+            }
             Text("Dial from Salesforce. The coach starts by itself when the call connects.")
                 .font(.callout)
             Text("Remember to tell them the call is transcribed.")
@@ -321,8 +350,7 @@ struct CoachView: View {
             Button("New line") { coach.newLine() }
                 .keyboardShortcut("j", modifiers: .command)
                 .help("Get a different line now (Command-J)")
-            Button("Next call") { coach.nextCall() }
-                .keyboardShortcut("n", modifiers: .command)
+            nextButton
             Spacer()
             if let latency = coach.latency {
                 Text(String(format: "%.1fs", latency))

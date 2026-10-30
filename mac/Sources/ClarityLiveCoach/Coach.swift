@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 
 // MARK: - What Claude sends back
@@ -269,6 +270,22 @@ final class CoachModel: ObservableObject {
     private var voicemailActive = false
     private var mailboxFullShown = false
 
+    /// The rep's Salesforce list, for the Next button.
+    let callList = CallList()
+    private var detailsTask: Task<Void, Never>?
+    private var listWatcher: AnyCancellable?
+
+    /// Ends the call (if any) and opens the next lead on the rep's list. The coach then
+    /// picks up the new record and writes a fresh opener and voicemail for it.
+    func nextLead() {
+        if status != .ready { nextCall() }
+        if callList.openNext() {
+            suggestion = Suggestion()
+            calling = nil // forces a fresh read once the new page loads
+            tabTicks = 1  // read on the very next tick
+        }
+    }
+
     /// After a voicemail: the text and LinkedIn note to send. Stays after the call until checked off.
     @Published var followUp: FollowUp?
 
@@ -357,6 +374,10 @@ final class CoachModel: ObservableObject {
     }
 
     func onAppear() {
+        // Redraw the coach when the call list changes (it lives in its own object).
+        if listWatcher == nil {
+            listWatcher = callList.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        }
         if suggestion.say.isEmpty, !thinking { prepareOpener() }
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -373,12 +394,22 @@ final class CoachModel: ObservableObject {
         if status == .ready, !onCall {
             tabTicks += 1
             if tabTicks % 2 == 0 {
+                callList.captureIfListView()
+                callList.refreshUpNext()
                 let record = SalesforceTab.currentRecord()
                 if record != calling {
                     calling = record
-                    recordDetails = record == nil ? nil : SalesforceTab.pageText()
+                    recordDetails = nil
                     prepareOpener()
-                    prepareVoicemail()
+                    // Salesforce fills in the page after the title changes: read the details a moment later.
+                    detailsTask?.cancel()
+                    detailsTask = Task { [weak self] in
+                        try? await Task.sleep(for: .milliseconds(1500))
+                        guard let self, !Task.isCancelled, self.calling == record, record != nil else { return }
+                        self.recordDetails = SalesforceTab.pageText()
+                        if self.recordDetails != nil { self.prepareOpener() }
+                        self.prepareVoicemail()
+                    }
                 }
             }
         }
