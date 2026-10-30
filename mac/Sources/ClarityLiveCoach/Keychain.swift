@@ -9,7 +9,20 @@ enum Keychain {
         case deepgram, anthropic
     }
 
+    /// Read each key once per launch. macOS may ask for the login password on a
+    /// Keychain read after an app update, so we never want to ask mid-call.
+    private static var cache: [Key: String] = [:]
+    private static let lock = NSLock()
+
     static func read(_ key: Key) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        if let cached = cache[key] { return cached }
+        let value = readFromKeychain(key)
+        if let value { cache[key] = value }
+        return value
+    }
+
+    private static func readFromKeychain(_ key: Key) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -25,6 +38,7 @@ enum Keychain {
 
     @discardableResult
     static func save(_ value: String, for key: Key) -> Bool {
+        lock.lock(); cache[key] = value; lock.unlock()
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
