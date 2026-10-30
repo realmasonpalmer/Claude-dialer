@@ -25,6 +25,7 @@ final class Availability: ObservableObject {
     private let store = EKEventStore()
     private let defaults = UserDefaults.standard
     private var cached: (at: Date, text: String?)?
+    private var windowStarts: [Date] = []   // bookable start times from the calendar windows
 
     var usesFeed: Bool { feedInput != nil }
     var usesCalendly: Bool { feedInput.map(Calendly.isLink) ?? false }
@@ -173,6 +174,8 @@ final class Availability: ObservableObject {
         let earliest = now.addingTimeInterval(3600)
 
         var lines: [String] = []
+        var starts: [Date] = []
+        defer { windowStarts = starts }
         var day = cal.startOfDay(for: now)
         var checked = 0
         while lines.count < 5 && checked < 14 {
@@ -191,6 +194,7 @@ final class Availability: ObservableObject {
                 let end = slot.addingTimeInterval(meeting)
                 let free = !busy.contains { $0.0 < end && $0.1 > slot }
                 if free {
+                    starts.append(slot)
                     if let last = windows.last, last.1 >= slot { windows[windows.count - 1].1 = end }
                     else { windows.append((slot, end)) }
                 }
@@ -205,6 +209,42 @@ final class Availability: ObservableObject {
         guard !lines.isEmpty else { return nil }
         let zoneName = zone.localizedName(for: .generic, locale: .current) ?? zone.identifier
         return "Times are in \(zoneName) time. Meeting length: \(meetingMinutes) minutes.\n" + lines.joined(separator: "\n")
+    }
+
+    // MARK: Times to offer
+
+    /// The time zone the times are shown in.
+    var displayZone: TimeZone { usesCalendly ? .current : ((usesFeed ? feed?.timeZone : nil) ?? .current) }
+
+    /// Up to 12 bookable times, spread out: for each of the next 5 days with openings,
+    /// the first morning, early afternoon and late afternoon time.
+    func offerSlots() -> [Date] {
+        _ = openTimesText() // makes sure times are computed and fresh
+        let soonest = Date().addingTimeInterval(1800)
+        let all = (usesCalendly ? (calendly?.starts ?? []) : windowStarts).filter { $0 > soonest }.sorted()
+        var cal = Calendar.current
+        cal.timeZone = displayZone
+        var picked: [Date] = []
+        for (_, times) in Dictionary(grouping: all, by: { cal.startOfDay(for: $0) }).sorted(by: { $0.key < $1.key }).prefix(5) {
+            for (from, to) in [(0, 12), (12, 15), (15, 24)] {
+                if let t = times.first(where: { (from..<to).contains(cal.component(.hour, from: $0)) }) { picked.append(t) }
+            }
+        }
+        return Array(picked.prefix(12))
+    }
+
+    /// "Tue, Nov 3, 10:00 AM"
+    func label(_ date: Date) -> String {
+        format(date, .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute(), displayZone)
+    }
+
+    var zoneName: String { displayZone.localizedName(for: .generic, locale: .current) ?? displayZone.identifier }
+
+    /// Re-reads the calendar if it's more than a minute old (used when asking for the meeting).
+    func refreshIfOlder(than seconds: TimeInterval = 60) {
+        guard usesFeed, !loadingFeed else { return }
+        if let at = feedLoadedAt, Date().timeIntervalSince(at) < seconds { return }
+        Task { await loadFeed() }
     }
 
     private func roundUpToHalfHour(_ date: Date, _ cal: Calendar) -> Date {

@@ -10,21 +10,30 @@ struct Suggestion: Equatable {
     var skip = false
     /// True once the SAY line is fully written (a line break came after it, or the answer ended).
     var sayComplete = false
+    /// Codes of the meeting times this line offers or confirms, e.g. ["T3", "T5"].
+    var offered: [String] = []
 
     /// Claude answers in a tiny line format so words can show while they stream:
     ///   SAY: ...
     ///   CUE: ...
     ///   STAGE: ...
+    ///   OFFERED: T3, T5   (only when the line offers meeting times)
     /// or SKIP when the rep needs no help.
     static func parse(_ text: String) -> Suggestion {
         var s = Suggestion()
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("SAY:") { s.say = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
-            else if !s.say.isEmpty { s.sayComplete = true } // anything after SAY means SAY is done
-            else if trimmed.hasPrefix("CUE:") { s.cue = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
+            if trimmed.hasPrefix("SAY:") {
+                s.say = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+                continue
+            }
+            if !s.say.isEmpty { s.sayComplete = true } // any line after SAY means SAY is done
+            if trimmed.hasPrefix("CUE:") { s.cue = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("STAGE:") { s.stage = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("SKIP") { s.skip = true }
+            else if trimmed.hasPrefix("OFFERED:") {
+                s.offered = trimmed.dropFirst(8).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).uppercased() }
+            }
         }
         return s
     }
@@ -110,16 +119,7 @@ enum CoachPrompt {
     static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?) -> String {
         let history = turns.suffix(30).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
-        let booking = openTimes.map {
-            """
-            Real free time for the meeting, from the calendar the rep books on (the meeting host's Google Calendar):
-            \($0)
-            When asking for the meeting, offer two specific times from these windows, say the time zone, and use these instead of any example times in the campaign. \
-            If the prospect suggests a time, check it against the windows. If it isn't free, offer the closest free time. Never offer a time outside these windows.
-
-
-            """
-        } ?? ""
+        let booking = openTimes.map { "\($0)\n\n" } ?? ""
         return """
         \(about(calling, details))\(opened)\(booking)Call so far, oldest first:
         \(history)
@@ -261,8 +261,12 @@ final class CoachModel: ObservableObject {
 
     /// Scores every answered call and suggests script improvements over time.
     let lab = CallLab()
-    /// Real free time from the rep's Google Calendar, for booking.
+    /// Real free time from the booking calendar (Calendly or Google), for booking.
     let availability = Availability()
+    /// Meeting times already offered on this call, and the next two to offer.
+    private var offeredTimes: Set<Date> = []
+    private var codeByDate: [Date: String] = [:]
+    @Published private(set) var nextOffer: [Date] = []
 
     private var openerStyle: Opener? { openers.rotate ? openers.current : nil }
 
@@ -369,6 +373,9 @@ final class CoachModel: ObservableObject {
         goalHit = false
         sawVoicemail = false
         stagesSeen = []
+        offeredTimes = []
+        codeByDate = [:]
+        nextOffer = []
         screenerActive = false
         openerBeforeScreener = nil
         voicemailActive = false
@@ -516,6 +523,46 @@ final class CoachModel: ObservableObject {
         }
     }
 
+    /// The meeting times Claude may offer, with stable codes for this call, and which two to offer next.
+    private func bookingText() -> String? {
+        let slots = availability.offerSlots()
+        guard !slots.isEmpty else { return nil }
+        for slot in slots where codeByDate[slot] == nil {
+            codeByDate[slot] = "T\(codeByDate.count + 1)"
+        }
+        let next = pickNextPair(from: slots)
+        nextOffer = next
+        let list = slots.map { slot in
+            "\(codeByDate[slot]!): \(availability.label(slot))" + (offeredTimes.contains(slot) ? " (already offered)" : "")
+        }.joined(separator: "\n")
+        let nextCodes = next.compactMap { codeByDate[$0] }.joined(separator: " or ")
+        return """
+        Meeting times open on the host's calendar (exact start times, \(availability.zoneName) time). Offer only these:
+        \(list)
+        When asking for the meeting, offer exactly these two next: \(nextCodes). Say them naturally, like "Tuesday at 10 or Wednesday at 2:30".
+        If they turn times down, the next message gives you new ones; never re-offer a time marked already offered.
+        If the prospect names a time, check the list. If it's there, confirm it. If not, offer the closest listed time.
+        Whenever your SAY offers or confirms specific times, add a last line: OFFERED: <their codes, comma separated>.
+        """
+    }
+
+    /// Two not-yet-offered times: the soonest, plus one on another day (or at least 3 hours apart).
+    private func pickNextPair(from slots: [Date]) -> [Date] {
+        let fresh = slots.filter { !offeredTimes.contains($0) }
+        guard let first = fresh.first else { return [] }
+        let cal = Calendar.current
+        let second = fresh.dropFirst().first { !cal.isDate($0, inSameDayAs: first) }
+            ?? fresh.dropFirst().first { $0.timeIntervalSince(first) >= 3 * 3600 }
+            ?? fresh.dropFirst().first
+        return [first] + (second.map { [$0] } ?? [])
+    }
+
+    /// The rep clicked "Other times": count the current pair as turned down.
+    func skipOfferedTimes() {
+        offeredTimes.formUnion(nextOffer)
+        nextOffer = pickNextPair(from: availability.offerSlots())
+    }
+
     /// Instant voicemail card: the script written before the call, or "mailbox full, move on".
     private func showVoicemail(mailboxFull: Bool) {
         voicemailActive = true
@@ -592,7 +639,7 @@ final class CoachModel: ObservableObject {
                   normalized(text) != self.specBasis else { return }
             self.ask(.reply, user: CoachPrompt.reply(
                 turns: self.turns, latest: text, calling: self.calling, details: self.recordDetails, style: self.callOpener,
-                openTimes: self.availability.openTimesText()
+                openTimes: self.bookingText()
             ), early: text)
         }
     }
@@ -637,7 +684,7 @@ final class CoachModel: ObservableObject {
         guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else { return }
         ask(.reply, user: CoachPrompt.reply(
             turns: turns, latest: said, calling: calling, details: recordDetails, style: callOpener,
-            openTimes: availability.openTimesText()
+            openTimes: bookingText()
         ))
     }
 
@@ -700,6 +747,7 @@ final class CoachModel: ObservableObject {
         }
         if id == shownID {
             suggestion = s // same answer, still streaming in
+            note(s)
             return
         }
         let waited = Date().timeIntervalSince(shownAt)
@@ -724,7 +772,19 @@ final class CoachModel: ObservableObject {
         suggestion = s
         self.kind = kind
         problem = nil
+        note(s)
+    }
+
+    /// Bookkeeping for what a line tells us: stage reached, times offered, goal, voicemail.
+    private func note(_ s: Suggestion) {
         if status != .ready, !s.stage.isEmpty { stagesSeen.insert(s.stage) }
+        // Remember which meeting times this line offered, so the next ones are different.
+        if !s.offered.isEmpty {
+            let dates = s.offered.compactMap { code in codeByDate.first { $0.value == code }?.key }
+            offeredTimes.formUnion(dates)
+            nextOffer = pickNextPair(from: availability.offerSlots())
+        }
+        if s.stage == "Closing" { availability.refreshIfOlder() } // fresh times while booking
         if s.stage == "Goal reached" { goalHit = true }
         if s.stage == "Voicemail" { sawVoicemail = true }
     }

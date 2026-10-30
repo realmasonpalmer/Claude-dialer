@@ -267,6 +267,18 @@ struct CoachView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+            if coach.suggestion.stage == "Closing", !coach.nextOffer.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                    Text(coach.nextOffer.map { coach.availability.label($0) }.joined(separator: "  ·  "))
+                        .font(.callout.weight(.medium))
+                    Spacer()
+                    Button("Other times") { coach.skipOfferedTimes() }
+                        .font(.caption)
+                        .help("They can't do these. Show the next open times.")
+                }
+                .padding(.top, 4)
+            }
             if coach.kind == .opener, coach.openers.rotate {
                 Text(coach.openers.current.evidence)
                     .font(.caption)
