@@ -51,18 +51,40 @@ struct Opener: Identifiable, Equatable {
     ]
 }
 
-/// Rotates openers call by call and keeps score on this Mac, so you run your own experiment.
+/// One opener's results on your calls.
 struct OpenerScore: Codable {
     var calls = 0     // calls where a person answered
     var kept = 0      // they kept talking after the opener
     var goals = 0     // the campaign goal was reached
+    var good = 0      // calls scoring 50+ (see CallScore)
+    var points = 0    // total score, for the average
+
+    var average: Int { calls == 0 ? 0 : Int((Double(points) / Double(calls)).rounded()) }
+
+    init() {}
+
+    /// Older saved scores lack some fields; default them to 0.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        calls = (try? c.decodeIfPresent(Int.self, forKey: .calls)) ?? 0
+        kept = (try? c.decodeIfPresent(Int.self, forKey: .kept)) ?? 0
+        goals = (try? c.decodeIfPresent(Int.self, forKey: .goals)) ?? 0
+        good = (try? c.decodeIfPresent(Int.self, forKey: .good)) ?? 0
+        points = (try? c.decodeIfPresent(Int.self, forKey: .points)) ?? 0
+    }
 }
 
+/// Picks the opener for each call and keeps score on this Mac.
+/// Every opener gets 3 tries first. After that, better openers come up more often
+/// (Thompson sampling), but weaker ones still get the occasional try in case luck was involved.
 @MainActor
 final class OpenerBook: ObservableObject {
     @Published private(set) var scores: [String: OpenerScore] = [:]
     @Published private(set) var index: Int
     @Published var rotate: Bool { didSet { defaults.set(rotate, forKey: "rotateOpeners") } }
+
+    /// Tries each opener gets before results start steering the choice.
+    static let warmUp = 3
 
     private let defaults = UserDefaults.standard
 
@@ -77,14 +99,16 @@ final class OpenerBook: ObservableObject {
 
     var current: Opener { Opener.all[index] }
 
-    /// Record a connected call for the current opener, then move to the next one.
-    func record(kept: Bool, goal: Bool) {
-        var score = scores[current.id] ?? OpenerScore()
-        score.calls += 1
-        if kept { score.kept += 1 }
-        if goal { score.goals += 1 }
-        scores[current.id] = score
-        index = (index + 1) % Opener.all.count
+    /// Scores the call for the current opener, then picks the next one.
+    func record(score: Int, kept: Bool, goal: Bool) {
+        var s = scores[current.id] ?? OpenerScore()
+        s.calls += 1
+        s.points += score
+        if kept { s.kept += 1 }
+        if goal { s.goals += 1 }
+        if score >= 50 { s.good += 1 }
+        scores[current.id] = s
+        chooseNext()
         save()
     }
 
@@ -93,8 +117,58 @@ final class OpenerBook: ObservableObject {
         save()
     }
 
+    private func chooseNext() {
+        let all = Opener.all
+        func calls(_ i: Int) -> Int { scores[all[i].id]?.calls ?? 0 }
+        // Warm-up: the least-tried opener goes next, starting after the current one.
+        let order = (1...all.count).map { (index + $0) % all.count }
+        if let fresh = order.filter({ calls($0) < Self.warmUp }).min(by: { calls($0) < calls($1) }) {
+            index = fresh
+            return
+        }
+        // Thompson sampling: draw a plausible good-call rate for each opener, use the highest draw.
+        let draws = order.map { (index: $0, value: draw(all[$0])) } // draw once per opener
+        index = draws.max { $0.value < $1.value }?.index ?? index
+    }
+
+    private func draw(_ opener: Opener) -> Double {
+        let s = scores[opener.id] ?? OpenerScore()
+        return Random.beta(Double(s.good + 1), Double(s.calls - s.good + 1))
+    }
+
     private func save() {
         defaults.set(index, forKey: "openerIndex")
         if let data = try? JSONEncoder().encode(scores) { defaults.set(data, forKey: "openerScores") }
+    }
+}
+
+/// Small random helpers for Thompson sampling.
+enum Random {
+    static func beta(_ a: Double, _ b: Double) -> Double {
+        let x = gamma(a), y = gamma(b)
+        return x / (x + y)
+    }
+
+    /// Marsaglia and Tsang's method. Shape must be at least 1, which it always is here.
+    static func gamma(_ shape: Double) -> Double {
+        let d = shape - 1.0 / 3.0
+        let c = 1.0 / (9.0 * d).squareRoot()
+        while true {
+            var x = 0.0, v = 0.0
+            repeat {
+                x = normal()
+                v = 1 + c * x
+            } while v <= 0
+            v = v * v * v
+            let u = Double.random(in: 0..<1)
+            if u < 1 - 0.0331 * x * x * x * x { return d * v }
+            if log(u) < 0.5 * x * x + d * (1 - v + log(v)) { return d * v }
+        }
+    }
+
+    static func normal() -> Double {
+        let u1 = Double.random(in: Double.leastNonzeroMagnitude..<1)
+        let u2 = Double.random(in: 0..<1)
+        return (-2 * log(u1)).squareRoot() * cos(2 * .pi * u2)
     }
 }

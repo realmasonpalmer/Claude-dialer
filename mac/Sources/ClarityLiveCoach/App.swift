@@ -17,6 +17,12 @@ struct ClarityLiveCoachApp: App {
         }
         .windowResizability(.contentSize)
 
+        Window("Script Lab", id: "script-lab") {
+            ScriptLabView(lab: coach.lab)
+                .environmentObject(campaigns)
+        }
+        .defaultSize(width: 620, height: 780)
+
         Window("Campaign", id: "campaign-editor") {
             CampaignEditorView()
                 .environmentObject(campaigns)

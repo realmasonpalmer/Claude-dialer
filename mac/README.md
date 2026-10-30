@@ -14,6 +14,13 @@ What it does today:
    the sections (opening, discovery, objections, closing...). Edit anything, then Save. Campaigns are saved in
    ~/Library/Application Support/Clarity Live Coach/Campaigns.
 
+5. **Openers**: 5 research-backed openers. Each gets 3 tries, then better scorers come up more often (Thompson sampling).
+6. **Script Lab** (gear menu): every answered call is scored (goal = 100; otherwise talk time up to 50, +15 discovery,
+   +25 closing). After 10 calls, and every 20 after, Claude suggests up to 3 script edits with the numbers behind them.
+   Apply with one click; the campaign version goes up so you can compare before and after.
+7. **Booking calendar** (gear menu): reads free time from your Google Calendar via macOS Calendar
+   (System Settings > Internet Accounts > Google). The coach offers two real open times when asking for the meeting.
+
 ## Needs
 
 - macOS 14.4 or newer (Apple menu > About This Mac)

@@ -19,6 +19,33 @@ struct Campaign: Codable, Identifiable, Equatable {
     var closing = ""
     var success = ""
     var exit = ""
+    /// Goes up each time a Script Lab suggestion is applied, so results can be compared by version.
+    var version = 1
+
+    init(id: UUID = UUID(), name: String = "New campaign", objective: String = "", pastedScript: String = "",
+         company: String = "", offer: String = "", idealCustomer: String = "", persona: String = "",
+         opening: String = "", discovery: String = "", qualification: String = "", objections: String = "",
+         transitions: String = "", closing: String = "", success: String = "", exit: String = "", version: Int = 1) {
+        self.id = id; self.name = name; self.objective = objective; self.pastedScript = pastedScript
+        self.company = company; self.offer = offer; self.idealCustomer = idealCustomer; self.persona = persona
+        self.opening = opening; self.discovery = discovery; self.qualification = qualification
+        self.objections = objections; self.transitions = transitions; self.closing = closing
+        self.success = success; self.exit = exit; self.version = version
+    }
+
+    /// Tolerates missing fields, so campaigns saved by older versions of the app still load.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func text(_ key: CodingKeys) -> String { (try? c.decodeIfPresent(String.self, forKey: key)) ?? "" }
+        id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        name = text(.name).isEmpty ? "Untitled campaign" : text(.name)
+        objective = text(.objective); pastedScript = text(.pastedScript)
+        company = text(.company); offer = text(.offer); idealCustomer = text(.idealCustomer); persona = text(.persona)
+        opening = text(.opening); discovery = text(.discovery); qualification = text(.qualification)
+        objections = text(.objections); transitions = text(.transitions); closing = text(.closing)
+        success = text(.success); exit = text(.exit)
+        version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1
+    }
 
     /// The sections, in the order the editor and the prompt show them.
     static let sections: [(key: WritableKeyPath<Campaign, String>, json: String, title: String, hint: String)] = [

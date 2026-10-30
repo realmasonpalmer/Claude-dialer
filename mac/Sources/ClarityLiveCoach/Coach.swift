@@ -102,11 +102,21 @@ enum CoachPrompt {
         """
     }
 
-    static func reply(turns: [Turn], latest: String, calling: String?, style: Opener?) -> String {
+    static func reply(turns: [Turn], latest: String, calling: String?, style: Opener?, openTimes: String?) -> String {
         let history = turns.suffix(30).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
+        let booking = openTimes.map {
+            """
+            The rep's real free time for the meeting, from their Google Calendar:
+            \($0)
+            When asking for the meeting, offer two specific times from these windows, say the time zone, and use these instead of any example times in the campaign. \
+            If the prospect suggests a time, check it against the windows. If it isn't free, offer the closest free time. Never offer a time outside these windows.
+
+
+            """
+        } ?? ""
         return """
-        \(about(calling))\(opened)Call so far, oldest first:
+        \(about(calling))\(opened)\(booking)Call so far, oldest first:
         \(history)
 
         The prospect just said: "\(latest)"
@@ -206,6 +216,14 @@ final class CoachModel: ObservableObject {
     private var callOpener: Opener?   // the opener used on this call
     private var goalHit = false
     private var sawVoicemail = false
+    private var stagesSeen: Set<String> = []
+    private var firstProspectAt: Date?
+    private var lastWordsAt: Date?
+
+    /// Scores every answered call and suggests script improvements over time.
+    let lab = CallLab()
+    /// Real free time from the rep's Google Calendar, for booking.
+    let availability = Availability()
 
     private var openerStyle: Opener? { openers.rotate ? openers.current : nil }
 
@@ -298,9 +316,13 @@ final class CoachModel: ObservableObject {
         guard startAudio() else { return }
         status = .live
         quietTicks = 0
+        availability.refresh() // fresh free times for this call
         callOpener = kind == .opener ? openerStyle : nil
         goalHit = false
         sawVoicemail = false
+        stagesSeen = []
+        firstProspectAt = nil
+        lastWordsAt = nil
     }
 
     /// Clears everything about this prospect and gets the next opener ready.
@@ -320,13 +342,25 @@ final class CoachModel: ObservableObject {
         prepareOpener()
     }
 
-    /// Counts the call for its opener if a real person answered (not voicemail), then rotates.
+    /// Scores the call if a real person answered (not voicemail): credits the opener,
+    /// then saves it to the Script Lab.
     private func scoreOpener() {
         defer { callOpener = nil }
-        guard let opener = callOpener, opener == openers.current, status != .ready, !sawVoicemail else { return }
         let prospectTurns = turns.filter { $0.speaker == .prospect }.count
-        guard prospectTurns > 0 else { return } // nobody answered
-        openers.record(kept: prospectTurns >= 3, goal: goalHit)
+        guard status != .ready, !sawVoicemail, prospectTurns > 0, let start = firstProspectAt else { return }
+        let talk = max(0, (lastWordsAt ?? start).timeIntervalSince(start))
+        let score = CallScore.compute(talkSeconds: talk, stages: stagesSeen, goal: goalHit)
+        let usedOpener = callOpener.flatMap { $0 == openers.current ? $0 : nil }
+        if usedOpener != nil {
+            openers.record(score: score, kept: prospectTurns >= 3, goal: goalHit)
+        }
+        let record = CallRecord(
+            campaignID: campaign.id, campaignVersion: campaign.version, openerID: usedOpener?.id,
+            talkSeconds: talk, prospectTurns: prospectTurns, stages: Array(stagesSeen).sorted(),
+            goal: goalHit, score: score
+        )
+        let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        lab.add(record, campaign: campaign, transcript: transcript)
     }
 
     func togglePause() {
@@ -404,6 +438,8 @@ final class CoachModel: ObservableObject {
     }
 
     private func addFinal(_ text: String, from speaker: Speaker) {
+        lastWordsAt = Date()
+        if speaker == .prospect, firstProspectAt == nil { firstProspectAt = Date() }
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
         } else {
@@ -425,7 +461,10 @@ final class CoachModel: ObservableObject {
         // "Sure" or "Yes" is filler while the rep talks, but a real answer to the rep's question.
         let repAsked = turns.last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
         guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else { return }
-        ask(.reply, user: CoachPrompt.reply(turns: turns, latest: said, calling: calling, style: callOpener))
+        ask(.reply, user: CoachPrompt.reply(
+            turns: turns, latest: said, calling: calling, style: callOpener,
+            openTimes: availability.openTimesText()
+        ))
     }
 
     // MARK: Claude
@@ -496,6 +535,7 @@ final class CoachModel: ObservableObject {
         suggestion = s
         self.kind = kind
         problem = nil
+        if status != .ready, !s.stage.isEmpty { stagesSeen.insert(s.stage) }
         if s.stage == "Goal reached" { goalHit = true }
         if s.stage == "Voicemail" { sawVoicemail = true }
     }

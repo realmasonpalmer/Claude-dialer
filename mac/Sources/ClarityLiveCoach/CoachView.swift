@@ -117,6 +117,7 @@ struct CoachView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var showTranscript = false
     @State private var showScoreboard = false
+    @State private var showCalendar = false
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
 
@@ -142,6 +143,7 @@ struct CoachView: View {
         .onDisappear { coach.activate(false) }
         .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
+        .sheet(isPresented: $showCalendar) { BookingCalendarView(availability: coach.availability) }
         .alert("Your first name", isPresented: $askName) {
             TextField("First name", text: $repName)
             Button("Save") { coach.refreshOpener() }
@@ -157,7 +159,12 @@ struct CoachView: View {
                 campaignMenu
                 Spacer()
                 Menu {
+                    Button(coach.lab.hasNewSuggestions ? "Script Lab (new suggestions)" : "Script Lab") {
+                        openWindow(id: "script-lab")
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                    }
                     Button("Opener scoreboard") { showScoreboard = true }
+                    Button(coach.availability.hasAccess ? "Booking calendar" : "Connect Google Calendar...") { showCalendar = true }
                     Toggle("Rotate proven openers", isOn: Binding(
                         get: { coach.openers.rotate },
                         set: { coach.openers.rotate = $0; coach.refreshOpener() }
@@ -351,7 +358,7 @@ struct ScoreboardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Opener scoreboard").font(.title2.weight(.semibold))
-            Text("Openers rotate on every call someone answers. After about 20 calls each, the leader is your best opener.")
+            Text("Each opener gets \(OpenerBook.warmUp) tries first. After that, openers with better scores come up more often, and the others still get an occasional try.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -359,7 +366,7 @@ struct ScoreboardView: View {
                 GridRow {
                     Text("Opener").bold()
                     Text("Calls").bold()
-                    Text("Kept talking").bold()
+                    Text("Avg score").bold()
                     Text("Goal").bold()
                 }
                 .font(.caption)
@@ -372,13 +379,13 @@ struct ScoreboardView: View {
                             Text(row.opener.name)
                         }
                         Text("\(row.score.calls)").monospacedDigit()
-                        Text(percent(row.score.kept, of: row.score.calls)).monospacedDigit()
+                        Text(row.score.calls == 0 ? "-" : "\(row.score.average)").monospacedDigit()
                         Text(percent(row.score.goals, of: row.score.calls)).monospacedDigit()
                     }
                 }
             }
 
-            Text("Kept talking = they said at least 3 things. Goal = the campaign goal was reached. Voicemails and no-answers don't count.")
+            Text("Score: \(CallScore.explanation) Voicemails and no-answers don't count.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -403,7 +410,7 @@ struct ScoreboardView: View {
     }
 
     private func rate(_ s: OpenerScore) -> Double {
-        s.calls == 0 ? -1 : (Double(s.goals) * 3 + Double(s.kept)) / Double(s.calls)
+        s.calls == 0 ? -1 : Double(s.points) / Double(s.calls)
     }
 
     private func percent(_ part: Int, of whole: Int) -> String {
