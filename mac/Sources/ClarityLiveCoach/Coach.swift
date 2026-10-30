@@ -136,9 +136,10 @@ enum CoachPrompt {
         \(about(calling, details))If this call goes to voicemail, what should the rep say after the beep?
         Under 20 seconds, about 40 words. In this order: their first name; the rep's name and company;
         one reason tied to something specific about them, their role or their company (from the Salesforce facts,
-        or a common pain for their title if there are none); then "I'll send you a quick email, subject line" and a
-        subject of 5 words or fewer. No phone number unless the campaign gives one. No pitch, no hype.
-        Put the email subject in the CUE as: Email subject: <subject>. STAGE: Voicemail.
+        or a common pain for their title if there are none); then "I'll send you a quick text so you have my number."
+        No pitch, no hype, no email.
+        In the CUE, write the text message to send right after, as: Text: <message>. The text is under 25 words,
+        says the rep's name and company, repeats the one reason, and asks one easy yes/no question. STAGE: Voicemail.
         """
     }
 
