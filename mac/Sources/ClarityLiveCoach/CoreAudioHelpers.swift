@@ -92,6 +92,13 @@ struct AudioProcess: Identifiable, Hashable {
         return app.contains(where: \.isRunningInput) && app.contains(where: \.isRunningOutput)
     }
 
+    /// Aircall is on a call in the coach AND in Chrome at once: the rep is signed in to Aircall twice.
+    static func doubleCall(in processes: [AudioProcess]) -> Bool {
+        let appPhone = processes.filter(\.isAppPhone)
+        return AircallPhone.isOn && appPhone.contains(where: \.isRunningInput) && appPhone.contains(where: \.isRunningOutput)
+            && chromeOnCall(in: processes)
+    }
+
     /// A call is live in the Aircall desktop app or in Chrome (Aircall inside Salesforce).
     static func anyCallApp(in processes: [AudioProcess]) -> Bool {
         aircallAppOnCall(in: processes) || chromeOnCall(in: processes)

@@ -680,6 +680,9 @@ final class CoachModel: ObservableObject {
                 if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
             }
             checkAircallEveryFewSeconds()
+            if AudioProcess.doubleCall(in: AudioProcess.others()) {
+                problem = "Two calls at once: Aircall is signed in here and in Salesforce. Log out of the Aircall panel in Salesforce."
+            }
         default:
             break
         }

@@ -81,6 +81,7 @@ meant to replace Aircall, a Twilio dialer server, and a web-page coach. Don't re
 - **Calls start from the app, not Salesforce:** Chrome version reads the Mobile number off the page and calls it through the Aircall API (`startCall`), which rings out in the Aircall desktop app. It only clicks the number in Salesforce if Aircall calling isn't set up. New big **Call [name]** button for the lead open in Salesforce.
 
 - **Aircall phone inside the coach** (`AircallPhone.swift`): a WKWebView with Aircall Workspace (`https://workspace.aircall.io`), signed in once, kept tiny at the bottom of the coach (Show/Hide). Dials go through the REST API `startCall` and ring there. The coach hears it through WebKit helper processes (`AudioProcess.isAppPhone`, matched to this app via `responsibility_get_pid_responsible_for_pid`). Gear > "Aircall phone inside the coach" (on by default). Unverified: whether Aircall Workspace runs in WKWebView, Google sign-in in an embedded view, and whether API dials ring the embedded Workspace. Fallbacks: Aircall desktop app, or turn the toggle off.
+- **Double call seen:** with Aircall signed in both in the Salesforce panel and in the coach, one API dial rang out from both. Fix: Mason logs out of the Aircall panel in Salesforce. The app now warns if both are on a call at once.
 
 ## Next tasks (Mason said yes to 1 and 2)
 
