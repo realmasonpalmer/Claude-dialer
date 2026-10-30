@@ -303,39 +303,94 @@ struct CoachView: View {
         }
     }
 
-    /// Ends the call and opens the next lead on the rep's Salesforce list.
+    /// Small Next button for the controls row during a call.
     private var nextButton: some View {
         Button {
             coach.nextLead()
         } label: {
-            Label("Next", systemImage: "arrow.right.circle.fill")
+            Label("Next", systemImage: "arrow.right")
         }
-        .buttonStyle(.borderedProminent)
         .keyboardShortcut("n", modifiers: .command)
-        .help("End this call and open the next lead on your list (Command-N)")
+        .disabled(!nextReady)
+        .help(nextReady ? "Hang up and open the next lead (Command-N)" : "Open your lead list in Salesforce first")
     }
 
-    /// "Up next: Jane Doe · 4 of 50", or how to set up the list.
-    @ViewBuilder private var upNextLine: some View {
-        if let message = coach.callList.message {
-            Text(message).font(.caption).foregroundStyle(.orange)
-        } else if let next = coach.callList.upNextInfo {
-            Text("Up next: \(next.name) · \(next.position) of \(coach.callList.records.count)")
-                .font(.caption).foregroundStyle(.secondary)
-        } else if coach.callList.records.isEmpty {
-            Text("Open your lead list in Salesforce once, so Next knows the order.")
-                .font(.caption).foregroundStyle(.secondary)
+    private var nextReady: Bool {
+        if case .ready = coach.callList.state { return true }
+        return false
+    }
+
+    /// Big Next button between calls. It says who's next, or exactly what to do first.
+    private var nextLeadBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch coach.callList.state {
+            case .ready(let name, let position, let total):
+                Button {
+                    coach.nextLead()
+                } label: {
+                    HStack {
+                        Text("Next: \(name)").font(.headline).lineLimit(1)
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut("n", modifiers: .command)
+                helper("Lead \(position) of \(total). Click to open them in Salesforce.")
+
+            case .needsList:
+                helperBox(
+                    title: "Want a Next button?",
+                    lines: ["Open your list of leads in Salesforce.", "That's it. The app learns the list by itself."]
+                )
+
+            case .needsChromeSetting:
+                helperBox(
+                    title: "Chrome needs one setting",
+                    lines: ["In Chrome's top menu, click View, then Developer.", "Click \"Allow JavaScript from Apple Events\"."]
+                )
+
+            case .endOfList:
+                helperBox(
+                    title: "You finished this list",
+                    lines: ["Scroll down in your Salesforce list, or open a new one, to keep going."]
+                )
+            }
+            if let message = coach.callList.message {
+                helper(message, color: .orange)
+            }
         }
+    }
+
+    private func helper(_ text: String, color: Color = .secondary) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func helperBox(title: String, lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.callout.weight(.semibold))
+            ForEach(lines.indices, id: \.self) { index in
+                Text(lines.count > 1 ? "\(index + 1). \(lines[index])" : lines[index])
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var readyHelp: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                nextButton
-                upNextLine
-            }
-            Text("Dial from Salesforce. The coach starts by itself when the call connects.")
+            nextLeadBox
+            Text("Click a phone number in Salesforce to call. The coach starts on its own.")
                 .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Remember to tell them the call is transcribed.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Already on a call? Start listening") { coach.startByHand() }

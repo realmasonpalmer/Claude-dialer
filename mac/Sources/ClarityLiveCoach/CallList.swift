@@ -14,6 +14,23 @@ final class CallList: ObservableObject {
     @Published private(set) var message: String?
     /// Who "Next" will open, refreshed every couple of seconds (reading Chrome is too slow to do on every redraw).
     @Published private(set) var upNextInfo: (name: String, position: Int)?
+    /// Chrome won't let the app read the page (its "Allow JavaScript from Apple Events" setting is off).
+    @Published private(set) var chromeBlocked = false
+
+    /// What the Next button should show.
+    enum State: Equatable {
+        case needsChromeSetting
+        case needsList
+        case ready(name: String, position: Int, total: Int)
+        case endOfList
+    }
+
+    var state: State {
+        if chromeBlocked { return .needsChromeSetting }
+        if records.isEmpty { return .needsList }
+        if let next = upNextInfo { return .ready(name: next.name, position: next.position, total: records.count) }
+        return .endOfList
+    }
     private var lastIndex: Int
     private var lastCapture = Date.distantPast
 
@@ -32,12 +49,18 @@ final class CallList: ObservableObject {
               let url = ChromeTab.url(), url.contains("force.com") else { return }
         lastCapture = Date()
         let onListPage = url.contains("/list") || url.contains("filterName=")
+        // Reading the page fails only when Chrome blocks it.
+        guard let found = ChromeTab.listRecords() else {
+            if !chromeBlocked { chromeBlocked = true }
+            return
+        }
+        if chromeBlocked { chromeBlocked = false }
         // A record page alone shows few leads; a list (or split view's panel) shows many.
-        guard let found = ChromeTab.listRecords(), found.count >= (onListPage ? 2 : 5) else { return }
+        guard found.count >= (onListPage ? 2 : 5) else { return }
         if found != records {
             records = found
             lastIndex = -1
-            message = "Learned your list: \(found.count) records."
+            message = nil
             save()
         }
     }
