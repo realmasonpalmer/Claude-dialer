@@ -5,7 +5,7 @@ import Foundation
 enum Screener {
     private static let phrases = [
         "screening service", "call screen", "screening this call", "being screened", "screening calls",
-        "the person you're calling", "the person you are calling", "person you're trying to reach",
+        "person you're trying to reach",
         "say your name", "state your name", "record your name", "speak your name",
         "your name and why", "your name and the reason", "reason for your call", "reason for calling",
         "why you're calling", "why you are calling", "what you're calling about", "what this call is about",
@@ -33,5 +33,29 @@ enum Screener {
               let name = calling[calling.index(after: open)...].split(separator: " ").first else { return nil }
         let first = name.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
         return first.isEmpty ? nil : first
+    }
+}
+
+/// Spots voicemail greetings and full mailboxes from the prospect's words, instantly.
+/// Only strong phrases count, so a gatekeeper saying "she's not available" doesn't trigger it.
+enum Voicemail {
+    private static let phrases = [
+        "leave a message", "leave your message", "leave me a message", "leave a voicemail", "leave a brief message",
+        "after the tone", "after the beep", "at the tone", "at the beep", "voicemail", "voice mail", "mailbox",
+        "record your message", "please leave", "can't take your call", "cannot take your call",
+        "not available to take your call", "can't come to the phone", "cannot come to the phone",
+        "away from my desk", "get back to you as soon as",
+    ]
+    private static let fullPhrases = [
+        "mailbox is full", "mailbox full", "cannot accept any messages", "not accepting messages",
+        "has not been set up", "hasn't been set up", "not set up yet",
+    ]
+
+    static func detects(_ text: String) -> Bool { contains(text, phrases) || mailboxFull(text) }
+    static func mailboxFull(_ text: String) -> Bool { contains(text, fullPhrases) }
+
+    private static func contains(_ text: String, _ list: [String]) -> Bool {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        return list.contains { t.contains($0) }
     }
 }

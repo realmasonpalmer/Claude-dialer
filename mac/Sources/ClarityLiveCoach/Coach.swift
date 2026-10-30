@@ -94,12 +94,12 @@ enum CoachPrompt {
         """
     }
 
-    static func opener(calling: String?, style: Opener?) -> String {
+    static func opener(calling: String?, details: String?, style: Opener?) -> String {
         guard let style else {
-            return "\(about(calling))The call has not connected yet. Give the opener the rep should say when they pick up."
+            return "\(about(calling, details))The call has not connected yet. Give the opener the rep should say when they pick up."
         }
         return """
-        \(about(calling))The call has not connected yet. Write the opener using this proven structure. \
+        \(about(calling, details))The call has not connected yet. Write the opener using this proven structure. \
         Keep its wording and shape; only fill in the brackets. [company] is the rep's company from the campaign. \
         If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
         Opener: \(style.template)
@@ -107,7 +107,7 @@ enum CoachPrompt {
         """
     }
 
-    static func reply(turns: [Turn], latest: String, calling: String?, style: Opener?, openTimes: String?) -> String {
+    static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?) -> String {
         let history = turns.suffix(30).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         let booking = openTimes.map {
@@ -121,7 +121,7 @@ enum CoachPrompt {
             """
         } ?? ""
         return """
-        \(about(calling))\(opened)\(booking)Call so far, oldest first:
+        \(about(calling, details))\(opened)\(booking)Call so far, oldest first:
         \(history)
 
         The prospect just said: "\(latest)"
@@ -130,14 +130,31 @@ enum CoachPrompt {
         """
     }
 
-    /// The Salesforce record the rep had open, from the Chrome tab title. Real data, not a guess.
-    private static func about(_ calling: String?) -> String {
+    /// Written before the call, so it's ready the instant a voicemail greeting starts.
+    static func voicemail(calling: String?, details: String?) -> String {
+        """
+        \(about(calling, details))If this call goes to voicemail, what should the rep say after the beep?
+        Under 20 seconds, about 40 words. In this order: their first name; the rep's name and company;
+        one reason tied to something specific about them, their role or their company (from the Salesforce facts,
+        or a common pain for their title if there are none); then "I'll send you a quick email, subject line" and a
+        subject of 5 words or fewer. No phone number unless the campaign gives one. No pitch, no hype.
+        Put the email subject in the CUE as: Email subject: <subject>. STAGE: Voicemail.
+        """
+    }
+
+    /// The Salesforce record the rep had open: the tab title and, if allowed, the page's text.
+    private static func about(_ calling: String?, _ details: String? = nil) -> String {
         var lines: [String] = []
         if let rep = UserDefaults.standard.string(forKey: "repName")?.trimmed, !rep.isEmpty {
             lines.append("The rep's first name is \(rep).")
         }
         if let calling {
-            lines.append("Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person. Assume nothing else about them.")
+            lines.append("Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person.")
+        }
+        if let details {
+            lines.append("Text from their Salesforce page. It includes menus and clutter; use only facts about this person and their company, and never guess:\n\(details)")
+        } else if calling != nil {
+            lines.append("Assume nothing else about them.")
         }
         return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n\n"
     }
@@ -209,7 +226,7 @@ final class StreamBox: @unchecked Sendable {
 @MainActor
 final class CoachModel: ObservableObject {
     enum Status { case ready, live, paused }
-    enum Kind { case opener, reply, screener }
+    enum Kind { case opener, reply, screener, voicemail }
 
     @Published private(set) var status: Status = .ready
     @Published private(set) var suggestion = Suggestion()
@@ -222,7 +239,13 @@ final class CoachModel: ObservableObject {
     @Published private(set) var thinking = false
     /// Who the rep is calling, from the Salesforce tab title (e.g. Lead "Jane Doe").
     @Published private(set) var calling: String?
+    /// Text from the open Salesforce page, when Chrome allows it.
+    @Published private(set) var recordDetails: String?
     private var tabTicks = 0
+    private var voicemailScript: Suggestion?   // written ahead of time for this prospect
+    private var voicemailTask: Task<Void, Never>?
+    private var voicemailActive = false
+    private var mailboxFullShown = false
 
     /// Proven openers, rotated call by call, with your own scoreboard.
     let openers = OpenerBook()
@@ -313,7 +336,9 @@ final class CoachModel: ObservableObject {
                 let record = SalesforceTab.currentRecord()
                 if record != calling {
                     calling = record
+                    recordDetails = record == nil ? nil : SalesforceTab.pageText()
                     prepareOpener()
+                    prepareVoicemail()
                 }
             }
         }
@@ -345,6 +370,9 @@ final class CoachModel: ObservableObject {
         stagesSeen = []
         screenerActive = false
         openerBeforeScreener = nil
+        voicemailActive = false
+        mailboxFullShown = false
+        if voicemailScript == nil { prepareVoicemail() }
         firstProspectAt = nil
         lastWordsAt = nil
     }
@@ -363,7 +391,9 @@ final class CoachModel: ObservableObject {
         latency = nil
         status = .ready
         calling = SalesforceTab.currentRecord()
+        recordDetails = calling == nil ? nil : SalesforceTab.pageText()
         prepareOpener()
+        prepareVoicemail()
     }
 
     /// Scores the call if a real person answered (not voicemail): credits the opener,
@@ -440,8 +470,14 @@ final class CoachModel: ObservableObject {
         guard status == .live else { return }
         switch event {
         case .transcript(let text, let isFinal, let speechFinal):
-            if speaker == .prospect, !screenerActive, stagesSeen.contains("Screener") == false, Screener.detects(text) {
-                showScreenerLine()
+            if speaker == .prospect {
+                if Voicemail.detects(text) {
+                    if !voicemailActive || (Voicemail.mailboxFull(text) && !mailboxFullShown) {
+                        showVoicemail(mailboxFull: Voicemail.mailboxFull(text))
+                    }
+                } else if !voicemailActive, !screenerActive, !stagesSeen.contains("Screener"), Screener.detects(text) {
+                    showScreenerLine()
+                }
             }
             if isFinal {
                 reconnects = 0
@@ -479,6 +515,54 @@ final class CoachModel: ObservableObject {
         }
     }
 
+    /// Instant voicemail card: the script written before the call, or "mailbox full, move on".
+    private func showVoicemail(mailboxFull: Bool) {
+        voicemailActive = true
+        sawVoicemail = true
+        screenerActive = false
+        coachTask?.cancel()
+        specTimer?.cancel()
+        holdTask?.cancel()
+        pending = nil
+        specBasis = nil
+        uncoached = ""
+        seq += 1
+        if mailboxFull {
+            mailboxFullShown = true
+            show(Suggestion(say: "Mailbox is full. Hang up and dial the next one.", cue: "No message possible.",
+                            stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
+        } else if let script = voicemailScript {
+            show(script, id: seq, kind: .voicemail)
+        } else {
+            // Not written yet: ask now. The beep usually gives a few seconds.
+            show(Suggestion(say: "Writing your voicemail...", cue: "Wait for the beep.", stage: "Voicemail", sayComplete: true),
+                 id: seq, kind: .voicemail)
+            ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails))
+        }
+    }
+
+    /// Writes this prospect's voicemail in the background, so it's instant when needed.
+    private func prepareVoicemail() {
+        voicemailTask?.cancel()
+        voicemailScript = nil
+        guard let key = Keychain.read(.anthropic) else { return }
+        let client = CoachSpeed.current.client(apiKey: key)
+        let system = self.system
+        let user = CoachPrompt.voicemail(calling: calling, details: recordDetails)
+        voicemailTask = Task { [weak self] in
+            var text = ""
+            do {
+                try await client.stream(system: system, user: user) { text = $0 }
+            } catch {
+                return
+            }
+            var s = Suggestion.parse(text)
+            s.sayComplete = true
+            s.stage = "Voicemail"
+            if !Task.isCancelled, !s.say.isEmpty { self?.voicemailScript = s }
+        }
+    }
+
     /// Instant line for a call screener. No Claude call, no waiting.
     private func showScreenerLine() {
         screenerActive = true
@@ -497,7 +581,7 @@ final class CoachModel: ObservableObject {
     /// start Claude now instead of waiting for the end-of-speech signal.
     private func scheduleEarlyStart() {
         specTimer?.cancel()
-        guard status == .live, !screenerActive else { return }
+        guard status == .live, !screenerActive, !voicemailActive else { return }
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
         guard let last = text.last, ".?!".contains(last), isMeaningful(text) else { return }
         specTimer = Task { [weak self] in
@@ -506,7 +590,7 @@ final class CoachModel: ObservableObject {
                   (self.uncoached + " " + (self.interim[.prospect] ?? "")).trimmed == text,
                   normalized(text) != self.specBasis else { return }
             self.ask(.reply, user: CoachPrompt.reply(
-                turns: self.turns, latest: text, calling: self.calling, style: self.callOpener,
+                turns: self.turns, latest: text, calling: self.calling, details: self.recordDetails, style: self.callOpener,
                 openTimes: self.availability.openTimesText()
             ), early: text)
         }
@@ -551,7 +635,7 @@ final class CoachModel: ObservableObject {
         let repAsked = turns.last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
         guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else { return }
         ask(.reply, user: CoachPrompt.reply(
-            turns: turns, latest: said, calling: calling, style: callOpener,
+            turns: turns, latest: said, calling: calling, details: recordDetails, style: callOpener,
             openTimes: availability.openTimesText()
         ))
     }
@@ -559,7 +643,7 @@ final class CoachModel: ObservableObject {
     // MARK: Claude
 
     private func prepareOpener() {
-        ask(.opener, user: CoachPrompt.opener(calling: calling, style: openerStyle))
+        ask(.opener, user: CoachPrompt.opener(calling: calling, details: recordDetails, style: openerStyle))
     }
 
     private func ask(_ kind: Kind, user: String, early: String? = nil) {
@@ -618,7 +702,7 @@ final class CoachModel: ObservableObject {
             return
         }
         let waited = Date().timeIntervalSince(shownAt)
-        if kind == .opener || shownID == 0 || waited >= hold {
+        if kind == .opener || kind == .voicemail || shownID == 0 || waited >= hold {
             show(s, id: id, kind: kind)
         } else {
             pending = (id, s)

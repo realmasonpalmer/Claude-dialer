@@ -250,7 +250,7 @@ struct CoachView: View {
                     .lineLimit(2)
             }
             HStack {
-                Text(coach.kind == .opener ? "WHEN THEY PICK UP" : coach.kind == .screener ? "CALL SCREENER" : "SAY NEXT")
+                Text(label(for: coach.kind))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -277,6 +277,15 @@ struct CoachView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
+    }
+
+    private func label(for kind: CoachModel.Kind) -> String {
+        switch kind {
+        case .opener: return "WHEN THEY PICK UP"
+        case .screener: return "CALL SCREENER"
+        case .voicemail: return "VOICEMAIL: WAIT FOR THE BEEP"
+        case .reply: return "SAY NEXT"
+        }
     }
 
     private var readyHelp: some View {
