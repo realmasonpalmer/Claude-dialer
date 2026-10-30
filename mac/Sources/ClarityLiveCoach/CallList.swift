@@ -80,6 +80,23 @@ final class CallList: ObservableObject {
         return next < records.count ? (records[next], next + 1) : nil
     }
 
+    /// Opens the record before the one open now.
+    @discardableResult
+    func openPrevious() -> Bool {
+        guard !records.isEmpty else { return false }
+        let currentID = ChromeTab.url().flatMap(Self.recordID)
+        let from = currentID.flatMap { id in records.firstIndex { $0.id == id } } ?? (lastIndex + 1)
+        let previous = from - 1
+        guard previous >= 0, previous < records.count else { return false }
+        let record = records[previous]
+        guard ChromeTab.click(recordID: record.id) || ChromeTab.open(record.url) else { return false }
+        lastIndex = previous
+        message = nil
+        save()
+        refreshUpNext()
+        return true
+    }
+
     /// Opens the next record in the active Chrome tab. Returns false with a message if it can't.
     @discardableResult
     func openNext() -> Bool {

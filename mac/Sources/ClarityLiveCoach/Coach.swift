@@ -48,7 +48,7 @@ struct Suggestion: Equatable {
 // MARK: - Prompt
 
 enum CoachPrompt {
-    static let stages = ["Opener", "Screener", "Gatekeeper", "Voicemail", "Discovery", "Objection", "Closing", "Goal reached", "Exit"]
+    static let stages = ["Opener", "Screener", "Gatekeeper", "Voicemail", "Discovery", "Value", "Objection", "Closing", "Goal reached", "Exit"]
 
     /// Stays byte-for-byte the same for a campaign, so Claude can cache it.
     static func system(for campaign: Campaign) -> String {
@@ -78,6 +78,7 @@ enum CoachPrompt {
         Cold call method (adapt it to the campaign):
         - Opener: honest that it's a cold call, ask for a few seconds. Calm and slow beats slick.
         - Reason for the call: lead with a problem their peers have, not the product. Then ask if it's true for them.
+        - Value (STAGE: Value): one sentence tying the problem they named to what the campaign offers, then a question.
         - Discovery: one question at a time. Follow up on their answer before moving on. Get the cost of the problem in their words: time, money, risk.
         - Keep them talking: repeat their last few words as a question, or name what they seem to feel ("Sounds like that rollout was frustrating").
         - Early objections are usually reflexes, not decisions. Lower the pressure and ask one question. If they repeat it firmly, respect it.
@@ -270,6 +271,56 @@ final class CoachModel: ObservableObject {
     private var voicemailActive = false
     private var mailboxFullShown = false
 
+    // MARK: Where the call is
+
+    /// The four steps shown at the top: Opener -> Discovery -> Value -> Close.
+    static let journey = ["Opener", "Discovery", "Value", "Close"]
+    @Published private(set) var journeyStep = 0
+    var nextStepName: String? { journeyStep + 1 < Self.journey.count ? Self.journey[journeyStep + 1] : nil }
+
+    /// Lines shown on this call, so Back can show the previous one.
+    private var history: [(s: Suggestion, kind: Kind)] = []
+    @Published private(set) var historyIndex: Int?   // nil = showing the newest line
+    var canGoBack: Bool { (historyIndex ?? history.count - 1) > 0 }
+
+    /// True while the prospect is talking (words are coming in from their side).
+    var prospectSpeaking: Bool { !(interim[.prospect] ?? "").isEmpty }
+
+    private func trackJourney(_ stage: String) {
+        let step: Int?
+        switch stage {
+        case "Opener", "Screener", "Gatekeeper", "Voicemail": step = 0
+        case "Discovery": step = 1
+        case "Value": step = 2
+        case "Closing", "Goal reached": step = 3
+        default: step = nil // Objection, Exit: stay where we are
+        }
+        if let step, step > journeyStep { journeyStep = step }
+    }
+
+    /// Shows the line before the one on screen.
+    func back() {
+        let current = historyIndex ?? history.count - 1
+        guard current > 0 else { return }
+        historyIndex = current - 1
+        suggestion = history[current - 1].s
+        kind = history[current - 1].kind
+    }
+
+    /// Back to the newest line after looking back.
+    func showLatest() {
+        guard let latest = history.last else { return }
+        historyIndex = nil
+        suggestion = latest.s
+        kind = latest.kind
+    }
+
+    /// Asks for the line that moves the call to the next step.
+    func advanceStep() {
+        guard let next = nextStepName else { newLine(); return }
+        newLine(extra: "Move the call forward to the next step: \(next). Write the line that starts it now.")
+    }
+
     /// The rep's Salesforce list, for the Next button.
     let callList = CallList()
     private var detailsTask: Task<Void, Never>?
@@ -277,6 +328,15 @@ final class CoachModel: ObservableObject {
 
     /// Ends the call (if any) and opens the next lead on the rep's list. The coach then
     /// picks up the new record and writes a fresh opener and voicemail for it.
+    func previousLead() {
+        if status != .ready { nextCall() }
+        if callList.openPrevious() {
+            suggestion = Suggestion()
+            calling = nil
+            tabTicks = 1
+        }
+    }
+
     func nextLead() {
         if status != .ready { nextCall() }
         if callList.openNext() {
@@ -439,6 +499,9 @@ final class CoachModel: ObservableObject {
         goalHit = false
         sawVoicemail = false
         stagesSeen = []
+        journeyStep = 0
+        history = Array(history.suffix(1)) // keep the opener as the first line
+        historyIndex = nil
         repWordsInCall = 0
         repWordsSinceShown = 0
         offeredTimes = []
@@ -455,6 +518,9 @@ final class CoachModel: ObservableObject {
 
     /// Clears everything about this prospect and gets the next opener ready.
     func nextCall() {
+        history = []
+        historyIndex = nil
+        journeyStep = 0
         scoreOpener()
         stopAudio()
         coachTask?.cancel()
@@ -634,7 +700,7 @@ final class CoachModel: ObservableObject {
     }
 
     /// The rep asked for a different line right now. Skips the wait and the hold.
-    func newLine() {
+    func newLine(extra: String = "The rep asked for a different line than the last one.") {
         guard status == .live, !voicemailActive else { return }
         let latest = uncoached.trimmed.isEmpty ? (turns.last { $0.speaker == .prospect }?.text ?? "") : uncoached.trimmed
         uncoached = ""
@@ -643,7 +709,7 @@ final class CoachModel: ObservableObject {
         ask(.reply, user: CoachPrompt.reply(
             turns: turns, latest: latest, calling: calling, details: recordDetails, style: callOpener,
             openTimes: bookingText()
-        ) + "\nThe rep asked for a different line than the last one.")
+        ) + "\n" + extra)
     }
 
     /// The rep clicked "Other times": count the current pair as turned down.
@@ -892,6 +958,8 @@ final class CoachModel: ObservableObject {
         shownAt = Date()
         repWordsSinceShown = 0
         suggestion = s
+        historyIndex = nil
+        if !s.say.isEmpty, s.sayComplete || kind != .reply { history.append((s: s, kind: kind)) }
         self.kind = kind
         problem = nil
         note(s)
@@ -899,7 +967,10 @@ final class CoachModel: ObservableObject {
 
     /// Bookkeeping for what a line tells us: stage reached, times offered, goal, voicemail.
     private func note(_ s: Suggestion) {
-        if status != .ready, !s.stage.isEmpty { stagesSeen.insert(s.stage) }
+        if status != .ready, !s.stage.isEmpty {
+            stagesSeen.insert(s.stage)
+            trackJourney(s.stage)
+        }
         if voicemailActive, !s.textMessage.isEmpty || !s.linkedin.isEmpty { fillFollowUp(from: s) }
         // Remember which meeting times this line offered, so the next ones are different.
         if !s.offered.isEmpty {

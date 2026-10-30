@@ -109,6 +109,8 @@ extension String {
 
 // MARK: - Coach
 
+/// The live coach. Built to be glanced at: the line to say is the hero,
+/// status and stage are readable without reading a sentence, and navigation never moves.
 struct CoachView: View {
     var onAudioCheck: () -> Void
     var onKeys: () -> Void
@@ -118,29 +120,40 @@ struct CoachView: View {
     @State private var showTranscript = false
     @State private var showScoreboard = false
     @State private var showCalendar = false
+    @State private var showHelp = false
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
     @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
     @AppStorage("wholeLine") private var wholeLine = true
 
+    // One visual system: blue = actions, green = listening, amber = real warnings.
+    private let margin: CGFloat = 16
+    private let gap: CGFloat = 12
+    private let listening = Color.green
+    private let warning = Color.orange
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            card
+        VStack(alignment: .leading, spacing: gap) {
+            topBar
+            StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: coach.status != .ready)
+            scriptCard
+            belowCard
             if coach.followUp != nil {
                 FollowUpCard(followUp: $coach.followUp)
             }
-            if let problem = coach.problem {
-                Text(problem).font(.callout).foregroundStyle(.orange)
-            }
-            if coach.status == .ready {
-                readyHelp
-            } else {
-                controls
-            }
-            transcript
+            warnings
+            Spacer(minLength: 0)
+            navigation
         }
-        .padding(18)
+        .padding(.horizontal, margin)
+        .padding(.vertical, gap)
+        .background(
+            // Command-J: a different line right now (no visible button needed).
+            Button("") { coach.newLine() }
+                .keyboardShortcut("j", modifiers: .command)
+                .opacity(0)
+                .allowsHitTesting(false)
+        )
         .onAppear {
             coach.use(campaigns.selected)
             coach.activate(true)
@@ -149,6 +162,7 @@ struct CoachView: View {
         .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
         .sheet(isPresented: $showCalendar) { BookingCalendarView(availability: coach.availability) }
+        .sheet(isPresented: $showHelp) { HelpView() }
         .alert("Your first name", isPresented: $askName) {
             TextField("First name", text: $repName)
             Button("Save") { coach.refreshOpener() }
@@ -158,38 +172,67 @@ struct CoachView: View {
         .animation(.easeInOut(duration: 0.2), value: coach.status)
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                campaignMenu
-                Spacer()
-                Menu {
-                    Button(coach.lab.hasNewSuggestions ? "Script Lab (new suggestions)" : "Script Lab") {
-                        openWindow(id: "script-lab")
-                        NSApplication.shared.activate(ignoringOtherApps: true)
-                    }
-                    Picker("Speed", selection: $speed) {
-                        ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
-                    }
-                    Toggle("Show each line all at once", isOn: $wholeLine)
-                    Button("Opener scoreboard") { showScoreboard = true }
-                    Button("Booking calendar...") { showCalendar = true }
-                    Toggle("Rotate proven openers", isOn: Binding(
-                        get: { coach.openers.rotate },
-                        set: { coach.openers.rotate = $0; coach.refreshOpener() }
-                    ))
-                    Button(repName.isEmpty ? "Add your name..." : "Your name: \(repName)") { askName = true }
-                    Divider()
-                    Button("Run audio check", action: onAudioCheck)
-                    Button("Change API keys", action: onKeys)
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-            statusRow
+    // MARK: Top: campaign, status, settings
+
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            StatusPill(status: pillState, color: pillColor)
+            Spacer()
+            campaignMenu
+            settingsMenu
         }
+    }
+
+    private var pillState: String {
+        switch coach.status {
+        case .ready: return "Ready"
+        case .paused: return "Paused"
+        case .live:
+            if coach.kind == .voicemail { return "Voicemail" }
+            return coach.prospectSpeaking ? "Prospect speaking" : "Listening"
+        }
+    }
+
+    private var pillColor: Color {
+        switch coach.status {
+        case .ready: return .secondary
+        case .paused: return warning
+        case .live: return coach.kind == .voicemail ? warning : listening
+        }
+    }
+
+    private var settingsMenu: some View {
+        Menu {
+            Button("How to use") { showHelp = true }
+            Divider()
+            Button(coach.lab.hasNewSuggestions ? "Script Lab (new suggestions)" : "Script Lab") {
+                openWindow(id: "script-lab")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+            Button("Opener scoreboard") { showScoreboard = true }
+            Button("Booking calendar...") { showCalendar = true }
+            Divider()
+            Picker("Speed", selection: $speed) {
+                ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
+            }
+            Toggle("Show each line all at once", isOn: $wholeLine)
+            Toggle("Rotate proven openers", isOn: Binding(
+                get: { coach.openers.rotate },
+                set: { coach.openers.rotate = $0; coach.refreshOpener() }
+            ))
+            Button(repName.isEmpty ? "Add your name..." : "Your name: \(repName)") { askName = true }
+            Divider()
+            Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
+                .disabled(coach.status == .ready)
+            Button("Start listening now") { coach.startByHand() }
+                .disabled(coach.status != .ready)
+            Button("Run audio check", action: onAudioCheck)
+            Button("Change API keys", action: onKeys)
+        } label: {
+            Image(systemName: "gearshape")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     /// Pick a campaign, or create and edit one. Locked during a call.
@@ -210,10 +253,10 @@ struct CoachView: View {
             Button("Edit this campaign...") { edit(campaigns.selected) }
             Button("New campaign...") { edit(Campaign()) }
         } label: {
-            Text(campaigns.selected.name).font(.headline).lineLimit(1)
+            Text(campaigns.selected.name).font(.caption.weight(.semibold)).lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize(horizontal: false, vertical: true)
+        .fixedSize()
         .disabled(coach.status != .ready)
         .help(coach.status == .ready ? "Choose or edit a campaign" : "Finish the call to switch campaigns")
     }
@@ -224,242 +267,281 @@ struct CoachView: View {
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
-    private var statusRow: some View {
-        HStack(spacing: 8) {
-            Circle().fill(statusColor).frame(width: 8, height: 8)
-            Text(statusText).font(.callout.weight(.medium))
-            if !coach.suggestion.stage.isEmpty {
-                Text(coach.suggestion.stage)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.18), in: Capsule())
-            }
-            Spacer()
-            if let calling = coach.calling {
-                Text(calling.replacingOccurrences(of: "\"", with: ""))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-    }
+    // MARK: The hero: what to say
 
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if coach.kind == .reply, !coach.latestProspect.isEmpty {
-                Text("They said: \u{201C}\(coach.latestProspect)\u{201D}")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+    private var scriptCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(label(for: coach.kind))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                Text(cardLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : .secondary)
                 Spacer()
                 if coach.thinking && coach.status == .live {
                     ProgressView().controlSize(.mini)
                 }
+                if coach.historyIndex != nil {
+                    Button("Latest") { coach.showLatest() }
+                        .buttonStyle(.link).font(.caption2)
+                }
             }
-            Text(coach.suggestion.say.isEmpty ? "Getting your opener ready..." : coach.suggestion.say)
-                .font(.system(size: 24, weight: .semibold))
+            Text(coach.suggestion.say.isEmpty ? "Getting your line ready..." : coach.suggestion.say)
+                .font(.system(size: 26, weight: .semibold))
+                .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(coach.suggestion.say.isEmpty ? .secondary : .primary)
+                .opacity(coach.historyIndex == nil ? 1 : 0.6)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
+    }
+
+    private var cardLabel: String {
+        if coach.historyIndex != nil { return "EARLIER LINE" }
+        switch coach.kind {
+        case .opener: return "WHEN THEY PICK UP"
+        case .screener: return "CALL SCREENER"
+        case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
+        case .reply: return "SAY THIS"
+        }
+    }
+
+    // MARK: Right under the card: tip, meeting times, transcript
+
+    private var belowCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
             if !coach.suggestion.cue.isEmpty {
                 Text(coach.suggestion.cue)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if coach.suggestion.stage == "Closing", !coach.nextOffer.isEmpty {
                 HStack(spacing: 8) {
-                    Image(systemName: "calendar")
+                    Image(systemName: "calendar").foregroundStyle(.secondary)
                     Text(coach.nextOffer.map { coach.availability.label($0) }.joined(separator: "  ·  "))
                         .font(.callout.weight(.medium))
                     Spacer()
                     Button("Other times") { coach.skipOfferedTimes() }
-                        .font(.caption)
-                        .help("They can't do these. Show the next open times.")
+                        .buttonStyle(.link).font(.caption)
                 }
-                .padding(.top, 4)
             }
-            if coach.kind == .opener, coach.openers.rotate {
-                Text(coach.openers.current.evidence)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
-        .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
-    }
-
-    private func label(for kind: CoachModel.Kind) -> String {
-        switch kind {
-        case .opener: return "WHEN THEY PICK UP"
-        case .screener: return "CALL SCREENER"
-        case .voicemail: return "VOICEMAIL: WAIT FOR THE BEEP"
-        case .reply: return "SAY NEXT"
-        }
-    }
-
-    /// Small Next button for the controls row during a call.
-    private var nextButton: some View {
-        Button {
-            coach.nextLead()
-        } label: {
-            Label("Next", systemImage: "arrow.right")
-        }
-        .keyboardShortcut("n", modifiers: .command)
-        .disabled(!nextReady)
-        .help(nextReady ? "Hang up and open the next lead (Command-N)" : "Open your lead list in Salesforce first")
-    }
-
-    private var nextReady: Bool {
-        if case .ready = coach.callList.state { return true }
-        return false
-    }
-
-    /// Big Next button between calls. It says who's next, or exactly what to do first.
-    private var nextLeadBox: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            switch coach.callList.state {
-            case .ready(let name, let position, let total):
-                Button {
-                    coach.nextLead()
-                } label: {
-                    HStack {
-                        Text("Next: \(name)").font(.headline).lineLimit(1)
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut("n", modifiers: .command)
-                helper("Lead \(position) of \(total). Click to open them in Salesforce.")
-
-            case .needsList:
-                helperBox(
-                    title: "Want a Next button?",
-                    lines: ["Open your list of leads in Salesforce.", "That's it. The app learns the list by itself."]
-                )
-
-            case .needsChromeSetting:
-                helperBox(
-                    title: "Chrome needs one setting",
-                    lines: ["In Chrome's top menu, click View, then Developer.", "Click \"Allow JavaScript from Apple Events\"."]
-                )
-
-            case .endOfList:
-                helperBox(
-                    title: "You finished this list",
-                    lines: ["Scroll down in your Salesforce list, or open a new one, to keep going."]
-                )
-            }
-            if let message = coach.callList.message {
-                helper(message, color: .orange)
-            }
-        }
-    }
-
-    private func helper(_ text: String, color: Color = .secondary) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(color)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func helperBox(title: String, lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.callout.weight(.semibold))
-            ForEach(lines.indices, id: \.self) { index in
-                Text(lines.count > 1 ? "\(index + 1). \(lines[index])" : lines[index])
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private var readyHelp: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            nextLeadBox
-            Text("Click a phone number in Salesforce to call. The coach starts on its own.")
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Remember to tell them the call is transcribed.")
-                .font(.caption).foregroundStyle(.secondary)
-            Button("Already on a call? Start listening") { coach.startByHand() }
-                .buttonStyle(.link)
-                .font(.caption)
-        }
-    }
-
-    private var controls: some View {
-        HStack {
-            Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
-            Button("New line") { coach.newLine() }
-                .keyboardShortcut("j", modifiers: .command)
-                .help("Get a different line now (Command-J)")
-            nextButton
-            Spacer()
-            if let latency = coach.latency {
-                Text(String(format: "%.1fs", latency))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .help("Time from when they stopped talking to the first words on screen")
-            }
+            transcript
         }
     }
 
     private var transcript: some View {
-        DisclosureGroup("Transcript", isExpanded: $showTranscript) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(coach.turns) { turn in
-                            line(turn.speaker, turn.text)
-                        }
-                        ForEach([Speaker.rep, .prospect], id: \.self) { speaker in
-                            if let text = coach.interim[speaker], !text.isEmpty {
-                                line(speaker, text).opacity(0.5)
-                            }
-                        }
-                        Color.clear.frame(height: 1).id("end")
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                showTranscript.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: showTranscript ? "chevron.down" : "chevron.right").font(.caption2)
+                    Text("Transcript").font(.caption)
+                    if !showTranscript, let last = coach.turns.last(where: { $0.speaker == .prospect }) {
+                        Text("· \(last.text)").font(.caption).lineLimit(1).foregroundStyle(.tertiary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 180)
-                .onChange(of: coach.turns.count) { proxy.scrollTo("end") }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if showTranscript {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(coach.turns) { turn in
+                                line(turn.speaker, turn.text)
+                            }
+                            ForEach([Speaker.rep, .prospect], id: \.self) { speaker in
+                                if let text = coach.interim[speaker], !text.isEmpty {
+                                    line(speaker, text).opacity(0.5)
+                                }
+                            }
+                            Color.clear.frame(height: 1).id("end")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                    .onChange(of: coach.turns.count) { proxy.scrollTo("end") }
+                }
             }
         }
-        .font(.callout)
     }
 
     private func line(_ speaker: Speaker, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(speaker == .rep ? "You" : "Them").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(text)
+            Text(speaker == .rep ? "You" : "Them").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text(text).font(.callout)
         }
     }
 
-    private var statusText: String {
-        switch coach.status {
-        case .ready: return "Ready for your call"
-        case .live: return "Listening"
-        case .paused: return "Paused"
+    // MARK: Real warnings only, never cut off
+
+    @ViewBuilder private var warnings: some View {
+        if let problem = coach.problem {
+            warningText(problem)
+        }
+        if coach.callList.state == .needsChromeSetting {
+            warningText("Chrome needs one setting for Next: View > Developer > Allow JavaScript from Apple Events.")
+        }
+        if let message = coach.callList.message {
+            warningText(message)
         }
     }
 
-    private var statusColor: Color {
-        switch coach.status {
-        case .ready: return .secondary
-        case .live: return .green
-        case .paused: return .orange
+    private func warningText(_ text: String) -> some View {
+        Label {
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+        }
+        .font(.caption)
+        .foregroundStyle(warning)
+    }
+
+    // MARK: Navigation: always here, always the same two buttons
+
+    private var navigation: some View {
+        HStack(spacing: 8) {
+            Button {
+                coach.status == .ready ? coach.previousLead() : coach.back()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 28, height: 28)
+            }
+            .disabled(!backEnabled)
+            .help(coach.status == .ready ? "Previous lead" : "Show the line before this one")
+
+            Button {
+                coach.status == .ready ? coach.nextLead() : coach.advanceStep()
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("NEXT").font(.caption2.weight(.bold)).opacity(0.8)
+                        Text(nextTitle).font(.callout.weight(.semibold)).lineLimit(1)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 2)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut("n", modifiers: .command)
+            .disabled(!nextEnabled)
+        }
+        .controlSize(.large)
+    }
+
+    private var backEnabled: Bool {
+        coach.status == .ready ? !coach.callList.records.isEmpty : coach.canGoBack
+    }
+
+    private var nextEnabled: Bool {
+        if coach.status != .ready { return true }
+        if case .ready = coach.callList.state { return true }
+        return false
+    }
+
+    /// The preview on the Next button: the next step during a call, the next lead between calls.
+    private var nextTitle: String {
+        if coach.status != .ready {
+            return coach.nextStepName.map { "\($0) question" } ?? "New line"
+        }
+        switch coach.callList.state {
+        case .ready(let name, let position, let total): return "\(name)  (\(position)/\(total))"
+        case .needsList: return "Open a lead list in Salesforce"
+        case .needsChromeSetting: return "Needs a Chrome setting"
+        case .endOfList: return "End of list"
+        }
+    }
+}
+
+/// Big, colored status you can read without reading.
+struct StatusPill: View {
+    let status: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 9, height: 9)
+            Text(status).font(.callout.weight(.semibold))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.15), in: Capsule())
+        .foregroundStyle(color == .secondary ? Color.primary : color)
+    }
+}
+
+/// Opener -> Discovery -> Value -> Close, with the current step highlighted.
+struct StageBar: View {
+    let steps: [String]
+    let current: Int
+    let active: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(steps.indices, id: \.self) { i in
+                Text(steps[i])
+                    .font(.caption.weight(i == current ? .semibold : .regular))
+                    .foregroundStyle(i == current && active ? Color.primary : (i < current ? Color.secondary : Color.secondary.opacity(0.5)))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(i == current && active ? Color.secondary.opacity(0.2) : .clear, in: Capsule())
+                if i < steps.count - 1 {
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Onboarding and how-to, out of the way of the live screen.
+struct HelpView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("How to use").font(.title2.weight(.semibold))
+                section("Calling", [
+                    "Click a phone number in Salesforce. The coach starts on its own when the call connects.",
+                    "Read the big line. Say it in your own words.",
+                    "Tell them the call is transcribed. Some states require it.",
+                ])
+                section("Next and Back", [
+                    "Between calls: Next opens the next lead on your list. Back opens the one before.",
+                    "During a call: Next gives you the line for the next step. Back shows the line before.",
+                    "To set up your list: open your lead list in Salesforce (split view or table view). The app learns it by itself.",
+                ])
+                section("One Chrome setting", [
+                    "In Chrome's top menu: View > Developer > Allow JavaScript from Apple Events.",
+                    "It lets the coach read the open lead and click Next for you.",
+                ])
+                section("Shortcuts", [
+                    "Command-N: Next",
+                    "Command-J: a different line now",
+                ])
+                HStack {
+                    Spacer()
+                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(16)
+        }
+        .frame(width: 370, height: 480)
+    }
+
+    private func section(_ title: String, _ lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.headline)
+            ForEach(lines, id: \.self) { line in
+                Text("• \(line)").font(.callout).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
