@@ -172,7 +172,13 @@ struct CoachView: View {
             coach.use(campaigns.selected)
             coach.activate(true)
         }
-        .task { await updater.check() }
+        .task {
+            // Look for a new version now and every 10 minutes, so the Update button shows up on its own.
+            while !Task.isCancelled {
+                await updater.check()
+                try? await Task.sleep(for: .seconds(600))
+            }
+        }
         .onDisappear { coach.activate(false) }
         .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
