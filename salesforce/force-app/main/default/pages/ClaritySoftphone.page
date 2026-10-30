@@ -1,0 +1,27 @@
+<!-- Open CTI softphone. Salesforce loads this page in the utility bar phone panel. -->
+<apex:page controller="ClaritySoftphoneController" showHeader="false" sidebar="false"
+    standardStylesheets="false" applyHtmlTag="false" applyBodyTag="false" docType="html-5.0">
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clarity Dialer</title>
+    <apex:stylesheet value="{!URLFOR($Resource.ClaritySoftphone, 'softphone.css')}" />
+    <script src="/support/api/66.0/lightning/opencti_min.js"></script>
+    <apex:includeScript value="{!URLFOR($Resource.ClaritySoftphone, 'twilio.min.js')}" />
+    <script>
+        window.CLARITY = {
+            actions: {
+                getDeviceToken: '{!$RemoteAction.ClaritySoftphoneController.getDeviceToken}',
+                prepareCall: '{!$RemoteAction.ClaritySoftphoneController.prepareCall}',
+                logCall: '{!$RemoteAction.ClaritySoftphoneController.logCall}'
+            }
+        };
+    </script>
+</head>
+<body>
+    <main id="app" aria-live="polite"></main>
+    <apex:includeScript value="{!URLFOR($Resource.ClaritySoftphone, 'softphone.js')}" />
+</body>
+</html>
+</apex:page>
