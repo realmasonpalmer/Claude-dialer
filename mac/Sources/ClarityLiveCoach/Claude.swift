@@ -5,6 +5,8 @@ struct ClaudeClient {
     let apiKey: String
     var model = "claude-opus-5-5"
     var effort = "low" // fastest setting that keeps Opus-level quality
+    /// Optional thinking setting. nil = the model's default (Opus 5.5 always thinks).
+    var thinking: [String: String]?
 
     struct APIError: LocalizedError {
         let message: String
@@ -28,6 +30,7 @@ struct ClaudeClient {
             "system": [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]],
             "messages": [["role": "user", "content": user]],
         ]
+        if let thinking { body["thinking"] = thinking }
         if model.hasPrefix("claude-opus") || model.hasPrefix("claude-fable") {
             // If a safety check declines, the API retries on a fallback model in the same call.
             request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
@@ -59,5 +62,40 @@ struct ClaudeClient {
                 throw APIError(message: (error?["message"] as? String) ?? "Claude stream error")
             }
         }
+    }
+}
+
+/// How the live coach trades polish for speed. Pick in the gear menu.
+enum CoachSpeed: String, CaseIterable, Identifiable {
+    case best, balanced, fastest
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .best: return "Best lines (Opus)"
+        case .balanced: return "Balanced (Sonnet, no thinking)"
+        case .fastest: return "Fastest (Haiku, no thinking)"
+        }
+    }
+
+    static var current: CoachSpeed {
+        CoachSpeed(rawValue: UserDefaults.standard.string(forKey: "coachSpeed") ?? "") ?? .balanced
+    }
+
+    func client(apiKey: String) -> ClaudeClient {
+        var c = ClaudeClient(apiKey: apiKey)
+        c.effort = "low"
+        switch self {
+        case .best:
+            c.model = "claude-opus-5-5" // always thinks; low effort keeps it short
+        case .balanced:
+            c.model = "claude-sonnet-5-5"
+            c.thinking = ["type": "between_tools"] // Sonnet 5.5's way to turn thinking off
+        case .fastest:
+            c.model = "claude-haiku-5-5"
+            c.thinking = ["type": "disabled"]
+        }
+        return c
     }
 }

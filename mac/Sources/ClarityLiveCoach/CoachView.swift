@@ -120,6 +120,8 @@ struct CoachView: View {
     @State private var showCalendar = false
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
+    @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
+    @AppStorage("wholeLine") private var wholeLine = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -163,6 +165,10 @@ struct CoachView: View {
                         openWindow(id: "script-lab")
                         NSApplication.shared.activate(ignoringOtherApps: true)
                     }
+                    Picker("Speed", selection: $speed) {
+                        ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    Toggle("Show each line all at once", isOn: $wholeLine)
                     Button("Opener scoreboard") { showScoreboard = true }
                     Button("Booking calendar...") { showCalendar = true }
                     Toggle("Rotate proven openers", isOn: Binding(

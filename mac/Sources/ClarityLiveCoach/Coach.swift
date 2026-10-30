@@ -8,6 +8,8 @@ struct Suggestion: Equatable {
     var cue = ""
     var stage = ""
     var skip = false
+    /// True once the SAY line is fully written (a line break came after it, or the answer ended).
+    var sayComplete = false
 
     /// Claude answers in a tiny line format so words can show while they stream:
     ///   SAY: ...
@@ -19,6 +21,7 @@ struct Suggestion: Equatable {
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("SAY:") { s.say = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
+            else if !s.say.isEmpty { s.sayComplete = true } // anything after SAY means SAY is done
             else if trimmed.hasPrefix("CUE:") { s.cue = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("STAGE:") { s.stage = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("SKIP") { s.skip = true }
@@ -156,6 +159,14 @@ private let filler: Set<String> = [
     "right", "sure", "got", "it", "cool", "nice", "great", "hello", "hi",
 ]
 
+/// Lowercase words only, so "Sure, go ahead." matches "sure go ahead".
+func normalized(_ text: String) -> String {
+    text.lowercased()
+        .components(separatedBy: CharacterSet.alphanumerics.inverted)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+}
+
 func isMeaningful(_ text: String) -> Bool {
     text.lowercased()
         .components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'-")).inverted)
@@ -263,6 +274,13 @@ final class CoachModel: ObservableObject {
     private var pending: (id: Int, suggestion: Suggestion)?
     private var holdTask: Task<Void, Never>?
     private var timedID = 0
+
+    // Starting early: when the prospect's sentence sounds finished, Claude starts writing before
+    // the transcriber confirms they stopped. The answer is held until they really stop.
+    private var specBasis: String?                 // the words the early answer was started on
+    private var specHeld: (s: Suggestion, id: Int)?
+    private var specTimer: Task<Void, Never>?
+    private var confirmedAt: Date?
 
     /// A new line never replaces one the rep has had less than this long to read.
     private let hold: TimeInterval = 2.5
@@ -432,6 +450,7 @@ final class CoachModel: ObservableObject {
                 if speechFinal && speaker == .prospect { prospectFinished() }
             } else {
                 interim[speaker] = text
+                if speaker == .prospect { scheduleEarlyStart() }
             }
         case .utteranceEnd:
             if speaker == .prospect { prospectFinished() }
@@ -474,10 +493,44 @@ final class CoachModel: ObservableObject {
              id: seq, kind: .screener)
     }
 
+    /// If the prospect's words end like a finished sentence and hold still for a moment,
+    /// start Claude now instead of waiting for the end-of-speech signal.
+    private func scheduleEarlyStart() {
+        specTimer?.cancel()
+        guard status == .live, !screenerActive else { return }
+        let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
+        guard let last = text.last, ".?!".contains(last), isMeaningful(text) else { return }
+        specTimer = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard let self, !Task.isCancelled,
+                  (self.uncoached + " " + (self.interim[.prospect] ?? "")).trimmed == text,
+                  normalized(text) != self.specBasis else { return }
+            self.ask(.reply, user: CoachPrompt.reply(
+                turns: self.turns, latest: text, calling: self.calling, style: self.callOpener,
+                openTimes: self.availability.openTimesText()
+            ), early: text)
+        }
+    }
+
     /// The prospect stopped talking. Decide if the rep needs a new line.
     private func prospectFinished() {
+        specTimer?.cancel()
         let said = uncoached.trimmingCharacters(in: .whitespaces)
         guard !said.isEmpty else { return }
+        // Started early on exactly these words? Then the answer is already on its way.
+        if let basis = specBasis {
+            specBasis = nil
+            if basis == normalized(said) {
+                uncoached = ""
+                latestProspect = said
+                confirmedAt = Date()
+                if let held = specHeld {
+                    specHeld = nil
+                    offer(held.s, id: held.id, kind: .reply, askedAt: confirmedAt!)
+                }
+                return
+            }
+        }
         if screenerActive {
             uncoached = ""
             if Screener.detects(said) { return } // still the screener talking
@@ -509,7 +562,7 @@ final class CoachModel: ObservableObject {
         ask(.opener, user: CoachPrompt.opener(calling: calling, style: openerStyle))
     }
 
-    private func ask(_ kind: Kind, user: String) {
+    private func ask(_ kind: Kind, user: String, early: String? = nil) {
         guard let key = Keychain.read(.anthropic) else {
             problem = "Add your Anthropic key in Settings."
             return
@@ -518,16 +571,24 @@ final class CoachModel: ObservableObject {
         seq += 1
         let id = seq
         let askedAt = Date()
-        let client = ClaudeClient(apiKey: key)
+        specBasis = early.map(normalized)
+        specHeld = nil
+        confirmedAt = nil
+        let client = CoachSpeed.current.client(apiKey: key)
         let system = self.system
         thinking = true
 
         coachTask = Task { [weak self] in
             do {
+                var finalText = ""
                 try await client.stream(system: system, user: user) { text in
+                    finalText = text
                     let s = Suggestion.parse(text)
                     Task { @MainActor in self?.offer(s, id: id, kind: kind, askedAt: askedAt) }
                 }
+                var last = Suggestion.parse(finalText)
+                last.sayComplete = true
+                self?.offer(last, id: id, kind: kind, askedAt: askedAt)
             } catch is CancellationError {
             } catch let error as URLError where error.code == .cancelled {
             } catch {
@@ -541,9 +602,16 @@ final class CoachModel: ObservableObject {
     /// Shows a suggestion, but never swaps a fresh line out from under the rep.
     private func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
         guard id == seq, !s.skip, !s.say.isEmpty else { return }
+        // Easier to read live: show the line once it's whole, not word by word (setting).
+        let wholeLine = UserDefaults.standard.object(forKey: "wholeLine") as? Bool ?? true
+        if wholeLine && !s.sayComplete { return }
+        if specBasis != nil {
+            specHeld = (s, id) // started early: wait until they really stop talking
+            return
+        }
         if kind == .reply, timedID != id {
             timedID = id // time from "they stopped talking" to the first words of the answer
-            latency = Date().timeIntervalSince(askedAt)
+            latency = max(0, Date().timeIntervalSince(confirmedAt ?? askedAt))
         }
         if id == shownID {
             suggestion = s // same answer, still streaming in
