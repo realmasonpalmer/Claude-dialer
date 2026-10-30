@@ -25,13 +25,15 @@ final class CallList: ObservableObject {
         }
     }
 
-    /// While a Salesforce list view is open, learn its order (checked every few seconds).
+    /// Learns the list order whenever a Salesforce list is on screen: table view, or the
+    /// left panel of split view (where the address is the record, not the list). Checked every few seconds.
     func captureIfListView() {
         guard Date().timeIntervalSince(lastCapture) > 4,
-              let url = ChromeTab.url(), url.contains("lightning.force.com"),
-              url.contains("/list") || url.contains("filterName=") else { return }
+              let url = ChromeTab.url(), url.contains("force.com") else { return }
         lastCapture = Date()
-        guard let found = ChromeTab.listRecords(), found.count >= 2 else { return }
+        let onListPage = url.contains("/list") || url.contains("filterName=")
+        // A record page alone shows few leads; a list (or split view's panel) shows many.
+        guard let found = ChromeTab.listRecords(), found.count >= (onListPage ? 2 : 5) else { return }
         if found != records {
             records = found
             lastIndex = -1
@@ -66,7 +68,8 @@ final class CallList: ObservableObject {
             message = "That was the last one on your list. Open the list again to keep going."
             return false
         }
-        guard ChromeTab.open(record.url) else {
+        // Click it in the list like the rep would (keeps split view); else go to its address.
+        guard ChromeTab.click(recordID: record.id) || ChromeTab.open(record.url) else {
             message = "Couldn't open it. In Chrome, turn on View > Developer > Allow JavaScript from Apple Events."
             return false
         }
@@ -116,6 +119,21 @@ enum ChromeTab {
             if (count of windows) is 0 then return "no"
             set URL of active tab of front window to "\(url)"
             return "ok"
+        end tell
+        """) == "ok"
+    }
+
+    /// Clicks the link for this record on the page (split view or table view). False if it isn't on screen.
+    static func click(recordID: String) -> Bool {
+        guard recordID.allSatisfy({ $0.isLetter || $0.isNumber }) else { return false }
+        let js = "(function(){var links=document.querySelectorAll('a[href*=lightning]');"
+            + "for(var i=0;i<links.length;i++){var a=links[i];"
+            + "if(a.href.indexOf('\(recordID)')>=0&&(a.textContent||'').trim()){a.click();return 'ok';}}"
+            + "return 'no';})()"
+        return run("""
+        tell application "Google Chrome"
+            if (count of windows) is 0 then return "no"
+            return execute active tab of front window javascript "\(js)"
         end tell
         """) == "ok"
     }
