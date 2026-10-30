@@ -401,9 +401,10 @@ final class CoachModel: ObservableObject {
             Task { [weak self] in
                 guard let self else { return }
                 guard await self.leads.next() else { return }
-                // Skip Do Not Call records automatically (up to 20 in a row).
+                // Skip Do Not Call records and records with no mobile number (up to 20 in a row).
                 var skipped = 0
-                while self.leads.details?.doNotCall == true, skipped < 20, await self.leads.next() { skipped += 1 }
+                while self.leads.details.map({ $0.doNotCall || $0.callNumber == nil }) == true, skipped < 20,
+                      await self.leads.next() { skipped += 1 }
                 // "Next calls right away" (on by default): dial as soon as the lead is loaded.
                 if UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true, self.leads.details?.doNotCall == false {
                     self.applyLead()
@@ -451,11 +452,13 @@ final class CoachModel: ObservableObject {
         } else if SalesforceChrome.clickToDial() {
             waitingForNewCall = false // a new call, even if Chrome still holds the mic
         } else {
-            problem = "Couldn't find their phone number on the Salesforce page. Click it yourself."
+            problem = "No mobile number on this Salesforce page. Click Next."
         }
     }
 
-    /// Waits for the lead's Salesforce page to load, then clicks its phone number (Aircall in Salesforce dials).
+    private var noMobileSkips = 0
+
+    /// Waits for the lead's Salesforce page to load, then clicks its Mobile number (Aircall in Salesforce dials).
     private func dialFromSalesforcePage(expecting id: String?) {
         Task { [weak self] in
             for _ in 0..<16 {
@@ -464,10 +467,20 @@ final class CoachModel: ObservableObject {
                 if let id, SalesforceChrome.url().flatMap(CallList.recordID) != id { continue } // not loaded yet
                 if SalesforceChrome.clickToDial() {
                     self.waitingForNewCall = false // this is a new call, even if Chrome still holds the mic
+                    self.noMobileSkips = 0
                     return
                 }
             }
-            self?.problem = "Couldn't find a phone number to click on that Salesforce page. Click it yourself."
+            // No Mobile number: they're not on the call list. Skip to the next person (up to 20 in a row).
+            guard let self else { return }
+            self.noMobileSkips += 1
+            if self.noMobileSkips <= 20 {
+                self.problem = "No mobile number. Skipped to the next person."
+                self.nextLead()
+            } else {
+                self.noMobileSkips = 0
+                self.problem = "20 people in a row had no mobile number. Check the Mobile field is on the Salesforce page."
+            }
         }
     }
 

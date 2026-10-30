@@ -106,6 +106,30 @@ enum Salesforce {
         return json
     }
 
+    /// PATCH/POST against the Salesforce REST API, with a JSON body. Refreshes the sign-in once if it expired.
+    static func send(_ method: String, _ path: String, body: [String: Any], retry: Bool = true) async throws -> Any? {
+        guard let instance = Keychain.read(.sfInstance) else { throw SFError(message: "Connect Salesforce first (gear menu).") }
+        if Keychain.read(.sfAccess) == nil { try await refresh() }
+        var req = URLRequest(url: URL(string: instance + path)!)
+        req.httpMethod = method
+        req.setValue("Bearer \(Keychain.read(.sfAccess) ?? "")", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401, retry {
+            try await refresh()
+            return try await send(method, path, body: body, retry: false)
+        }
+        let json = try? JSONSerialization.jsonObject(with: data)
+        guard (200..<300).contains(code) else {
+            let message = ((json as? [[String: Any]])?.first?["message"] as? String) ?? "error \(code)"
+            throw SFError(message: "Salesforce: \(message)")
+        }
+        return json
+    }
+
     static func query(_ soql: String) async throws -> [[String: Any]] {
         let q = soql.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let json = try await get("/services/data/\(apiVersion)/query?q=\(q)") as? [String: Any]
@@ -141,7 +165,49 @@ enum Salesforce {
     }
 
     /// The rows of a list view, in the list view's own order.
+    /// The list view's people who can be called: they have a Mobile number and aren't Do Not Call.
+    /// Everyone else is left off the list. The Phone field is never used.
+    /// Contacts with no Mobile and a blank Relationship Status are marked "Not Quality Prospect".
     static func rows(of view: ListView) async throws -> [Row] {
+        let all = try await allRows(of: view)
+        let isContact = view.object == "Contact"
+        var callable: Set<String> = []
+        var noMobile: [String] = []
+        for start in stride(from: 0, to: all.count, by: 200) {
+            let ids = all[start..<min(start + 200, all.count)].map(\.id)
+                .filter { $0.allSatisfy { $0.isLetter || $0.isNumber } }
+            guard !ids.isEmpty else { continue }
+            let list = ids.map { "'\($0)'" }.joined(separator: ",")
+            let fields = "Id, MobilePhone, DoNotCall" + (isContact ? ", Relationship_Status__c" : "")
+            for r in try await query("SELECT \(fields) FROM \(view.object) WHERE Id IN (\(list))") {
+                guard let id = r["Id"] as? String else { continue }
+                let mobile = (r["MobilePhone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+                if mobile.isEmpty {
+                    // Only blank statuses: never overwrite Engaged, Champion, and so on.
+                    if isContact, (r["Relationship_Status__c"] as? String ?? "").isEmpty { noMobile.append(id) }
+                } else if (r["DoNotCall"] as? Bool) != true {
+                    callable.insert(id)
+                }
+            }
+        }
+        if !noMobile.isEmpty { try? await markNotQualityProspect(contactIDs: noMobile) }
+        // List views give 18-character Ids; match on the first 15 to be safe.
+        let keep = Set(callable.map { String($0.prefix(15)) })
+        return all.filter { keep.contains(String($0.id.prefix(15))) }
+    }
+
+    /// Sets Relationship Status = "Not Quality Prospect" on Contacts (200 at a time).
+    static func markNotQualityProspect(contactIDs: [String]) async throws {
+        for start in stride(from: 0, to: contactIDs.count, by: 200) {
+            let records: [[String: Any]] = contactIDs[start..<min(start + 200, contactIDs.count)].map {
+                ["attributes": ["type": "Contact"], "id": $0, "Relationship_Status__c": "Not Quality Prospect"]
+            }
+            _ = try await send("PATCH", "/services/data/\(apiVersion)/composite/sobjects",
+                               body: ["allOrNone": false, "records": records])
+        }
+    }
+
+    private static func allRows(of view: ListView) async throws -> [Row] {
         let json = try await get("/services/data/\(apiVersion)/sobjects/\(view.object)/listviews/\(view.id)/results?limit=2000") as? [String: Any]
         return ((json?["records"] as? [[String: Any]]) ?? []).compactMap { record in
             var values: [String: String] = [:]
@@ -174,7 +240,8 @@ enum Salesforce {
         let notes: String?
         let recent: [String]
 
-        var callNumber: String? { mobile ?? phone }
+        /// Only the Mobile field is called. The Phone field (often a main office line) is never dialed.
+        var callNumber: String? { mobile.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
         /// Plain text for the coach, like the Salesforce page text it used to read.
         var promptText: String {
             var lines = ["Name: \(name)"]

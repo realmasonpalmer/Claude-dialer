@@ -162,7 +162,7 @@ enum Aircall {
         return nil
     }
 
-    /// Finds the lead's phone in the Salesforce page text, preferring Mobile.
+    /// Finds the lead's Mobile number in the Salesforce page text.
     static func phone(in pageText: String?) -> String? {
         guard let pageText else { return nil }
         let lines = pageText.components(separatedBy: "\n")
@@ -170,12 +170,11 @@ enum Aircall {
         func phoneIn(_ s: String) -> String? {
             s.range(of: pattern, options: .regularExpression).map { String(s[$0]) }
         }
-        for label in ["Mobile", "Phone"] {
-            for (i, line) in lines.enumerated() where line.trimmingCharacters(in: .whitespaces).hasPrefix(label) {
-                if let p = phoneIn(line) ?? (i + 1 < lines.count ? phoneIn(lines[i + 1]) : nil) { return p }
-            }
+        // Mobile only: texts can't go to an office line, and the Phone field is never used.
+        for (i, line) in lines.enumerated() where line.trimmingCharacters(in: .whitespaces).hasPrefix("Mobile") {
+            if let p = phoneIn(line) ?? (i + 1 < lines.count ? phoneIn(lines[i + 1]) : nil) { return p }
         }
-        return lines.lazy.compactMap(phoneIn).first
+        return nil
     }
 }
 

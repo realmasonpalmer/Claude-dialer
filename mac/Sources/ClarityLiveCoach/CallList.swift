@@ -324,13 +324,23 @@ enum SalesforceChrome {
         return true
     }
 
-    /// Clicks the first phone number on the open record (Salesforce's click-to-dial), which makes the
-    /// Aircall panel in Salesforce dial it, just like the rep clicking it. Skips the split view list.
+    /// Clicks the Mobile number on the open record (Salesforce's click-to-dial), which makes the
+    /// Aircall panel in Salesforce dial it, just like the rep clicking it. Never clicks the Phone
+    /// field. Skips the split view list.
     static func clickToDial() -> Bool {
+        // label(): walks up from the number to the nearest field label ("Mobile", "Phone", ...).
         let js = deepFind + "function inside(n,r){while(n){if(n===r)return true;n=n.parentNode||n.host;}return false;}"
+            + "function txt(e){return e?((e.getAttribute&&e.getAttribute('title'))||e.innerText||e.textContent||'').trim():'';}"
+            + "function label(n){for(var k=0;n&&k<12;k++){"
+            + "var f=n.getAttribute&&n.getAttribute('field-label');if(f)return f;"
+            + "var rs=[n,n.shadowRoot];for(var r=0;r<2;r++){var x=rs[r];if(!x||!x.querySelector)continue;"
+            + "var l=x.querySelector('.test-id__field-label,.slds-form-element__label,p.slds-text-title');"
+            + "if(l&&txt(l))return txt(l);}"
+            + "n=n.parentNode||n.host;}return '';}"
             + "(function(){var lr=listRoot(),els=deep(document,'lightning-click-to-dial',[]);"
             + "for(var i=0;i<els.length;i++){var el=els[i];"
             + "if(!el.getClientRects().length||(lr&&inside(el,lr)))continue;"
+            + "if(!/mobile/i.test(label(el)))continue;"
             + "var t=(el.shadowRoot||el).querySelector('a,button');"
             + "if(t){t.click();return 'ok';}}"
             + "return 'no';})()"

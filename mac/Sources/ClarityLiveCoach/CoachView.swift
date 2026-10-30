@@ -599,7 +599,7 @@ struct CoachView: View {
         guard let d = coach.leads.details else { return "Loading..." }
         if d.doNotCall { return "Do Not Call" }
         if !Aircall.canPlaceCalls { return "Set up Aircall calling first" }
-        return d.callNumber != nil ? "Call \(d.name)" : "No phone number"
+        return d.callNumber != nil ? "Call \(d.name)" : "No mobile number"
     }
 
     /// During a call (or without the Salesforce list): Back and Next as before.
