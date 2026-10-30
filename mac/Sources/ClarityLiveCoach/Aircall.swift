@@ -11,7 +11,7 @@ enum Aircall {
     }
 
     /// Aircall answered 404: that address or number doesn't exist for this account.
-    struct NotFound: Error {}
+    struct NotFound: Error { let detail: String }
 
     struct AircallError: LocalizedError {
         let message: String
@@ -42,7 +42,7 @@ enum Aircall {
         let (data, response) = try await URLSession.shared.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-        if code == 404 { throw NotFound() }
+        if code == 404 { throw NotFound(detail: String(data: data, encoding: .utf8).map { String($0.prefix(160)) } ?? "") }
         guard (200..<300).contains(code) else {
             let detail = (json["message"] as? String) ?? (json["error"] as? String) ?? String(data: data, encoding: .utf8) ?? ""
             throw AircallError(message: code == 401 || code == 403
@@ -56,8 +56,8 @@ enum Aircall {
         let json: [String: Any]
         do {
             json = try await request("/numbers?per_page=50")
-        } catch is NotFound {
-            throw AircallError(message: "Aircall couldn't find your numbers (404). Check the API ID and token.")
+        } catch let notFound as NotFound {
+            throw AircallError(message: "Aircall couldn't find your numbers (404 \(notFound.detail)). Check the API ID and token.")
         }
         return ((json["numbers"] as? [[String: Any]]) ?? []).compactMap { n in
             guard let id = n["id"] as? Int else { return nil }
@@ -72,15 +72,17 @@ enum Aircall {
         // Native send shows the text in the Aircall app. The plain send is the backup
         // (it only works if the number was set up for API messaging).
         let paths = ["/numbers/\(numberID)/messages/native/send", "/numbers/\(numberID)/messages/send"]
+        var tried: [String] = []
         for path in paths {
             do {
                 _ = try await request(path, method: "POST", body: ["to": to, "body": body])
                 return
-            } catch is NotFound {
+            } catch let notFound as NotFound {
+                tried.append("\(path): 404 \(notFound.detail)")
                 continue // try the next address
             }
         }
-        throw AircallError(message: "Aircall couldn't find texting for this number (404). In Aircall, check that this number can send texts, then pick it again in Aircall texting.")
+        throw AircallError(message: "Aircall couldn't send (number \(numberID)). " + tried.joined(separator: " | "))
     }
 
     /// "(555) 555-0123" -> "+15555550123". US and Canada only.
@@ -119,6 +121,7 @@ struct AircallSetupView: View {
     @State private var status: String?
     @State private var working = false
     @AppStorage("autoSendText") private var autoSend = false
+    @State private var testPhone = ""
 
     var body: some View {
         ScrollView {
@@ -151,6 +154,26 @@ struct AircallSetupView: View {
                     Text(status).font(.callout)
                         .foregroundStyle(status.hasPrefix("Connected") ? .green : .orange)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !numbers.isEmpty {
+                    Text("Send yourself a test text").font(.callout.weight(.semibold))
+                    HStack {
+                        TextField("Your cell", text: $testPhone).textFieldStyle(.roundedBorder)
+                        Button("Send test") {
+                            Task {
+                                working = true
+                                defer { working = false }
+                                do {
+                                    try await Aircall.sendText(to: testPhone, body: "Test from Clarity Live Coach.")
+                                    status = "Connected. Test text sent. Check your phone."
+                                } catch {
+                                    status = error.localizedDescription
+                                }
+                            }
+                        }
+                        .disabled(testPhone.trimmed.isEmpty || working)
+                    }
                 }
 
                 Divider()

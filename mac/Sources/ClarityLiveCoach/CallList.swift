@@ -320,6 +320,18 @@ enum SalesforceChrome {
         return true
     }
 
+    /// The LinkedIn profile link on the open record (Lead "Linkedin" / Contact "LinkedIn" field), if shown.
+    static func linkedInProfile() -> String? {
+        // Skip links inside the split view list, so a LinkedIn column there can't win over the open record.
+        let js = deepFind + "function inside(n,r){while(n){if(n===r)return true;n=n.parentNode||n.host;}return false;}"
+            + "(function(){var lr=listRoot(),a=deep(document,'a[href]',[]);"
+            + "for(var i=0;i<a.length;i++){if(a[i].getClientRects().length&&a[i].href.indexOf('linkedin.com/in/')>=0"
+            + "&&!(lr&&inside(a[i],lr)))return a[i].href;}"
+            + "return '';})()"
+        guard let r = javascript(js), !r.isEmpty else { return nil }
+        return r
+    }
+
     /// The visible list's Lead and Contact rows, in screen order.
     static func readList() -> ListResult {
         guard chromeRunning, let tabURL = url() else { return .noSalesforceTab }

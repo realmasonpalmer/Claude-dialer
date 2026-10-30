@@ -183,6 +183,8 @@ struct FollowUp: Equatable {
     var linkedinDone = false
     /// Their phone, from the Salesforce page; editable on the card.
     var phone = ""
+    /// Their LinkedIn profile, from the Salesforce record's LinkedIn field.
+    var linkedinURL: URL?
     /// "Sending...", "Sent", or an error, for the text row.
     var textStatus: String?
 
@@ -757,9 +759,9 @@ final class CoachModel: ObservableObject {
             guard let open = c.firstIndex(of: "\""), let close = c.lastIndex(of: "\""), open < close else { return nil }
             return String(c[c.index(after: open)..<close])
         }
-        if followUp?.prospect != name || followUp == nil {
-            followUp = FollowUp(prospect: name, phone: Aircall.phone(in: recordDetails) ?? "")
-        }
+        // A fresh card for every voicemail, so nothing (like an old error) carries over.
+        followUp = FollowUp(prospect: name, phone: Aircall.phone(in: recordDetails) ?? "",
+                            linkedinURL: Self.linkedInProfile(details: recordDetails))
         if let script = voicemailScript { fillFollowUp(from: script) }
         else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
     }
@@ -791,17 +793,34 @@ final class CoachModel: ObservableObject {
         }
     }
 
-    /// Opens LinkedIn to find them, with the connection note already copied. Checks it off.
+    /// Opens their LinkedIn profile (from the Salesforce record), with the note already copied.
+    /// Falls back to a name + company search only when the record has no LinkedIn link.
     func openLinkedIn() {
         guard let f = followUp else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(f.linkedin, forType: .string)
-        let query = [f.prospect, recordCompany].compactMap { $0 }.joined(separator: " ")
-        if let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let url = URL(string: "https://www.linkedin.com/search/results/people/?keywords=\(q)") {
-            NSWorkspace.shared.open(url)
+        if let profile = f.linkedinURL ?? Self.linkedInProfile(details: recordDetails) {
+            NSWorkspace.shared.open(profile)
+        } else {
+            let query = [f.prospect, recordCompany].compactMap { $0 }.joined(separator: " ")
+            if let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let url = URL(string: "https://www.linkedin.com/search/results/people/?keywords=\(q)") {
+                NSWorkspace.shared.open(url)
+            }
         }
         followUp?.linkedinDone = true
+    }
+
+    /// The profile link from the record: the LinkedIn field's link on the page, or the URL in the page text.
+    static func linkedInProfile(details: String?) -> URL? {
+        var raw = SalesforceChrome.linkedInProfile()
+        if raw == nil, let details,
+           let r = details.range(of: #"linkedin\.com/in/[A-Za-z0-9\-_%]+"#, options: .regularExpression) {
+            raw = "https://www." + details[r]
+        }
+        guard var link = raw else { return nil }
+        if link.hasPrefix("http://") { link = "https://" + link.dropFirst("http://".count) }
+        return URL(string: link)
     }
 
     /// The company line from the Salesforce page, if it shows one (helps LinkedIn find the right person).

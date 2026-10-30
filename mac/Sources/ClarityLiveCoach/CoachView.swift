@@ -688,7 +688,7 @@ struct FollowUpCard: View {
                     if f.linkedinDone {
                         Button("Open again") { onLinkedIn() }.buttonStyle(.link)
                     } else {
-                        Button("Open LinkedIn + copy note") { onLinkedIn() }
+                        Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
                             .buttonStyle(.borderedProminent)
                             .disabled(f.linkedin.isEmpty)
                     }
