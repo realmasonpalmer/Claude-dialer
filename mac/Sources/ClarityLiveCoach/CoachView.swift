@@ -127,6 +127,9 @@ struct CoachView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             card
+            if coach.followUp != nil {
+                FollowUpCard(followUp: $coach.followUp)
+            }
             if let problem = coach.problem {
                 Text(problem).font(.callout).foregroundStyle(.orange)
             }
@@ -445,5 +448,85 @@ struct ScoreboardView: View {
 
     private func percent(_ part: Int, of whole: Int) -> String {
         whole == 0 ? "-" : "\(Int((Double(part) / Double(whole) * 100).rounded()))%"
+    }
+}
+
+// MARK: - Voicemail follow-ups
+
+/// After a voicemail: a text and a LinkedIn note, each with a checkbox and a copy button.
+/// Stays after the call until both are checked or it's closed.
+struct FollowUpCard: View {
+    @Binding var followUp: FollowUp?
+
+    var body: some View {
+        if let f = followUp {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Follow up\(f.prospect.map { " with \($0)" } ?? "")")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        followUp = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Close")
+                }
+                item("Text", f.text, done: binding(\.textDone))
+                item("LinkedIn note", f.linkedin, done: binding(\.linkedinDone), extra: linkedInSearch(f.prospect))
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            .onChange(of: f.allDone) {
+                if f.allDone {
+                    Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        if followUp?.allDone == true { followUp = nil }
+                    }
+                }
+            }
+        }
+    }
+
+    private func item(_ title: String, _ message: String, done: Binding<Bool>, extra: URL? = nil) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Toggle("", isOn: done)
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(message.isEmpty ? "Writing..." : message)
+                    .font(.callout)
+                    .strikethrough(done.wrappedValue)
+                    .foregroundStyle(message.isEmpty || done.wrappedValue ? .secondary : .primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 12) {
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(message, forType: .string)
+                    }
+                    .disabled(message.isEmpty)
+                    if let extra {
+                        Link("Find on LinkedIn", destination: extra)
+                    }
+                }
+                .font(.caption)
+                .buttonStyle(.link)
+            }
+        }
+    }
+
+    private func binding(_ key: WritableKeyPath<FollowUp, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { followUp?[keyPath: key] ?? false },
+            set: { followUp?[keyPath: key] = $0 }
+        )
+    }
+
+    private func linkedInSearch(_ name: String?) -> URL? {
+        guard let name, let q = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.linkedin.com/search/results/people/?keywords=\(q)")
     }
 }

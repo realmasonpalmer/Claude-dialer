@@ -12,6 +12,9 @@ struct Suggestion: Equatable {
     var sayComplete = false
     /// Codes of the meeting times this line offers or confirms, e.g. ["T3", "T5"].
     var offered: [String] = []
+    /// Voicemail follow-ups: a text to send and a LinkedIn connection note.
+    var textMessage = ""
+    var linkedin = ""
 
     /// Claude answers in a tiny line format so words can show while they stream:
     ///   SAY: ...
@@ -31,6 +34,8 @@ struct Suggestion: Equatable {
             if trimmed.hasPrefix("CUE:") { s.cue = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("STAGE:") { s.stage = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("SKIP") { s.skip = true }
+            else if trimmed.hasPrefix("TEXT:") { s.textMessage = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces) }
+            else if trimmed.hasPrefix("LINKEDIN:") { s.linkedin = String(trimmed.dropFirst(9)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("OFFERED:") {
                 s.offered = trimmed.dropFirst(8).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).uppercased() }
             }
@@ -138,8 +143,12 @@ enum CoachPrompt {
         one reason tied to something specific about them, their role or their company (from the Salesforce facts,
         or a common pain for their title if there are none); then "I'll send you a quick text so you have my number."
         No pitch, no hype, no email.
-        In the CUE, write the text message to send right after, as: Text: <message>. The text is under 25 words,
-        says the rep's name and company, repeats the one reason, and asks one easy yes/no question. STAGE: Voicemail.
+        CUE: one short delivery tip. STAGE: Voicemail.
+        Then add two more lines:
+        TEXT: <the text message to send right after. Under 25 words. Rep's name and company, the same one reason,
+        and one easy yes/no question.>
+        LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Says the rep just tried calling,
+        gives the same specific reason, no pitch, no links, no emojis.>
         """
     }
 
@@ -159,6 +168,18 @@ enum CoachPrompt {
         }
         return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n\n"
     }
+}
+
+// MARK: - Voicemail follow-ups
+
+struct FollowUp: Equatable {
+    var prospect: String?
+    var text = ""
+    var linkedin = ""
+    var textDone = false
+    var linkedinDone = false
+
+    var allDone: Bool { textDone && linkedinDone }
 }
 
 // MARK: - Call state
@@ -247,6 +268,9 @@ final class CoachModel: ObservableObject {
     private var voicemailTask: Task<Void, Never>?
     private var voicemailActive = false
     private var mailboxFullShown = false
+
+    /// After a voicemail: the text and LinkedIn note to send. Stays after the call until checked off.
+    @Published var followUp: FollowUp?
 
     /// Proven openers, rotated call by call, with your own scoreboard.
     let openers = OpenerBook()
@@ -609,6 +633,7 @@ final class CoachModel: ObservableObject {
         specBasis = nil
         uncoached = ""
         seq += 1
+        startFollowUp()
         if mailboxFull {
             mailboxFullShown = true
             show(Suggestion(say: "Mailbox is full. Hang up and dial the next one.", cue: "No message possible.",
@@ -621,6 +646,26 @@ final class CoachModel: ObservableObject {
                  id: seq, kind: .voicemail)
             ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails))
         }
+    }
+
+    /// Sets up the follow-up card for this prospect, filled from the pre-written voicemail if ready.
+    private func startFollowUp() {
+        let name = calling.flatMap { c -> String? in
+            guard let open = c.firstIndex(of: "\""), let close = c.lastIndex(of: "\""), open < close else { return nil }
+            return String(c[c.index(after: open)..<close])
+        }
+        if followUp?.prospect != name || followUp == nil {
+            followUp = FollowUp(prospect: name)
+        }
+        if let script = voicemailScript { fillFollowUp(from: script) }
+        else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
+    }
+
+    private func fillFollowUp(from s: Suggestion) {
+        guard var f = followUp else { return }
+        if f.text.isEmpty { f.text = s.textMessage }
+        if f.linkedin.isEmpty { f.linkedin = s.linkedin }
+        followUp = f
     }
 
     /// Writes this prospect's voicemail in the background, so it's instant when needed.
@@ -641,7 +686,11 @@ final class CoachModel: ObservableObject {
             var s = Suggestion.parse(text)
             s.sayComplete = true
             s.stage = "Voicemail"
-            if !Task.isCancelled, !s.say.isEmpty { self?.voicemailScript = s }
+            if !Task.isCancelled, !s.say.isEmpty {
+                self?.voicemailScript = s
+                if self?.voicemailActive == true { self?.fillFollowUp(from: s) }
+            }
+            if !Task.isCancelled { self?.voicemailTask = nil }
         }
     }
 
@@ -820,6 +869,7 @@ final class CoachModel: ObservableObject {
     /// Bookkeeping for what a line tells us: stage reached, times offered, goal, voicemail.
     private func note(_ s: Suggestion) {
         if status != .ready, !s.stage.isEmpty { stagesSeen.insert(s.stage) }
+        if voicemailActive, !s.textMessage.isEmpty || !s.linkedin.isEmpty { fillFollowUp(from: s) }
         // Remember which meeting times this line offered, so the next ones are different.
         if !s.offered.isEmpty {
             let dates = s.offered.compactMap { code in codeByDate.first { $0.value == code }?.key }
