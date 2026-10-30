@@ -545,11 +545,11 @@ struct CoachView: View {
                 Button {
                     coach.nextLead()
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(nextDials ? "Next & call" : "Next")
-                        Image(systemName: nextDials ? "phone.arrow.right" : "chevron.right")
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(nextDials ? "CALL NEXT" : "NEXT").font(.caption2.weight(.bold)).opacity(0.8)
+                        Text(coach.leads.nextRow?.name ?? "No one left").font(.callout.weight(.semibold)).lineLimit(1)
                     }
-                    .frame(height: 28)
+                    .frame(maxWidth: 130, alignment: .leading)
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(coach.leads.nextRow == nil || coach.dialing)
