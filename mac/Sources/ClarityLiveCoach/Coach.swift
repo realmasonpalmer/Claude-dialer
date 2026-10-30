@@ -466,7 +466,8 @@ final class CoachModel: ObservableObject {
     @discardableResult
     func callFromPage() -> Bool {
         guard status == .ready, !dialing else { return false }
-        if Aircall.canPlaceCalls {
+        // The Aircall phone inside the coach (or the desktop app): dial through the API.
+        if AircallPhone.isOn || Aircall.canPlaceCalls {
             guard let mobile = SalesforceChrome.mobileNumber() else { return false }
             dialing = true
             dialError = nil

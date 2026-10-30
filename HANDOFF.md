@@ -80,6 +80,8 @@ meant to replace Aircall, a Twilio dialer server, and a web-page coach. Don't re
 - **Mobile only:** the app never dials or texts the Phone field. In-app list drops anyone with no Mobile or Do Not Call; Contacts with no Mobile and a blank `Relationship_Status__c` get "Not Quality Prospect" (only write the app makes). Open question: what to do with Leads with no Mobile (Leads have no Relationship Status field).
 - **Calls start from the app, not Salesforce:** Chrome version reads the Mobile number off the page and calls it through the Aircall API (`startCall`), which rings out in the Aircall desktop app. It only clicks the number in Salesforce if Aircall calling isn't set up. New big **Call [name]** button for the lead open in Salesforce.
 
+- **Aircall phone inside the coach** (`AircallPhone.swift`): a WKWebView with Aircall Workspace (`https://workspace.aircall.io`), signed in once, kept tiny at the bottom of the coach (Show/Hide). Dials go through the REST API `startCall` and ring there. The coach hears it through WebKit helper processes (`AudioProcess.isAppPhone`, matched to this app via `responsibility_get_pid_responsible_for_pid`). Gear > "Aircall phone inside the coach" (on by default). Unverified: whether Aircall Workspace runs in WKWebView, Google sign-in in an embedded view, and whether API dials ring the embedded Workspace. Fallbacks: Aircall desktop app, or turn the toggle off.
+
 ## Next tasks (Mason said yes to 1 and 2)
 
 1. **After a 2nd-try voicemail:** send the follow-up text automatically, then move on to the next lead when the call ends. (There's already an optional "Send the text by itself" toggle in Aircall settings, off by default because of texting rules; Mason wants less manual work. Keep a way to skip Do Not Call.)

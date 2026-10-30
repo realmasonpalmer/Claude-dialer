@@ -129,6 +129,7 @@ struct CoachView: View {
     @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
     @AppStorage("wholeLine") private var wholeLine = true
     @AppStorage("nextDials") private var nextDials = true
+    @AppStorage("appPhone") private var appPhone = true
 
     // One visual system: blue = actions, green = listening, amber = real warnings.
     private let margin: CGFloat = 16
@@ -154,6 +155,7 @@ struct CoachView: View {
             }
             warnings
             Spacer(minLength: 0)
+            if appPhone { AircallPhonePanel() }
             if let left = coach.autoNextIn { autoNextBar(left) }
             navigation
         }
@@ -255,6 +257,7 @@ struct CoachView: View {
             }
             Toggle("Show each line all at once", isOn: $wholeLine)
             Toggle("Next calls right away", isOn: $nextDials)
+            Toggle("Aircall phone inside the coach", isOn: $appPhone)
             Toggle("Rotate proven openers", isOn: Binding(
                 get: { coach.openers.rotate },
                 set: { coach.openers.rotate = $0; coach.refreshOpener() }
@@ -727,7 +730,8 @@ struct HelpView: View {
                 section("Calling from the app (recommended)", [
                     "Gear > Connect Salesforce, then pick your list at the top.",
                     "Gear > Aircall calling and texting: pick your number and yourself.",
-                    "Keep the Aircall desktop app open. The big Call button dials the lead on screen.",
+                    "Aircall phone (bottom of the coach): click Show, sign in once, set yourself Available, click Hide.",
+                    "The big Call button dials their Mobile through Aircall. The call rings in the coach.",
                     "Call [next name] loads the next lead and dials right away. Turn it off in the gear menu.",
                     "Calls log to Salesforce through Aircall, made by you, like always.",
                 ])

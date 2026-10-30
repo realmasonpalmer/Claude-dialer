@@ -59,8 +59,26 @@ struct AudioProcess: Identifiable, Hashable {
 
     var isChrome: Bool { bundleID.hasPrefix("com.google.Chrome") }
 
-    /// The Aircall desktop app (Aircall Workspace) or one of its helper processes.
-    var isAircallApp: Bool { bundleID.lowercased().contains("aircall") || name.lowercased().contains("aircall") }
+    /// The Aircall desktop app (Aircall Workspace) or one of its helper processes,
+    /// or the Aircall phone running inside this app (its sound plays in WebKit helper processes).
+    var isAircallApp: Bool {
+        bundleID.lowercased().contains("aircall") || name.lowercased().contains("aircall") || isAppPhone
+    }
+
+    /// A WebKit helper working for this app (the in-app Aircall phone), not for Safari.
+    var isAppPhone: Bool {
+        guard AircallPhone.isOn, bundleID.hasPrefix("com.apple.WebKit") else { return false }
+        guard let responsible = Self.responsiblePID else { return true } // can't tell: assume it's ours
+        return responsible(pid) == ProcessInfo.processInfo.processIdentifier
+    }
+
+    /// macOS's "which app is this helper working for" lookup, if available.
+    private static let responsiblePID: ((pid_t) -> pid_t)? = {
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") else { return nil }
+        typealias Fn = @convention(c) (pid_t) -> pid_t
+        let fn = unsafeBitCast(sym, to: Fn.self)
+        return { fn($0) }
+    }()
 
     /// Chrome uses the mic and plays sound at the same time only while a call is live.
     static func chromeOnCall(in processes: [AudioProcess]) -> Bool {
