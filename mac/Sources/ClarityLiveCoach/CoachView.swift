@@ -164,7 +164,7 @@ struct CoachView: View {
                         NSApplication.shared.activate(ignoringOtherApps: true)
                     }
                     Button("Opener scoreboard") { showScoreboard = true }
-                    Button(coach.availability.hasAccess ? "Booking calendar" : "Connect Google Calendar...") { showCalendar = true }
+                    Button("Booking calendar (your boss's)...") { showCalendar = true }
                     Toggle("Rotate proven openers", isOn: Binding(
                         get: { coach.openers.rotate },
                         set: { coach.openers.rotate = $0; coach.refreshOpener() }

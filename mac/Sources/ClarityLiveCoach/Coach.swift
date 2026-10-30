@@ -107,7 +107,7 @@ enum CoachPrompt {
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         let booking = openTimes.map {
             """
-            The rep's real free time for the meeting, from their Google Calendar:
+            Real free time for the meeting, from the calendar the rep books on (the meeting host's Google Calendar):
             \($0)
             When asking for the meeting, offer two specific times from these windows, say the time zone, and use these instead of any example times in the campaign. \
             If the prospect suggests a time, check it against the windows. If it isn't free, offer the closest free time. Never offer a time outside these windows.

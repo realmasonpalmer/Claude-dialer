@@ -1,8 +1,8 @@
 import EventKit
 import SwiftUI
 
-/// Reads free time from the rep's Google Calendar, synced to macOS Calendar
-/// (System Settings > Internet Accounts > Google). Recurring meetings are handled by macOS.
+/// Reads free time from the calendar the rep books meetings on (usually the boss's Google
+/// Calendar, shared with the rep and synced to macOS Calendar). Recurring meetings are handled by macOS.
 /// Only busy/free times are used; event titles and details are never sent anywhere.
 @MainActor
 final class Availability: ObservableObject {
@@ -38,10 +38,9 @@ final class Availability: ObservableObject {
         calendars = store.calendars(for: .event)
             .filter { $0.type != .birthday }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        // First time: use your own Google calendars (the ones you can edit).
-        if selectedIDs.isEmpty {
-            let google = calendars.filter { $0.allowsContentModifications && $0.source.title.lowercased().contains("google") || $0.source.title.contains("@") }
-            selectedIDs = Set((google.isEmpty ? calendars.filter(\.allowsContentModifications) : google).map(\.calendarIdentifier))
+        // Nothing is picked by default: the rep chooses the calendar they book on (often someone else's).
+        if !calendars.isEmpty {
+            selectedIDs = selectedIDs.filter { id in calendars.contains { $0.calendarIdentifier == id } }
         }
     }
 
@@ -100,7 +99,7 @@ final class Availability: ObservableObject {
         }
         guard !lines.isEmpty else { return nil }
         let zone = TimeZone.current.localizedName(for: .generic, locale: .current) ?? TimeZone.current.identifier
-        return "Times are in the rep's time zone (\(zone)). Meeting length: \(meetingMinutes) minutes.\n" + lines.joined(separator: "\n")
+        return "Times are in \(zone) time. Meeting length: \(meetingMinutes) minutes.\n" + lines.joined(separator: "\n")
     }
 
     private func roundUpToHalfHour(_ date: Date, _ cal: Calendar) -> Date {
@@ -132,14 +131,15 @@ struct BookingCalendarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Booking calendar").font(.title2.weight(.semibold))
-            Text("When you ask for the meeting, the coach offers real open times from your calendar.")
+            Text("When you ask for the meeting, the coach offers real open times from the calendar you book on, like your boss's.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if !availability.hasAccess {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("1. Add your Google account to your Mac: System Settings > Internet Accounts > Add Account > Google. Turn on Calendars.")
-                    Text("2. Then allow access here.")
+                    Text("1. Have your boss share their Google Calendar with you.")
+                    Text("2. Add your Google account to your Mac: System Settings > Internet Accounts > Add Account > Google. Turn on Calendars.")
+                    Text("3. Then allow access here.")
                     Button("Allow calendar access") { Task { await availability.requestAccess() } }
                         .buttonStyle(.borderedProminent)
                     if availability.status == .denied {
@@ -150,7 +150,12 @@ struct BookingCalendarView: View {
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Check the calendars that show when you're busy:").font(.callout.weight(.semibold))
+                Text("Check the calendar you book meetings on (your boss's). Leave your own unchecked.")
+                    .font(.callout.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Don't see it? Open calendar.google.com/calendar/syncselect, check it, click Save, then reopen this window.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(availability.calendars, id: \.calendarIdentifier) { calendar in
@@ -184,7 +189,9 @@ struct BookingCalendarView: View {
                 .pickerStyle(.segmented)
 
                 Text("Next open times").font(.callout.weight(.semibold))
-                Text(availability.openTimesText() ?? "No open times found. Check the calendars and hours above.")
+                Text(availability.openTimesText() ?? (availability.selectedIDs.isEmpty
+                    ? "Check a calendar above to see open times."
+                    : "No open times found. Check the calendar and hours above."))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
