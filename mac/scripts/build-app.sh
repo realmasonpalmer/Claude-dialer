@@ -6,12 +6,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-swift build -c release
+# Build outside the project folder: macOS can block build files in Downloads or Documents.
+SCRATCH="$HOME/Library/Caches/ClarityLiveCoach-build"
+swift build -c release --scratch-path "$SCRATCH"
 
 APP="build/Clarity Live Coach.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/ClarityLiveCoach "$APP/Contents/MacOS/ClarityLiveCoach"
+cp "$SCRATCH/release/ClarityLiveCoach" "$APP/Contents/MacOS/ClarityLiveCoach"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"

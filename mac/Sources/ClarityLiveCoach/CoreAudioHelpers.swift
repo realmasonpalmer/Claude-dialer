@@ -25,7 +25,8 @@ func readProperty<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySel
     var addr = address(selector)
     var value = initial
     var size = UInt32(MemoryLayout<T>.size)
-    try check(AudioObjectGetPropertyData(object, &addr, 0, nil, &size, &value), "Read property \(selector)")
+    let status = withUnsafeMutablePointer(to: &value) { AudioObjectGetPropertyData(object, &addr, 0, nil, &size, $0) }
+    try check(status, "Read property \(selector)")
     return value
 }
 
