@@ -188,6 +188,16 @@ struct CoachView: View {
         HStack(spacing: 8) {
             StatusPill(status: pillState, color: pillColor)
             Spacer()
+            if coach.status != .ready {
+                Button(role: .destructive) {
+                    coach.endCall()
+                } label: {
+                    Label("End call", systemImage: "phone.down.fill")
+                }
+                .controlSize(.small)
+                .keyboardShortcut("e", modifiers: .command)
+                .help("Call's over: reset for the next one (Command-E)")
+            }
             if updater.updateAvailable && !updater.updating && coach.status == .ready {
                 Button("Update") { updater.update() }
                     .buttonStyle(.borderedProminent)
@@ -244,7 +254,7 @@ struct CoachView: View {
             Divider()
             Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
                 .disabled(coach.status == .ready)
-            Button("Start listening now") { coach.startByHand() }
+            Button("Start listening now (new call)") { coach.startByHand() }
             Button("Reset who's been called today") { coach.callList.clearCalledToday() }
             Button("Copy Next debug info") {
                 NSPasteboard.general.clearContents()
@@ -552,6 +562,7 @@ struct HelpView: View {
                 ])
                 section("Shortcuts", [
                     "Command-N: Next",
+                    "Command-E: End call (the coach also ends it when Aircall says the call is over)",
                     "Command-J: a different line now",
                 ])
                 HStack {

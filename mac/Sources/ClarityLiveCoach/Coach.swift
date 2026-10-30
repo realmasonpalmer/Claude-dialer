@@ -458,7 +458,7 @@ final class CoachModel: ObservableObject {
         guard active else { return }
         let onCall = AudioProcess.chromeOnCall(in: AudioProcess.others())
         // Between calls, notice which record is open so the opener uses their name.
-        if status == .ready, !onCall {
+        if status == .ready, !onCall || waitingForNewCall {
             tabTicks += 1
             if tabTicks % 2 == 0 {
                 callList.captureIfListView()
@@ -482,16 +482,76 @@ final class CoachModel: ObservableObject {
         }
         switch status {
         case .ready where onCall:
-            startCall()
-        case .live where !startedByHand:
-            quietTicks = onCall ? 0 : quietTicks + 1
-            if quietTicks >= 6 { nextCall() } // call over for 3 seconds
+            if waitingForNewCall {
+                // Chrome is still holding the last call's mic/speaker: start only when Aircall shows a new call.
+                checkAircallForNewCall()
+            } else {
+                startCall()
+            }
+        case .ready:
+            waitingForNewCall = false // Chrome let go, so the next time it grabs the mic is a new call
+        case .live:
+            if !startedByHand {
+                quietTicks = onCall ? 0 : quietTicks + 1
+                if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
+            }
+            checkAircallEveryFewSeconds()
         default:
             break
         }
     }
 
+    /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
+    func endCall() {
+        guard status != .ready else { return }
+        nextCall()
+        waitingForNewCall = true
+        endedAt = Date()
+    }
+    private var endedAt = Date.distantPast
+
+    /// After a call ends while Chrome still holds the mic, don't treat that as a new call.
+    private var waitingForNewCall = false
+    private var callStartedAt = Date.distantPast
+
+    private func checkAircallForNewCall() {
+        aircallTicks += 1
+        guard aircallTicks % 4 == 0, aircallCheck == nil, Aircall.isSetUp else { return }
+        aircallCheck = Task { [weak self] in
+            let since = self?.endedAt ?? Date()
+            let onCall = await Aircall.lineIsOnCall(since: since)
+            guard let self else { return }
+            self.aircallCheck = nil
+            if onCall == true, self.status == .ready, self.waitingForNewCall {
+                self.waitingForNewCall = false
+                self.startCall()
+            }
+        }
+    }
+
+    // Aircall says when the call is over. Asked every 2 seconds during a call; two "no call"
+    // answers in a row end it (so one slow answer can't end a live call).
+    private var aircallTicks = 0
+    private var aircallSaysOver = 0
+    private var aircallCheck: Task<Void, Never>?
+
+    private func checkAircallEveryFewSeconds() {
+        aircallTicks += 1
+        guard aircallTicks % 4 == 0, aircallCheck == nil, Aircall.isSetUp else { return }
+        // Give Aircall a moment to register a brand-new call before trusting a "no".
+        guard Date().timeIntervalSince(callStartedAt) > 5 else { return }
+        aircallCheck = Task { [weak self] in
+            let onCall = await Aircall.lineIsOnCall()
+            guard let self else { return }
+            self.aircallCheck = nil
+            guard self.status == .live, let onCall else { return }
+            self.aircallSaysOver = onCall ? 0 : self.aircallSaysOver + 1
+            if self.aircallSaysOver >= 2 { self.endCall() }
+        }
+    }
+
     func startByHand() {
+        waitingForNewCall = false
         startedByHand = true
         startCall()
     }
@@ -507,6 +567,9 @@ final class CoachModel: ObservableObject {
         goalHit = false
         sawVoicemail = false
         stagesSeen = []
+        callStartedAt = Date()
+        aircallSaysOver = 0
+        aircallTicks = 0
         journeyStep = 0
         history = Array(history.suffix(1)) // keep the opener as the first line
         historyIndex = nil

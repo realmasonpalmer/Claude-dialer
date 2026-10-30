@@ -74,6 +74,22 @@ enum Aircall {
         }
     }
 
+    /// Asks Aircall whether the rep's line is on a call right now (Aircall's own call status, not a guess).
+    /// nil when Aircall isn't set up or can't be reached.
+    /// - Parameter since: only count calls that started after this time (to spot a *new* call).
+    static func lineIsOnCall(since: Date? = nil) async -> Bool? {
+        guard Keychain.read(.aircallID) != nil, Keychain.read(.aircallToken) != nil,
+              let json = try? await request("/calls?order=desc&per_page=10") else { return nil }
+        let calls = (json["calls"] as? [[String: Any]]) ?? []
+        let mine = calls.filter { call in
+            if let numberID, ((call["number"] as? [String: Any])?["id"] as? Int) != numberID { return false }
+            if let since, let started = call["started_at"] as? Double, started < since.timeIntervalSince1970 { return false }
+            return true
+        }
+        // Aircall call status: "initial" (ringing), "answered" (live), "done" (ended).
+        return mine.contains { ["initial", "answered"].contains($0["status"] as? String ?? "") }
+    }
+
     /// Sends one text, from the chosen Aircall number to one person.
     static func sendText(to phone: String, body: String) async throws {
         guard let numberID else { throw AircallError(message: "Pick which Aircall number sends texts.") }
