@@ -914,6 +914,22 @@ final class CoachModel: ObservableObject {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        // Didn't connect: over in under 12 seconds, nobody talked, no voicemail. That's a bad
+        // number's beeping tone or a dropped call, not a person who didn't pick up (that rings 20+ s).
+        let quickFail = !badNumberThisCall && !startedByHand && !sawVoicemail
+            && Date().timeIntervalSince(callStartedAt) < 12
+            && !turns.contains { $0.speaker == .prospect }
+        if quickFail, let key = currentAttemptKey {
+            let fails = DialHistory.logFailedConnect(key)
+            nextCall()
+            waitingForNewCall = true
+            endedAt = Date()
+            followUp = nil
+            lastCallAnswered = true // no redial
+            problem = fails >= 2 ? "Didn't connect again. Bad number: taken off your list." : "Didn't connect (bad number or network). Moving on."
+            startNextSequence()
+            return
+        }
         if badNumberThisCall {
             // Number doesn't work: no voicemail, no text, no redial. Off the list, on to the next.
             badNumberThisCall = false

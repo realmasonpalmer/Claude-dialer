@@ -11,6 +11,8 @@ enum DialHistory {
         var linkedInMessages: [Date] = []
         /// The carrier said the number doesn't work.
         var badNumber = false
+        /// Calls that ended in seconds with nobody on the line (beeping tone, no connection).
+        var failedConnects = 0
 
         init() {}
 
@@ -23,6 +25,7 @@ enum DialHistory {
             linkedIns = try c.decodeIfPresent([Date].self, forKey: .linkedIns) ?? []
             linkedInMessages = try c.decodeIfPresent([Date].self, forKey: .linkedInMessages) ?? []
             badNumber = try c.decodeIfPresent(Bool.self, forKey: .badNumber) ?? false
+            failedConnects = try c.decodeIfPresent(Int.self, forKey: .failedConnects) ?? 0
         }
     }
 
@@ -97,8 +100,17 @@ enum DialHistory {
     /// Called the max number of times and never picked up: off the list.
     static func isMaxed(_ id: String) -> Bool {
         let p = person(id)
-        if p.badNumber { return true }
+        if p.badNumber || p.failedConnects >= 2 { return true }
         return maxDials > 0 && p.pickups == 0 && p.dials.count >= maxDials
+    }
+
+    /// Counts a call that didn't connect. Returns the total. Two = off the list.
+    @discardableResult
+    static func logFailedConnect(_ id: String) -> Int {
+        var p = person(id)
+        p.failedConnects += 1
+        all[key(id)] = p
+        return p.failedConnects
     }
 
     static func markBadNumber(_ id: String) {
