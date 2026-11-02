@@ -346,6 +346,67 @@ final class CoachModel: ObservableObject {
     @Published private(set) var dialing = false
     @Published var dialError: String?
 
+    // MARK: Relationship Status (Contacts only)
+
+    /// The Contact on screen, if the open record is a Contact. Leads don't have Relationship Status.
+    @Published private(set) var relationshipContactID: String?
+    /// What Salesforce says right now (nil = blank or not loaded yet).
+    @Published private(set) var relationshipStatus: String?
+    @Published private(set) var savingRelationship = false
+    @Published var relationshipMessage: String?
+
+    /// Notices which Contact is on screen and loads its Relationship Status.
+    func refreshRelationship() {
+        let id: String?
+        if leads.isActive {
+            id = leads.details.flatMap { $0.object == "Contact" ? $0.id : nil }
+        } else {
+            id = SalesforceChrome.url().flatMap(CallList.recordID).flatMap { $0.hasPrefix("003") ? $0 : nil }
+        }
+        guard id != relationshipContactID else { return }
+        relationshipContactID = id
+        relationshipStatus = nil
+        relationshipMessage = nil
+        guard let id, Salesforce.isConnected else { return }
+        Task { [weak self] in
+            let value = try? await Salesforce.relationshipStatus(contactID: id)
+            guard let self, self.relationshipContactID == id else { return }
+            self.relationshipStatus = value ?? nil
+        }
+    }
+
+    /// The Save button: writes Relationship Status to the Contact in Salesforce.
+    /// "Not Quality Prospect" and "Negative" also take them off the call list.
+    func saveRelationship(_ value: String) {
+        guard let id = relationshipContactID, !savingRelationship else { return }
+        guard Salesforce.isConnected else {
+            relationshipMessage = "Sign in to Salesforce first: gear menu, then Salesforce."
+            return
+        }
+        savingRelationship = true
+        relationshipMessage = nil
+        Task { [weak self] in
+            do {
+                try await Salesforce.setRelationshipStatus(contactID: id, to: value)
+                guard let self else { return }
+                self.savingRelationship = false
+                guard self.relationshipContactID == id else { return }
+                self.relationshipStatus = value
+                if Salesforce.removedStatuses.contains(value) {
+                    RemovedList.add(id)
+                    self.relationshipMessage = "Saved. Taken off your list."
+                } else {
+                    RemovedList.remove(id)
+                    self.relationshipMessage = "Saved."
+                }
+                self.callList.refreshUpNext()
+            } catch {
+                self?.savingRelationship = false
+                self?.relationshipMessage = error.localizedDescription
+            }
+        }
+    }
+
     /// Points the coach at the lead on screen: name, details, opener, voicemail.
     func applyLead() {
         guard let d = leads.details else { return }
@@ -355,6 +416,7 @@ final class CoachModel: ObservableObject {
         recordDetails = d.promptText
         prepareOpener()
         prepareVoicemail()
+        refreshRelationship()
     }
 
     /// Calls the lead from the Aircall desktop app.
@@ -649,6 +711,7 @@ final class CoachModel: ObservableObject {
                 callList.captureIfListView()
                 callList.refreshUpNext()
                 let record = SalesforceTab.currentRecord()
+                refreshRelationship()
                 if record != calling {
                     calling = record
                     if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }

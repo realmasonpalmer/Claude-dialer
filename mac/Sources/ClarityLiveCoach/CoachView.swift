@@ -168,6 +168,9 @@ struct CoachView: View {
                     onSetupAircall: { showAircall = true }
                 )
             }
+            if coach.relationshipContactID != nil {
+                RelationshipCard(coach: coach)
+            }
             warnings
             Spacer(minLength: 0)
             if appPhone { AircallPhonePanel() }
@@ -981,5 +984,58 @@ struct FollowUpCard: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+
+// MARK: - Relationship Status
+
+/// Every Relationship Status as a round radio button, two columns, with a Save button.
+/// Saves to the Contact in Salesforce. "Not Quality Prospect" and "Negative" take them off the list.
+struct RelationshipCard: View {
+    @ObservedObject var coach: CoachModel
+    @State private var picked: String?
+    @State private var pickedFor: String?
+
+    private let columns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
+
+    var body: some View {
+        let current = picked ?? coach.relationshipStatus
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Relationship Status").font(.callout.weight(.semibold))
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                ForEach(Salesforce.relationshipStatuses, id: \.self) { value in
+                    Button {
+                        picked = value
+                        pickedFor = coach.relationshipContactID
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: current == value ? "largecircle.fill.circle" : "circle")
+                                .foregroundStyle(current == value ? Color.accentColor : .secondary)
+                            Text(value).font(.callout).lineLimit(1)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            HStack(spacing: 8) {
+                Button(coach.savingRelationship ? "Saving..." : "Save") {
+                    if let picked { coach.saveRelationship(picked) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(picked == nil || picked == coach.relationshipStatus || coach.savingRelationship)
+                if let message = coach.relationshipMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .onChange(of: coach.relationshipContactID) {
+            // New person on screen: start fresh.
+            if pickedFor != coach.relationshipContactID { picked = nil; pickedFor = nil }
+        }
     }
 }

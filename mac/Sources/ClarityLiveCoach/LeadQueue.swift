@@ -53,7 +53,7 @@ final class LeadQueue: ObservableObject {
             error = nil
             UserDefaults.standard.set(view.id, forKey: "sfListView")
             // Start at the first one not called today.
-            index = rows.firstIndex { !calledToday.contains($0.id) } ?? 0
+            index = rows.firstIndex { !calledToday.contains($0.id) && !RemovedList.contains($0.id) } ?? 0
             await loadDetails()
         } catch {
             self.error = error.localizedDescription
