@@ -185,6 +185,7 @@ struct CoachView: View {
             belowCard
             if coach.statusRecordID != nil {
                 RelationshipCard(coach: coach)
+                    .id(coach.statusRecordID) // a fresh card per person: nothing picked carries over
             }
             if coach.followUp != nil {
                 FollowUpCard(

@@ -50,24 +50,27 @@ func level(of buffer: AVAudioPCMBuffer) -> Float {
     return min(max((db + 60) / 60, 0), 1) // -60 dB..0 dB -> 0..1
 }
 
-/// The rep's microphone, via AVAudioEngine (system default input device).
+/// The rep's microphone, via AVAudioEngine. A fresh engine every start, so switching
+/// microphones (built-in vs. headset) never leaves stale settings behind.
 final class MicCapture {
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
 
     /// - Parameter device: a specific microphone (like the Mac's built-in one); nil = the system default.
     func start(device: AudioDeviceID? = nil, onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
+        stop()
+        engine = AVAudioEngine()
         let input = engine.inputNode
         if var id = device, let unit = input.audioUnit {
-            // Ignore failure: then it simply uses the default mic.
-            _ = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
-                                     &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+            let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                              &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+            try check(status, "Pick microphone")
         }
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else {
+        // The microphone's own format, read after picking it.
+        let format = input.inputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
             throw CoreAudioError(status: -1, what: "Open microphone (no input device or no permission)")
         }
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in onBuffer(buffer) }
+        input.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in onBuffer(buffer) } // nil = the bus's own format
         engine.prepare()
         try engine.start()
     }

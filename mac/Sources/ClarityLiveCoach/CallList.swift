@@ -97,9 +97,9 @@ final class CallList: ObservableObject {
     }
 
     /// The next record after the current one that hasn't been called today.
-    func upNext() -> (record: Record, position: Int)? {
+    func upNext(after index: Int? = nil) -> (record: Record, position: Int)? {
         guard !records.isEmpty else { return nil }
-        let from = currentIndex() ?? lastIndex
+        let from = index ?? currentIndex() ?? lastIndex
         var i = from + 1
         while i < records.count {
             if !calledToday.contains(records[i].id) && !RemovedList.contains(records[i].id) && !DialHistory.isMaxed(records[i].id) { return (records[i], i + 1) }
@@ -108,9 +108,9 @@ final class CallList: ObservableObject {
         return nil
     }
 
-    func refreshUpNext() {
+    func refreshUpNext(after index: Int? = nil) {
         resetCalledIfNewDay()
-        let info = upNext().map { (name: $0.record.name, position: $0.position) }
+        let info = upNext(after: index).map { (name: $0.record.name, position: $0.position) }
         if info?.name != upNextInfo?.name || info?.position != upNextInfo?.position { upNextInfo = info }
     }
 
@@ -155,7 +155,8 @@ final class CallList: ObservableObject {
         lastOpenedID = record.id
         message = nil
         save()
-        refreshUpNext()
+        // The page hasn't changed yet, so count from the one just opened (not the page on screen).
+        refreshUpNext(after: index)
         return true
     }
 

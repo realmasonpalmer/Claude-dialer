@@ -361,7 +361,10 @@ final class CoachModel: ObservableObject {
     @Published private(set) var statusRecordID: String?
     /// What Salesforce says right now (nil = blank or not loaded yet).
     @Published private(set) var recordStatus: String?
-    @Published private(set) var savingStatus = false
+    /// The record whose status is being saved right now (nil = not saving).
+    @Published private(set) var savingStatusFor: String?
+    /// "Saving..." only for the person on screen.
+    var savingStatus: Bool { savingStatusFor != nil && savingStatusFor == statusRecordID }
     @Published var statusMessage: String?
 
     /// "Contact" or "Lead" for the record on screen.
@@ -411,14 +414,27 @@ final class CoachModel: ObservableObject {
             statusMessage = "Sign in to Salesforce first: gear menu > Setup > Salesforce."
             return
         }
-        savingStatus = true
+        savingStatusFor = id
         statusMessage = nil
+        ActivityLog.add("Status: saving \(value) for \(calling ?? id)")
         Task { [weak self] in
             do {
-                try await Salesforce.setStatus(of: id, to: value)
+                // Never hang: give up after 15 seconds.
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask { try await Salesforce.setStatus(of: id, to: value) }
+                    group.addTask {
+                        try await Task.sleep(for: .seconds(15))
+                        throw Salesforce.SFError(message: "Salesforce didn't answer in 15 seconds. Try Save again.")
+                    }
+                    try await group.next()
+                    group.cancelAll()
+                }
                 guard let self else { return }
-                self.savingStatus = false
-                guard self.statusRecordID == id else { return }
+                if self.savingStatusFor == id { self.savingStatusFor = nil }
+                ActivityLog.add("Status: saved \(value)")
+                // Taken off the list even if the rep already moved on.
+                if Salesforce.removedStatuses.contains(value) { RemovedList.add(id) } else { RemovedList.remove(id) }
+                guard self.statusRecordID == id else { self.callList.refreshUpNext(); return }
                 self.recordStatus = value
                 if Salesforce.removedStatuses.contains(value) {
                     RemovedList.add(id)
@@ -431,8 +447,10 @@ final class CoachModel: ObservableObject {
                 }
                 self.callList.refreshUpNext()
             } catch {
-                self?.savingStatus = false
-                self?.statusMessage = error.localizedDescription
+                ActivityLog.add("Status: save failed: \(error.localizedDescription)")
+                guard let self else { return }
+                if self.savingStatusFor == id { self.savingStatusFor = nil }
+                if self.statusRecordID == id { self.statusMessage = error.localizedDescription }
             }
         }
     }
@@ -1264,6 +1282,7 @@ final class CoachModel: ObservableObject {
         let chrome = AudioProcess.callAudioTargets(in: AudioProcess.others())
         guard !chrome.isEmpty else {
             callMessage = "Can't hear the call yet. Open the Aircall app (or Aircall in Chrome) and start the call."
+            ActivityLog.add("Listening failed: no Aircall or Chrome audio found")
             return false
         }
         streams.set(rep: openStream(.rep, key: deepgramKey), prospect: openStream(.prospect, key: deepgramKey))
@@ -1277,7 +1296,8 @@ final class CoachModel: ObservableObject {
             return true
         } catch {
             streams.closeAll()
-            problem = error.localizedDescription
+            callMessage = "The coach couldn't start listening: \(error.localizedDescription). The call still works; coaching is off for it."
+            ActivityLog.add("Listening failed: \(error.localizedDescription)")
             return false
         }
     }

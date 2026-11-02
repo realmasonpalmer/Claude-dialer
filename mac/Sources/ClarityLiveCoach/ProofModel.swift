@@ -259,11 +259,24 @@ final class CaptureEngine {
             // With a Bluetooth headset, Aircall should be the only app using its mic: two apps on it
             // make the headset glitch (worst at hang-up). So the coach hears the rep through the
             // Mac's built-in mic, unless that's turned off in Settings or there isn't one.
+            // If the built-in mic won't start, use the normal mic: never block a call over this.
             let useBuiltIn = UserDefaults.standard.object(forKey: "coachBuiltInMic") as? Bool ?? true
-            try mic.start(device: useBuiltIn ? builtInMicrophoneID() : nil) { buffer in
+            let onMic: (AVAudioPCMBuffer) -> Void = { buffer in
                 guard let speech = micConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: true)
                 onChunk(true, speech)
+            }
+            if useBuiltIn, let builtIn = builtInMicrophoneID() {
+                do {
+                    try mic.start(device: builtIn, onBuffer: onMic)
+                    ActivityLog.add("Mic: Mac's built-in")
+                } catch {
+                    ActivityLog.add("Mic: built-in failed (\(error.localizedDescription)), using the default mic")
+                    try mic.start(device: nil, onBuffer: onMic)
+                }
+            } else {
+                try mic.start(device: nil, onBuffer: onMic)
+                ActivityLog.add("Mic: default")
             }
             try tap.start(processes: processes) { buffer in
                 guard let speech = tapConverter.convert(buffer) else { return }

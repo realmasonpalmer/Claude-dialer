@@ -66,6 +66,7 @@ enum Salesforce {
         var req = URLRequest(url: URL(string: "https://\(loginHost)/services/oauth2/token")!)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 20
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
         req.httpBody = form.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")" }
