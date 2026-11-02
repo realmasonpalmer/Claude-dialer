@@ -17,6 +17,7 @@ struct SettingsPane: View {
     @AppStorage("maxDials") private var maxDials = 4
     @AppStorage("coachBuiltInMic") private var builtInMic = true
     @State private var showScoreboard = false
+    @State private var confirmReset = false
     @State private var note: String?
 
     var body: some View {
@@ -28,7 +29,7 @@ struct SettingsPane: View {
                     Picker("Speed", selection: $speed) {
                         ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
                     }
-                    Toggle("Show each line all at once", isOn: $wholeLine)
+                    Toggle("Show each line only once it's fully written", isOn: $wholeLine)
                     Toggle("Rotate proven openers", isOn: Binding(
                         get: { coach.openers.rotate },
                         set: { coach.openers.rotate = $0; coach.refreshOpener() }
@@ -37,7 +38,8 @@ struct SettingsPane: View {
                 }
 
                 section("Calling") {
-                    Toggle("Next calls right away", isOn: $nextDials)
+                    Text("Auto-dial is the checkbox next to Aircall phone, at the bottom of the coach.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Toggle("Aircall phone inside the coach", isOn: $appPhone)
                     if Salesforce.isConnected {
                         Picker("Call list", selection: Binding(
@@ -63,10 +65,15 @@ struct SettingsPane: View {
                     }
                     Text("Only if they never picked up. Counts every call, including redials.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Reset everyone's call counts") {
-                        DialHistory.resetAll()
-                        note = "Call counts reset. Everyone is back on the list."
-                    }
+                    Button("Reset everyone's call counts...") { confirmReset = true }
+                        .confirmationDialog("Reset everyone's call counts?", isPresented: $confirmReset) {
+                            Button("Reset", role: .destructive) {
+                                DialHistory.resetAll()
+                                note = "Call counts reset. Everyone is back on the list."
+                            }
+                        } message: {
+                            Text("People taken off for too many calls or bad numbers come back on your list. This can't be undone.")
+                        }
                     Button("Reset who's been called today") {
                         coach.callList.clearCalledToday()
                         coach.leads.clearCalledToday()
@@ -102,22 +109,24 @@ struct SettingsPane: View {
                             NSApplication.shared.activate(ignoringOtherApps: true)
                         }
                         Button("Opener scoreboard") { showScoreboard = true }
+                    }
+                    HStack {
                         Button("Copy activity log") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(ActivityLog.recent(), forType: .string)
                             note = "Copied the last 400 lines. Paste it to whoever is helping you."
                         }
-                        Button("Copy Next debug info") {
+                        Button("Copy help info") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(coach.callList.debugReport(), forType: .string)
                             note = "Copied. Paste it to whoever is helping you."
                         }
                     }
+                    if let note {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
 
-                if let note {
-                    Text(note).font(.caption).foregroundStyle(.secondary)
-                }
                 HStack {
                     Spacer()
                     Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
@@ -125,7 +134,7 @@ struct SettingsPane: View {
             }
             .padding(20)
         }
-        .frame(width: 440, height: 620)
+        .frame(width: 380, height: 620)
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
     }
 

@@ -35,12 +35,20 @@ struct ClarityLiveCoachApp: App {
 /// Help appears only when a step takes longer than it should.
 struct AudioCheckView: View {
     var onFinish: () -> Void = {}
+    /// Set when opened from Setup: a way back to the coach without finishing.
+    var onCancel: (() -> Void)? = nil
     @EnvironmentObject var model: ProofModel
     @State private var showAdvanced = false
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 16) {
+                if let onCancel {
+                    HStack {
+                        Button("Back to the coach") { onCancel() }
+                        Spacer()
+                    }
+                }
                 ProgressDots(step: model.step)
                     .padding(.top, 4)
 
@@ -138,7 +146,7 @@ struct AudioCheckView: View {
                     Text("Tip: your mic also picks up the call. A headset keeps the two voices apart.")
                         .font(.callout).foregroundStyle(.orange).multilineTextAlignment(.center)
                 }
-                Button("Next: set up the coach") { onFinish() }
+                Button(onCancel == nil ? "Next: set up the coach" : "Done: back to the coach") { onFinish() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 Button("Test again") { model.testAgain() }

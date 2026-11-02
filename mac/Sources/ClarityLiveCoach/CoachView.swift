@@ -19,10 +19,10 @@ struct RootView: View {
                 AudioCheckView(onFinish: {
                     audioCheckPassed = true
                     screen = hasKeys ? .coach : .keys
-                })
+                }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil)
                 .onAppear { proof.onAppear() }
             case .keys:
-                KeysView(onSave: { screen = .coach })
+                KeysView(onSave: { screen = .coach }, onCancel: hasKeys ? { screen = .coach } : nil)
             case .coach:
                 CoachView(
                     onAudioCheck: { proof.testAgain(); screen = .check },
@@ -46,6 +46,8 @@ struct RootView: View {
 
 struct KeysView: View {
     var onSave: () -> Void
+    /// Set when the keys are already saved: a way back without changing them.
+    var onCancel: (() -> Void)? = nil
     @State private var deepgram = Keychain.read(.deepgram) ?? ""
     @State private var anthropic = Keychain.read(.anthropic) ?? ""
     @State private var error: String?
@@ -91,6 +93,9 @@ struct KeysView: View {
             }
             if let error {
                 Text(error).font(.callout).foregroundStyle(.red)
+            }
+            if let onCancel {
+                Button("Cancel") { onCancel() }
             }
             Button("Save and continue") { save() }
                 .buttonStyle(.borderedProminent)
@@ -141,19 +146,13 @@ struct CoachView: View {
     @EnvironmentObject var campaigns: CampaignStore
     @Environment(\.openWindow) private var openWindow
     @State private var showTranscript = false
-    @State private var showScoreboard = false
-    @State private var showCalendar = false
     @State private var showHelp = false
     @State private var showAircall = false
-    @State private var showSalesforce = false
     @State private var showSetup = false
     @State private var showSettings = false
     @StateObject private var updater = Updater()
-    @State private var askName = false
     @AppStorage("repName") private var repName = ""
     @AppStorage("showTouchpoints") private var showTouchpoints = true
-    @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
-    @AppStorage("wholeLine") private var wholeLine = true
     @AppStorage("nextDials") private var nextDials = true
     @AppStorage("appPhone") private var appPhone = true
 
@@ -178,9 +177,11 @@ struct CoachView: View {
             // The middle scrolls if it's ever taller than the screen; the top bar and the buttons stay put.
             ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: gap) {
-            // The Chrome list is the default. This header only shows if a Salesforce list was picked in the gear menu.
+            // The Chrome list is the default. This header only shows if a Salesforce list was picked in Settings and tools.
             if Salesforce.isConnected && coach.leads.selected != nil { leadHeader }
-            StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: coach.status != .ready)
+            if coach.status != .ready {
+                StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: true)
+            }
             scriptCard
             belowCard
             if coach.statusRecordID != nil {
@@ -190,6 +191,7 @@ struct CoachView: View {
             if coach.followUp != nil {
                 FollowUpCard(
                     followUp: $coach.followUp,
+                    isLastPerson: coach.followUp?.key != nil && coach.followUp?.key != coach.statusRecordID,
                     canSend: Aircall.isSetUp,
                     onSend: { coach.sendFollowUpText() },
                     onLinkedIn: { coach.openLinkedIn() },
@@ -218,6 +220,9 @@ struct CoachView: View {
                 }
                 .padding(10)
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
+            if let hint = nextHint, !coach.leads.isActive {
+                Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if let left = coach.autoNextIn { autoNextBar(left) }
             if coach.waitingForText && coach.autoNextIn == nil {
@@ -258,23 +263,12 @@ struct CoachView: View {
             Task { await updater.check() }
         }
         .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
-        .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
-        .sheet(isPresented: $showCalendar) { BookingCalendarView(availability: coach.availability) }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
             SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
         }
         .sheet(isPresented: $showSettings) { SettingsPane(updater: updater).environmentObject(coach) }
         .sheet(isPresented: $showAircall) { AircallSetupView() }
-        .sheet(isPresented: $showSalesforce) {
-            SalesforceConnectView(onConnected: { Task { await coach.leads.start() } })
-        }
-        .alert("Your first name", isPresented: $askName) {
-            TextField("First name", text: $repName)
-            Button("Save") { coach.refreshOpener() }
-        } message: {
-            Text("So openers say \"this is Mason\" instead of [your name].")
-        }
         .animation(.easeInOut(duration: 0.2), value: coach.status)
     }
 
@@ -282,14 +276,14 @@ struct CoachView: View {
 
     private var topBar: some View {
         HStack(spacing: 8) {
-            // No status pill, Voicemail or End call buttons here: the app handles those by itself.
-            // (Command-E still ends a call; both are also in Settings and tools.)
+            // No status, Voicemail or End call buttons here (the app handles those by itself).
+            // Command-E still ends a call; Settings and tools has both buttons.
             Spacer()
             Button("") { coach.endCall() }
                 .keyboardShortcut("e", modifiers: .command)
                 .opacity(0).frame(width: 0, height: 0)
                 .allowsHitTesting(false)
-            // Updates live only here. It checks by itself every 10 minutes.
+            // Updates live only here. It checks by itself every 2 minutes and when the app is opened.
             if updater.updating {
                 Button("Updating...") {}
                     .controlSize(.small)
@@ -303,24 +297,6 @@ struct CoachView: View {
             }
             campaignMenu
             settingsMenu
-        }
-    }
-
-    private var pillState: String {
-        switch coach.status {
-        case .ready: return "Ready"
-        case .paused: return "Paused"
-        case .live:
-            if coach.kind == .voicemail { return "Voicemail" }
-            return coach.prospectSpeaking ? "Prospect speaking" : "Listening"
-        }
-    }
-
-    private var pillColor: Color {
-        switch coach.status {
-        case .ready: return .secondary
-        case .paused: return warning
-        case .live: return coach.kind == .voicemail ? warning : listening
         }
     }
 
@@ -440,7 +416,9 @@ struct CoachView: View {
                         .buttonStyle(.link).font(.caption2)
                 }
             }
-            Text(coach.suggestion.say.isEmpty ? "Getting your line ready..." : coach.suggestion.say)
+            Text(coach.suggestion.say.isEmpty
+                 ? (Keychain.read(.anthropic) == nil ? "Add your Anthropic key: gear > Setup > AI keys." : "Getting your line ready...")
+                 : coach.suggestion.say)
                 .font(.system(size: 26, weight: .semibold))
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -722,6 +700,17 @@ struct CoachView: View {
         return false
     }
 
+    /// Why Next can't move on, shown as a line above the buttons (never squeezed into a button).
+    private var nextHint: String? {
+        guard coach.status == .ready else { return nil }
+        switch coach.callList.state {
+        case .needsList: return "Open your lead list in Salesforce (in Chrome) so Next knows who's next."
+        case .needsChromeSetting: return "Chrome needs one setting: View > Developer > Allow JavaScript from Apple Events."
+        case .endOfList: return "Everyone on this list has been called today."
+        case .ready: return nil
+        }
+    }
+
     /// The preview on the Next button: the next step during a call, the next lead between calls.
     private var nextTitle: String {
         if coach.status != .ready {
@@ -729,27 +718,8 @@ struct CoachView: View {
         }
         switch coach.callList.state {
         case .ready(let name, _, _): return nextDials ? "Call \(name)" : "Next: \(name)"
-        case .needsList: return "Open a lead list in Salesforce"
-        case .needsChromeSetting: return "Needs a Chrome setting"
-        case .endOfList: return "Everyone here is called"
+        case .needsList, .needsChromeSetting, .endOfList: return "Next"
         }
-    }
-}
-
-/// Big, colored status you can read without reading.
-struct StatusPill: View {
-    let status: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 9, height: 9)
-            Text(status).font(.callout.weight(.semibold))
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(color.opacity(0.15), in: Capsule())
-        .foregroundStyle(color == .secondary ? Color.primary : color)
     }
 }
 
@@ -785,33 +755,27 @@ struct HelpView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("How to use").font(.title2.weight(.semibold))
-                section("Calling from the app (recommended)", [
-                    "Gear > Setup: do each step once (keys, audio, Chrome, Salesforce, Aircall, calendar).",
-                    "Gear > Settings and tools: speed, toggles, call list, Script Lab, updates.",
+                section("Getting set up", [
+                    "Gear > Setup: do each step once (name, keys, audio, Chrome, Salesforce, Aircall, calendar).",
                     "Aircall phone (bottom of the coach): click Show, sign in once, set yourself Available, click Hide.",
-                    "The big Call button dials their Mobile through Aircall. The call rings in the coach.",
-                    "Call [next name] loads the next lead and dials right away. Turn it off in Gear > Settings and tools.",
-                    "Calls log to Salesforce through Aircall, made by you, like always.",
+                    "Open your lead list in Salesforce in Chrome. The app learns it by itself.",
                 ])
                 section("Calling", [
-                    "Or click a phone number in Salesforce. The coach starts on its own when the call connects.",
+                    "Click the big Call button. The app checks that the opener, voicemail and follow-ups are for that person, then calls their Mobile.",
                     "Read the big line. Say it in your own words.",
                     "Tell them the call is transcribed. Some states require it.",
                 ])
+                section("After each call", [
+                    "1st try, no answer: the app calls them again in 3 seconds (Auto-dial on). Click Wait to stop it.",
+                    "Voicemail: leave the message on screen.",
+                    "Then, top to bottom: update their status, send the LinkedIn note or message, then send the text.",
+                    "Sending the text loads the next person. Once their info checks out, it calls them in 3 seconds.",
+                    "Bad numbers and calls that don't connect are skipped by themselves.",
+                ])
                 section("Next and Back", [
-                    "Between calls: Next opens the next lead on your list. Back opens the one before.",
+                    "Between calls: Next opens the next person. Back opens the one before.",
                     "During a call: Next gives you the line for the next step. Back shows the line before.",
-                    "To set up your list: open your lead list in Salesforce (split view or table view). The app learns it by itself.",
-                ])
-                section("One Chrome setting", [
-                    "In Chrome's top menu: View > Developer > Allow JavaScript from Apple Events.",
-                    "It lets the coach read the open lead and click Next for you.",
-                ])
-                section("Double dial", [
-                    "1st try, no answer or voicemail: hang up and click Redial.",
-                    "2nd try, voicemail: leave the message on screen.",
-                    "After a voicemail: click Send text, then Open profile + copy note.",
-                    "When the call ends, the app calls the next person in 5 seconds. Click Wait to stay.",
+                    "Auto-dial (checkbox next to Aircall phone): off means Next and the text only load the next person.",
                 ])
                 HStack {
                     Spacer()
@@ -909,6 +873,8 @@ struct ScoreboardView: View {
 /// Stays after the call until both are done or it's closed.
 struct FollowUpCard: View {
     @Binding var followUp: FollowUp?
+    /// The card is for someone other than the person on screen now.
+    var isLastPerson = false
     var canSend: Bool
     var onSend: () -> Void
     var onLinkedIn: () -> Void
@@ -919,7 +885,7 @@ struct FollowUpCard: View {
         if let f = followUp {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Follow up\(f.prospect.map { " with \($0)" } ?? "")").font(.headline)
+                    Text((isLastPerson ? "Last call: " : "Follow up with ") + (f.prospect ?? "them")).font(.headline)
                     Spacer()
                     Button {
                         followUp = nil
@@ -937,7 +903,7 @@ struct FollowUpCard: View {
                     } else {
                         Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
                             .keyboardShortcut("l", modifiers: .command)
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.bordered)
                             .disabled(f.linkedin.isEmpty)
                     }
                 }
@@ -952,7 +918,7 @@ struct FollowUpCard: View {
                         Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
                     } else {
                         Button("Copy message") { onLinkedInMessage() }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.bordered)
                             .disabled(f.linkedinMessage.isEmpty)
                     }
                 }
@@ -1068,21 +1034,28 @@ struct RelationshipCard: View {
                         HStack(spacing: 6) {
                             Image(systemName: current == value ? "largecircle.fill.circle" : "circle")
                                 .foregroundStyle(current == value ? Color.accentColor : .secondary)
-                            Text(value).font(.callout).lineLimit(1)
+                            Text(value).font(.callout).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
             }
+            if let picked, Salesforce.removedStatuses.contains(picked), picked != coach.recordStatus {
+                Text("Saving this takes them off your list.").font(.caption).foregroundStyle(.secondary)
+            }
             HStack(spacing: 8) {
                 Button(coach.savingStatus ? "Saving..." : "Save") {
                     if let picked { coach.saveStatus(picked) }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(picked == nil || picked == coach.recordStatus || coach.savingStatus)
-                if let message = coach.statusMessage {
+                .buttonStyle(.bordered)
+                .disabled(picked == nil || picked == coach.recordStatus || coach.savingStatus || !Salesforce.isConnected)
+                if !Salesforce.isConnected {
+                    Text("Sign in to Salesforce to save: gear > Setup > Salesforce.").font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let message = coach.statusMessage {
                     Text(message).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

@@ -207,7 +207,7 @@ struct AircallSetupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Aircall").font(.title2.weight(.semibold))
-                Text("Places calls from the Aircall desktop app and sends follow-up texts in one click. Texting needs Aircall's Professional plan.")
+                Text("Places calls through Aircall (the phone in the coach or the Aircall app) and sends follow-up texts in one click. Texting needs Aircall's Professional plan.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -266,7 +266,7 @@ struct AircallSetupView: View {
                 }
 
                 Divider()
-                Text("After a 2nd-try voicemail, you get a Send text button. Do Not Call leads are skipped. If anyone texts back STOP, don't text them again.")
+                Text("After a voicemail, you get a Send text button. Do Not Call leads are skipped. If anyone texts back STOP, don't text them again.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 

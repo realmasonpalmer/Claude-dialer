@@ -106,7 +106,7 @@ struct SetupView: View {
             !(UserDefaults.standard.string(forKey: "repName") ?? "").isEmpty,
             Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil,
             UserDefaults.standard.bool(forKey: "audioCheckPassed"),
-            coach.callList.state != .needsChromeSetting,
+            (coach.callList.state != .needsChromeSetting && !coach.callList.records.isEmpty),
             Salesforce.isConnected,
             Aircall.canPlaceCalls,
             coach.availability.feedInput != nil,
@@ -132,7 +132,7 @@ struct SetupView: View {
             },
             Step(id: "chrome", title: "4. Chrome setting",
                  detail: "In Chrome: View > Developer > Allow JavaScript from Apple Events. Lets the app read your Salesforce list.",
-                 done: coach.callList.state != .needsChromeSetting, optional: false) {
+                 done: (coach.callList.state != .needsChromeSetting && !coach.callList.records.isEmpty), optional: false) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Google Chrome.app"))
             },
             Step(id: "salesforce", title: "5. Salesforce",
@@ -205,7 +205,7 @@ struct SetupView: View {
             }
             .padding(20)
         }
-        .frame(width: 480, height: 680)
+        .frame(width: 380, height: 640)
         .sheet(isPresented: $showAircall, onDismiss: { refresh += 1 }) { AircallSetupView() }
         .sheet(isPresented: $showSalesforce, onDismiss: { refresh += 1 }) {
             SalesforceConnectView(onConnected: { Task { await coach.leads.start() } })

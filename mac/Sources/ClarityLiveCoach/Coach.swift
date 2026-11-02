@@ -458,6 +458,7 @@ final class CoachModel: ObservableObject {
     /// Points the coach at the lead on screen: name, details, opener, voicemail.
     func applyLead() {
         guard let d = leads.details else { return }
+        problem = nil
         if d.id != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
         appliedLeadID = d.id
         calling = "\(d.object) \"\(d.name)\""
@@ -535,6 +536,7 @@ final class CoachModel: ObservableObject {
 
     /// Opens the next person in the Salesforce tab and points the coach at them right away.
     private func openNextInChrome() -> Bool {
+        problem = nil
         guard callList.openNext() else {
             ActivityLog.add("Next: couldn't open the next person (\(callList.message ?? "no reason"))")
             return false
@@ -1276,7 +1278,7 @@ final class CoachModel: ObservableObject {
         pendingStop?.cancel() // a new call: keep the old tap from being removed later
         pendingStop = nil
         guard let deepgramKey = Keychain.read(.deepgram) else {
-            problem = "Add your Deepgram key in Settings."
+            problem = "Add your Deepgram key: gear > Setup > AI keys."
             return false
         }
         let chrome = AudioProcess.callAudioTargets(in: AudioProcess.others())
@@ -1802,7 +1804,7 @@ final class CoachModel: ObservableObject {
 
     private func ask(_ kind: Kind, user: String, early: String? = nil) {
         guard let key = Keychain.read(.anthropic) else {
-            problem = "Add your Anthropic key in Settings."
+            problem = "Add your Anthropic key: gear > Setup > AI keys."
             return
         }
         coachTask?.cancel() // a newer statement makes the old answer stale
