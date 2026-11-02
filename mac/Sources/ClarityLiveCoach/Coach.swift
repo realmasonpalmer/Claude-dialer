@@ -394,6 +394,8 @@ final class CoachModel: ObservableObject {
                 if Salesforce.removedStatuses.contains(value) {
                     RemovedList.add(id)
                     self.statusMessage = "Saved. Taken off your list."
+                    // Between calls: move on to the next person right away (without calling yet).
+                    if self.status == .ready { self.nextLead(dial: false) }
                 } else {
                     RemovedList.remove(id)
                     self.statusMessage = "Saved."
@@ -455,8 +457,10 @@ final class CoachModel: ObservableObject {
         }
     }
 
-    func nextLead() {
+    /// - Parameter dial: false = just show the next person, don't call yet.
+    func nextLead(dial shouldDial: Bool = true) {
         cancelAutoNext()
+        let dialNow = shouldDial && (UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true)
         if leads.isActive {
             if status != .ready { endCall() }
             Task { [weak self] in
@@ -467,9 +471,11 @@ final class CoachModel: ObservableObject {
                 while self.leads.details.map({ $0.doNotCall || $0.callNumber == nil }) == true, skipped < 20,
                       await self.leads.next() { skipped += 1 }
                 // "Next calls right away" (on by default): dial as soon as the lead is loaded.
-                if UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true, self.leads.details?.doNotCall == false {
+                if dialNow, self.leads.details?.doNotCall == false {
                     self.applyLead()
                     self.dial()
+                } else {
+                    self.applyLead()
                 }
             }
             return
@@ -479,7 +485,7 @@ final class CoachModel: ObservableObject {
             suggestion = Suggestion()
             calling = nil // forces a fresh read once the new page loads
             tabTicks = 1  // read on the very next tick
-            if UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true {
+            if dialNow {
                 dialFromSalesforcePage(expecting: callList.lastOpenedID)
             }
         }
