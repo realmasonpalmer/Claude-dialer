@@ -43,10 +43,34 @@ final class Updater: ObservableObject {
         if byHand { message = updateAvailable ? "An update is ready. Click Update at the top." : "You have the newest version." }
     }
 
+    /// Reads the update log while it runs, so a failed update says so instead of "Updating" forever.
+    private func watch(log: URL, startedAt: Date) {
+        let startSize = (try? FileManager.default.attributesOfItem(atPath: log.path)[.size] as? Int) ?? 0
+        Task { [weak self] in
+            while true {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self, self.updating else { return }
+                let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+                let new = text.utf8.count > startSize ? String(text.dropFirst(startSize)) : text
+                if let line = new.components(separatedBy: "\n").first(where: { $0.hasPrefix("Update failed") }) {
+                    self.updating = false
+                    self.message = "The update didn't finish (\(line.replacingOccurrences(of: "Update failed: ", with: ""))). The app still works. Click Update to try again."
+                    return
+                }
+                if Date().timeIntervalSince(startedAt) > 600 {
+                    self.updating = false
+                    self.message = "The update is taking too long. Quit the app (Command-Q) and open it again."
+                    return
+                }
+            }
+        }
+    }
+
     /// Starts the update. The app keeps working while it builds, then closes and reopens.
     func update() {
         guard !updating else { return }
         let sha = latestSHA ?? ""
+        let pid = ProcessInfo.processInfo.processIdentifier
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let script = caches.appendingPathComponent("ClarityLiveCoach-update.sh")
         let log = FileManager.default.homeDirectoryForCurrentUser
@@ -70,6 +94,15 @@ final class Updater: ObservableObject {
         cd "$DIR" || fail "cd"
         bash scripts/install.sh || fail "build"
         defaults write io.clarityconsulting.livecoach installedSHA "\(sha)"
+        # If the old copy didn't close (macOS can block the polite quit), close it and open the new one.
+        sleep 3
+        if kill -0 \(pid) 2>/dev/null; then
+            echo "Old copy still open: closing it."
+            kill \(pid) 2>/dev/null
+            sleep 2
+            kill -9 \(pid) 2>/dev/null
+            open "/Applications/Clarity Live Coach.app"
+        fi
         echo "=== Update finished $(date)"
         """
         do {
@@ -81,6 +114,7 @@ final class Updater: ObservableObject {
             try process.run()
             updating = true
             message = "Updating. Keep working: the app closes and reopens by itself in about 2 minutes."
+            watch(log: log, startedAt: Date())
         } catch {
             message = "Couldn't start the update: \(error.localizedDescription)"
         }

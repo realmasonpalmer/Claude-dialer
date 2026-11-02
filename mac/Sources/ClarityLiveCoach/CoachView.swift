@@ -130,6 +130,8 @@ struct CoachView: View {
     @State private var showHelp = false
     @State private var showAircall = false
     @State private var showSalesforce = false
+    @State private var showSetup = false
+    @State private var showSettings = false
     @StateObject private var updater = Updater()
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
@@ -207,6 +209,10 @@ struct CoachView: View {
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
         .sheet(isPresented: $showCalendar) { BookingCalendarView(availability: coach.availability) }
         .sheet(isPresented: $showHelp) { HelpView() }
+        .sheet(isPresented: $showSetup) {
+            SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
+        }
+        .sheet(isPresented: $showSettings) { SettingsPane(updater: updater).environmentObject(coach) }
         .sheet(isPresented: $showAircall) { AircallSetupView() }
         .sheet(isPresented: $showSalesforce) {
             SalesforceConnectView(onConnected: { Task { await coach.leads.start() } })
@@ -274,61 +280,18 @@ struct CoachView: View {
         }
     }
 
+    /// "Setup (5 of 7 done)" until everything is set up.
+    private var setupLabel: String {
+        let c = SetupView.doneCount(coach: coach)
+        return c.done == c.total ? "Setup and integrations..." : "Setup (\(c.done) of \(c.total) done)..."
+    }
+
+    /// Three items only. Everything else lives in the Setup and Settings panes.
     private var settingsMenu: some View {
         Menu {
+            Button(setupLabel) { showSetup = true }
+            Button("Settings and tools...") { showSettings = true }
             Button("How to use") { showHelp = true }
-            Button(updater.updateAvailable ? "Install update" : "Check for updates") {
-                if updater.updateAvailable { updater.update() } else { Task { await updater.check(byHand: true) } }
-            }
-            Divider()
-            Button(coach.lab.hasNewSuggestions ? "Script Lab (new suggestions)" : "Script Lab") {
-                openWindow(id: "script-lab")
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            }
-            Button("Opener scoreboard") { showScoreboard = true }
-            Button("Booking calendar...") { showCalendar = true }
-            Button(Salesforce.isConnected ? "Salesforce (connected)..." : "Connect Salesforce...") { showSalesforce = true }
-            Button("Aircall calling and texting...") { showAircall = true }
-            Divider()
-            Picker("Speed", selection: $speed) {
-                ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
-            }
-            Toggle("Show each line all at once", isOn: $wholeLine)
-            Toggle("Next calls right away", isOn: $nextDials)
-            Toggle("Show touchpoints", isOn: $showTouchpoints)
-            Toggle("Aircall phone inside the coach", isOn: $appPhone)
-            Toggle("Rotate proven openers", isOn: Binding(
-                get: { coach.openers.rotate },
-                set: { coach.openers.rotate = $0; coach.refreshOpener() }
-            ))
-            Button(repName.isEmpty ? "Add your name..." : "Your name: \(repName)") { askName = true }
-            Divider()
-            Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
-                .disabled(coach.status == .ready)
-            Button("Start listening now (new call)") { coach.startByHand() }
-            if Salesforce.isConnected {
-                Menu("Use a Salesforce list instead of Chrome") {
-                    ForEach(coach.leads.views) { view in
-                        Button(view.title) { Task { await coach.leads.open(view) } }
-                    }
-                    if coach.leads.selected != nil {
-                        Divider()
-                        Button("Go back to my Chrome list") { coach.leads.close() }
-                    }
-                }
-                .disabled(coach.status != .ready)
-            }
-            Button("Reset who's been called today") {
-                coach.callList.clearCalledToday()
-                coach.leads.clearCalledToday()
-            }
-            Button("Copy Next debug info") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(coach.callList.debugReport(), forType: .string)
-            }
-                .disabled(coach.status != .ready)
-            Button("Run audio check", action: onAudioCheck)
-            Button("Change API keys", action: onKeys)
         } label: {
             Image(systemName: "gearshape")
         }
@@ -779,11 +742,11 @@ struct HelpView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("How to use").font(.title2.weight(.semibold))
                 section("Calling from the app (recommended)", [
-                    "Gear > Connect Salesforce, then pick your list at the top.",
-                    "Gear > Aircall calling and texting: pick your number and yourself.",
+                    "Gear > Setup: do each step once (keys, audio, Chrome, Salesforce, Aircall, calendar).",
+                    "Gear > Settings and tools: speed, toggles, call list, Script Lab, updates.",
                     "Aircall phone (bottom of the coach): click Show, sign in once, set yourself Available, click Hide.",
                     "The big Call button dials their Mobile through Aircall. The call rings in the coach.",
-                    "Call [next name] loads the next lead and dials right away. Turn it off in the gear menu.",
+                    "Call [next name] loads the next lead and dials right away. Turn it off in Gear > Settings and tools.",
                     "Calls log to Salesforce through Aircall, made by you, like always.",
                 ])
                 section("Calling", [

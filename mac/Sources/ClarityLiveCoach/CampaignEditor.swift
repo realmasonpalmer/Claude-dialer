@@ -126,7 +126,7 @@ struct CampaignEditorView: View {
 
     private func organize() async {
         guard let key = Keychain.read(.anthropic) else {
-            message = "Add your Anthropic key first (gear menu > Change API keys)."
+            message = "Add your Anthropic key first (gear menu > Setup > AI keys)."
             return
         }
         organizing = true

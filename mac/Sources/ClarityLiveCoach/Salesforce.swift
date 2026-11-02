@@ -103,7 +103,7 @@ enum Salesforce {
 
     private static func refresh() async throws {
         guard let refresh = Keychain.read(.sfRefresh), let clientID = Keychain.read(.sfClientID) else {
-            throw SFError(message: "Connect Salesforce first (gear menu).")
+            throw SFError(message: "Connect Salesforce first (gear menu > Setup > Salesforce).")
         }
         save(try await tokenRequest(["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientID]))
     }
@@ -112,7 +112,7 @@ enum Salesforce {
 
     /// GET against the Salesforce REST API. Refreshes the sign-in once if it expired.
     static func get(_ path: String, retry: Bool = true) async throws -> Any {
-        guard let instance = Keychain.read(.sfInstance) else { throw SFError(message: "Connect Salesforce first (gear menu).") }
+        guard let instance = Keychain.read(.sfInstance) else { throw SFError(message: "Connect Salesforce first (gear menu > Setup > Salesforce).") }
         if Keychain.read(.sfAccess) == nil { try await refresh() }
         var req = URLRequest(url: URL(string: instance + path)!)
         req.setValue("Bearer \(Keychain.read(.sfAccess) ?? "")", forHTTPHeaderField: "Authorization")
@@ -133,7 +133,7 @@ enum Salesforce {
 
     /// PATCH/POST against the Salesforce REST API, with a JSON body. Refreshes the sign-in once if it expired.
     static func send(_ method: String, _ path: String, body: [String: Any], retry: Bool = true) async throws -> Any? {
-        guard let instance = Keychain.read(.sfInstance) else { throw SFError(message: "Connect Salesforce first (gear menu).") }
+        guard let instance = Keychain.read(.sfInstance) else { throw SFError(message: "Connect Salesforce first (gear menu > Setup > Salesforce).") }
         if Keychain.read(.sfAccess) == nil { try await refresh() }
         var req = URLRequest(url: URL(string: instance + path)!)
         req.httpMethod = method

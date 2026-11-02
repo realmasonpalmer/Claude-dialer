@@ -399,7 +399,7 @@ final class CoachModel: ObservableObject {
     func saveStatus(_ value: String) {
         guard let id = statusRecordID, !savingStatus else { return }
         guard Salesforce.isConnected else {
-            statusMessage = "Sign in to Salesforce first: gear menu, then Salesforce."
+            statusMessage = "Sign in to Salesforce first: gear menu > Setup > Salesforce."
             return
         }
         savingStatus = true
