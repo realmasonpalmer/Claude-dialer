@@ -1029,6 +1029,8 @@ final class CoachModel: ObservableObject {
     // MARK: Audio and transcription
 
     private func startAudio() -> Bool {
+        pendingStop?.cancel() // a new call: keep the old tap from being removed later
+        pendingStop = nil
         guard let deepgramKey = Keychain.read(.deepgram) else {
             problem = "Add your Deepgram key in Settings."
             return false
@@ -1053,10 +1055,20 @@ final class CoachModel: ObservableObject {
         }
     }
 
+    /// Stops listening. Transcription stops right away, but the audio tap is removed a few
+    /// seconds later: tearing it down while Aircall plays the hang-up tone makes that tone
+    /// stutter and repeat.
     private func stopAudio() {
-        capture.stop()
         streams.closeAll()
+        pendingStop?.cancel()
+        pendingStop = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled else { return }
+            self.pendingStop = nil
+            self.capture.stop()
+        }
     }
+    private var pendingStop: Task<Void, Never>?
 
     private func openStream(_ speaker: Speaker, key: String) -> DeepgramStream {
         DeepgramStream(apiKey: key, keyterms: useKeyterms ? DeepgramStream.defaultKeyterms : []) { [weak self] event in
