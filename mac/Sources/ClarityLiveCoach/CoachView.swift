@@ -32,8 +32,8 @@ struct RootView: View {
         }
         // Wider, not taller, when the Aircall phone is open on the right.
         .frame(width: showPhone ? 380 + AircallPhoneSide.width : 380)
-        // Never taller than the screen.
-        .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 40)
+        // Never taller than the screen, counting the title bar.
+        .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
     }
 
     private var showPhone: Bool { appPhone && phone.shown && (screen ?? firstScreen) == .coach }
@@ -149,7 +149,8 @@ struct CoachView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            coachColumn.frame(width: 380)
+            // Exactly the screen's height (minus the title bar): the middle scrolls, nothing gets cut off.
+            coachColumn.frame(width: 380, height: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
             // The Aircall phone sits to the right. Hidden = 1 point wide, but still running.
             if appPhone { AircallPhoneSide() }
         }
@@ -158,6 +159,9 @@ struct CoachView: View {
     private var coachColumn: some View {
         VStack(alignment: .leading, spacing: gap) {
             topBar
+            // The middle scrolls if it's ever taller than the screen; the top bar and the buttons stay put.
+            ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: gap) {
             // The Chrome list is the default. This header only shows if a Salesforce list was picked in the gear menu.
             if Salesforce.isConnected && coach.leads.selected != nil { leadHeader }
             StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: coach.status != .ready)
@@ -179,6 +183,9 @@ struct CoachView: View {
                 TouchpointsCard(touchpoints: coach.touchpoints)
             }
             warnings
+            }
+            }
+            .scrollBounceBehavior(.basedOnSize)
             Spacer(minLength: 0)
             if appPhone { AircallPhonePanel() }
             if let left = coach.autoNextIn { autoNextBar(left) }

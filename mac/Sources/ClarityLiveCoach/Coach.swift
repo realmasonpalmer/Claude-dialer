@@ -1226,10 +1226,11 @@ final class CoachModel: ObservableObject {
                             prospect: lead?.name ?? name,
                             text: earlier?.text ?? "",
                             linkedin: earlier?.linkedin ?? "",
-                            textDone: earlier?.textDone ?? false,
-                            linkedinDone: earlier?.linkedinDone ?? false,
+                            textDone: earlier?.textDone ?? key.map(DialHistory.textedToday) ?? false,
+                            linkedinDone: earlier?.linkedinDone ?? key.map(DialHistory.linkedInToday) ?? false,
                             phone: lead?.callNumber ?? Aircall.phone(in: recordDetails) ?? "",
                             linkedinURL: lead?.linkedIn ?? Self.linkedInProfile(details: recordDetails))
+        if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
         if let script = voicemailScript { fillFollowUp(from: script) }
         else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
     }
@@ -1247,11 +1248,17 @@ final class CoachModel: ObservableObject {
     /// Sends the follow-up text through Aircall and checks it off.
     func sendFollowUpText() {
         guard let f = followUp, !f.text.isEmpty, f.textStatus != "Sending..." else { return }
+        if let key = f.key, DialHistory.textedToday(key) {
+            followUp?.textStatus = "Already texted today. Not sent again."
+            followUp?.textDone = true
+            return
+        }
         followUp?.textStatus = "Sending..."
         Task { [weak self] in
             do {
                 try await Aircall.sendText(to: f.phone, body: f.text)
                 self?.touchpoints.log(.text)
+                if let key = f.key { DialHistory.logText(key) }
                 self?.followUp?.textStatus = "Sent"
                 self?.followUp?.textDone = true
             } catch {
@@ -1275,7 +1282,11 @@ final class CoachModel: ObservableObject {
                 NSWorkspace.shared.open(url)
             }
         }
-        if followUp?.linkedinDone != true { touchpoints.log(.linkedin) } // count once per person
+        // Count once per person per day.
+        if followUp?.linkedinDone != true, !(f.key.map(DialHistory.linkedInToday) ?? false) {
+            touchpoints.log(.linkedin)
+            if let key = f.key { DialHistory.logLinkedIn(key) }
+        }
         followUp?.linkedinDone = true
     }
 

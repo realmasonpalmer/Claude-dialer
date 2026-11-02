@@ -6,6 +6,19 @@ enum DialHistory {
     struct Person: Codable {
         var dials: [Date] = []
         var pickups = 0
+        var texts: [Date] = []
+        var linkedIns: [Date] = []
+
+        init() {}
+
+        // Older saves don't have texts or LinkedIn yet: read what's there.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            dials = try c.decodeIfPresent([Date].self, forKey: .dials) ?? []
+            pickups = try c.decodeIfPresent(Int.self, forKey: .pickups) ?? 0
+            texts = try c.decodeIfPresent([Date].self, forKey: .texts) ?? []
+            linkedIns = try c.decodeIfPresent([Date].self, forKey: .linkedIns) ?? []
+        }
     }
 
     private static var cache: [String: Person]?
@@ -51,6 +64,22 @@ enum DialHistory {
         p.pickups += 1
         all[key(id)] = p
     }
+
+    static func logText(_ id: String) {
+        var p = person(id)
+        p.texts.append(Date())
+        all[key(id)] = p
+    }
+
+    static func logLinkedIn(_ id: String) {
+        var p = person(id)
+        p.linkedIns.append(Date())
+        all[key(id)] = p
+    }
+
+    /// Already texted / sent a LinkedIn note today: don't do it twice.
+    static func textedToday(_ id: String) -> Bool { person(id).texts.contains { Calendar.current.isDateInToday($0) } }
+    static func linkedInToday(_ id: String) -> Bool { person(id).linkedIns.contains { Calendar.current.isDateInToday($0) } }
 
     /// Called the max number of times and never picked up: off the list.
     static func isMaxed(_ id: String) -> Bool {
