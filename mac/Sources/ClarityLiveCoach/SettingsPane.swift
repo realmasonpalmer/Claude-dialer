@@ -79,6 +79,12 @@ struct SettingsPane: View {
                             .disabled(coach.status == .ready)
                         Button("Start listening now (new call)") { coach.startByHand(); dismiss() }
                     }
+                    HStack {
+                        Button("It's a voicemail") { coach.markVoicemail(); dismiss() }
+                            .disabled(coach.status != .live)
+                        Button("End call") { coach.endCall(); dismiss() }
+                            .disabled(coach.status == .ready)
+                    }
                 }
 
                 section("Tools") {

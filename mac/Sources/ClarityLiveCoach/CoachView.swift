@@ -248,27 +248,13 @@ struct CoachView: View {
 
     private var topBar: some View {
         HStack(spacing: 8) {
-            StatusPill(status: pillState, color: pillColor)
+            // No status pill, Voicemail or End call buttons here: the app handles those by itself.
+            // (Command-E still ends a call; both are also in Settings and tools.)
             Spacer()
-            if coach.status == .live && coach.kind != .voicemail {
-                Button {
-                    coach.markVoicemail()
-                } label: {
-                    Label("Voicemail", systemImage: "recordingtape")
-                }
-                .controlSize(.small)
-                .help("It went to voicemail and the app missed it: show your message now")
-            }
-            if coach.status != .ready {
-                Button(role: .destructive) {
-                    coach.endCall()
-                } label: {
-                    Label("End call", systemImage: "phone.down.fill")
-                }
-                .controlSize(.small)
+            Button("") { coach.endCall() }
                 .keyboardShortcut("e", modifiers: .command)
-                .help("Call's over: reset for the next one")
-            }
+                .opacity(0).frame(width: 0, height: 0)
+                .allowsHitTesting(false)
             if updater.updateAvailable && !updater.updating && coach.status == .ready {
                 Button("Update") { updater.update() }
                     .buttonStyle(.borderedProminent)
