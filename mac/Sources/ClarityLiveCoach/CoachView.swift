@@ -73,6 +73,22 @@ struct KeysView: View {
                 link: "https://console.anthropic.com/settings/keys",
                 text: $anthropic
             )
+            if let guide = SetupView.guides["keys"] {
+                DisclosureGroup("Step by step: how to get both keys") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(guide.steps.enumerated()), id: \.offset) { _, line in
+                                Text(line).font(.callout)
+                                    .fontWeight(line.hasSuffix(":") ? .semibold : .regular)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 260)
+                }
+                .font(.callout)
+            }
             if let error {
                 Text(error).font(.callout).foregroundStyle(.red)
             }

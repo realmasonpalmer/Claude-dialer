@@ -25,6 +25,82 @@ struct SetupView: View {
         let action: () -> Void
     }
 
+    /// Step-by-step instructions for each setup item, in plain words.
+    struct Guide {
+        let steps: [String]
+        let links: [(String, String)]
+    }
+
+    static let guides: [String: Guide] = [
+        "name": Guide(steps: [
+            "Click Set up.",
+            "Type your first name the way you say it on calls (for example: Mason).",
+            "Click Save. Openers now say \"this is Mason from Clarity.\"",
+        ], links: []),
+        "keys": Guide(steps: [
+            "Anthropic (Claude writes your lines):",
+            "1. Open the Anthropic Console (link below) and sign in with your work email.",
+            "2. Click Settings, then API Keys, then Create Key.",
+            "3. Name it \"Clarity Live Coach\" and click Add. Copy the key. It starts with sk-ant- and is shown only once.",
+            "4. Make sure the account has credits: Settings, then Billing. About $5 to $15 covers a month of calls.",
+            "Deepgram (hears the call):",
+            "5. Open the Deepgram Console (link below) and sign up. New accounts get free credit.",
+            "6. Click API Keys on the left, then Create a New API Key.",
+            "7. Name it \"Clarity Live Coach\", keep the role Member, set it to never expire, then Create. Copy the key (shown only once).",
+            "In the app:",
+            "8. Click Set up here, paste both keys and click Save. They're stored in your Mac's Keychain.",
+        ], links: [("Anthropic Console", "https://console.anthropic.com/settings/keys"),
+                   ("Deepgram Console", "https://console.deepgram.com")]),
+        "audio": Guide(steps: [
+            "1. Put on the headphones you call with. Open Aircall (in the coach or the Aircall app).",
+            "2. Click Set up. When macOS asks to use the Microphone, click Allow.",
+            "3. When macOS asks about System Audio Recording, click Open System Settings and turn on Clarity Live Coach. Then come back.",
+            "4. Follow the check on screen: say a sentence, then play a short sound or test call so the app hears the other side.",
+            "5. Both meters should move. If one doesn't: System Settings, then Privacy & Security, then Microphone and Screen & System Audio Recording, and make sure Clarity Live Coach is on.",
+            "With Bluetooth headphones the coach hears you through the Mac's built-in mic (Settings and tools, then Audio). That's on purpose.",
+        ], links: [("Privacy settings", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")]),
+        "chrome": Guide(steps: [
+            "1. Open Google Chrome.",
+            "2. In the menu bar at the top of the screen, click View, then Developer, then Allow JavaScript from Apple Events. A check mark shows next to it.",
+            "3. Open Salesforce in Chrome and go to your call list (a Lead or Contact list view).",
+            "4. The first time, macOS asks: \"Clarity Live Coach wants to control Google Chrome.\" Click OK.",
+            "5. Missed that box? System Settings, then Privacy & Security, then Automation, then Clarity Live Coach, and turn on Google Chrome.",
+        ], links: [("Automation settings", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")]),
+        "salesforce": Guide(steps: [
+            "Clarity already has the app in Salesforce. It's called Clarity Power Dialer. You just need its Consumer Key.",
+            "1. In Salesforce, click the gear (top right), then Setup.",
+            "2. In Quick Find, type External Client App Manager and open it.",
+            "3. Click Clarity Power Dialer, then the Settings tab, then OAuth Settings.",
+            "4. Make sure the Callback URL is exactly: \(ChromeLogin.redirectURI)",
+            "5. Make sure \"Require Proof Key for Code Exchange (PKCE)\" is checked, and both \"Require secret...\" boxes are unchecked.",
+            "6. Click Consumer Key and Secret. Salesforce emails you a code. Enter it, then copy the Consumer Key.",
+            "7. Click Set up here, paste the Consumer Key and click Sign in to Salesforce.",
+            "8. Chrome opens Salesforce. You're already logged in, so just click Allow. Chrome says \"Signed in.\" Close that tab.",
+            "No admin access? Ask Oliver or Ian to do steps 1 to 6 and send you the Consumer Key.",
+        ], links: [("Salesforce Setup", "https://clarityconsultingllc.my.salesforce.com/lightning/setup/SetupOneHome/home")]),
+        "aircall": Guide(steps: [
+            "API keys (needs an Aircall admin):",
+            "1. Open the Aircall Dashboard (link below) and sign in.",
+            "2. Click Integrations & API, then API Keys, then Generate an API key.",
+            "3. Copy the API ID and the API Token. The token is shown only once.",
+            "In the app:",
+            "4. Click Set up, paste the API ID and API Token, and click Connect.",
+            "5. Pick the Aircall number you call and text from (Oliver's Portland Aircall Number).",
+            "6. Pick yourself under \"Calls are made as,\" so calls ring on your line.",
+            "7. Send a test text to your own cell to make sure texting works.",
+            "The phone itself:",
+            "8. In the Aircall phone panel (right side of the coach), sign in with your Aircall login and set yourself to Available.",
+            "Texting through the app needs Aircall's Professional plan. If the test text fails, the message says why.",
+        ], links: [("Aircall Dashboard", "https://dashboard.aircall.io")]),
+        "calendar": Guide(steps: [
+            "The app offers real open times on the call, from Oliver's booking page.",
+            "1. Click Set up.",
+            "2. Paste the Calendly link: https://calendly.com/clarity_consulting",
+            "3. Click Save. The app reads Oliver's open times and offers two on each call.",
+            "Using a Google Calendar instead: in Google Calendar, click the gear, then Settings, pick the calendar on the left, scroll to Integrate calendar, and copy \"Secret address in iCal format.\" Paste that instead.",
+        ], links: [("Clarity Calendly", "https://calendly.com/clarity_consulting")]),
+    ]
+
     @MainActor static func doneCount(coach: CoachModel) -> (done: Int, total: Int) {
         let required = [
             !(UserDefaults.standard.string(forKey: "repName") ?? "").isEmpty,
@@ -81,6 +157,7 @@ struct SetupView: View {
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(list) { step in
+                    VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
                             .font(.title3)
@@ -95,6 +172,29 @@ struct SetupView: View {
                             .buttonStyle(.bordered)
                             .tint(step.done ? nil : .accentColor)
                     }
+                    if let guide = Self.guides[step.id] {
+                        DisclosureGroup("How to set this up") {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(Array(guide.steps.enumerated()), id: \.offset) { _, line in
+                                    Text(line)
+                                        .font(.callout)
+                                        .fontWeight(line.hasSuffix(":") ? .semibold : .regular)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .textSelection(.enabled)
+                                }
+                                ForEach(Array(guide.links.enumerated()), id: \.offset) { _, link in
+                                    if let url = URL(string: link.1) {
+                                        Link("Open \(link.0)", destination: url).font(.callout)
+                                    }
+                                }
+                            }
+                            .padding(.top, 6)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.top, -4)
+                    }
+                    }
                     .padding(10)
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                 }
@@ -105,7 +205,7 @@ struct SetupView: View {
             }
             .padding(20)
         }
-        .frame(width: 440, height: 620)
+        .frame(width: 480, height: 680)
         .sheet(isPresented: $showAircall, onDismiss: { refresh += 1 }) { AircallSetupView() }
         .sheet(isPresented: $showSalesforce, onDismiss: { refresh += 1 }) {
             SalesforceConnectView(onConnected: { Task { await coach.leads.start() } })
