@@ -558,8 +558,45 @@ final class CoachModel: ObservableObject {
     /// The Call button for the lead open in Salesforce.
     func callOpenLead() {
         cancelAutoNext()
-        guard status == .ready, !dialing else { return } // busy, not a missing number
-        if !callFromPage() { problem = "No mobile number on this Salesforce page. Click Next." }
+        guard status == .ready, !dialing, gettingReady == nil else { return } // busy, not a missing number
+        callWhenReady { [weak self] in self?.problem = "No mobile number on this Salesforce page. Click Next." }
+    }
+
+    /// Everything on screen is for the person open in Salesforce: name, page details,
+    /// voicemail and follow-ups (written from their page), and Claude's opener for them.
+    private func readyToDial(waited: TimeInterval) -> Bool {
+        guard let calling, SalesforceTab.currentRecord() == calling else { return false }
+        let detailsOK = detailsTried
+        let voicemailOK = voicemailScript != nil && voicemailFor == calling && (voicemailUsedDetails || recordDetails == nil)
+        // Claude's personal opener; after 10 seconds the instant one (already for them) is enough.
+        let openerOK = personalOpenerFor == calling || waited > 10
+        return detailsOK && voicemailOK && openerOK
+    }
+
+    /// Dials only once the script and follow-ups are for this exact person. Gives up after 25 s.
+    private func callWhenReady(onFail: @escaping () -> Void = {}) {
+        readyTask?.cancel()
+        readyTask = Task { [weak self] in
+            let start = Date()
+            while let self, !Task.isCancelled, self.status == .ready {
+                self.syncRecord()
+                let waited = Date().timeIntervalSince(start)
+                if self.readyToDial(waited: waited) {
+                    self.gettingReady = nil
+                    if !self.callFromPage() { onFail() }
+                    return
+                }
+                if waited > 25 {
+                    self.gettingReady = nil
+                    self.problem = "Couldn't get the script ready for this person. Click Call to try again."
+                    return
+                }
+                let name = Screener.firstName(self.calling) ?? "their"
+                self.gettingReady = name == "their" ? "Getting the script ready..." : "Getting \(name)'s script ready..."
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            self?.gettingReady = nil
+        }
     }
 
     /// Calls the Mobile number on the open Salesforce page, right from the app (through the
@@ -602,8 +639,10 @@ final class CoachModel: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard let self, self.status == .ready else { return }
                 if let id, SalesforceChrome.url().flatMap(CallList.recordID) != id { continue } // not loaded yet
-                if self.callFromPage() {
+                if SalesforceChrome.mobileNumber() != nil {
+                    // Page loaded and has a Mobile: dial once their script and follow-ups are ready.
                     self.noMobileSkips = 0
+                    self.callWhenReady { [weak self] in self?.problem = "No mobile number on this Salesforce page. Click Next." }
                     return
                 }
             }
@@ -757,14 +796,17 @@ final class CoachModel: ObservableObject {
         calling = record
         if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
         recordDetails = nil
+        detailsTried = false
+        personalOpenerFor = nil
         prepareOpener()
         prepareVoicemail() // right away for this person; again with details below
         // Salesforce fills in the page after the title changes: read the details a moment later.
         detailsTask?.cancel()
         detailsTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1500))
+            try? await Task.sleep(for: .milliseconds(1200))
             guard let self, !Task.isCancelled, self.calling == record, record != nil else { return }
             self.recordDetails = SalesforceTab.pageText()
+            self.detailsTried = true
             if self.recordDetails != nil, self.status == .ready { self.prepareOpener() }
             self.prepareVoicemail()
         }
@@ -869,6 +911,8 @@ final class CoachModel: ObservableObject {
     /// The rep clicked Wait (or moved on by hand).
     func cancelAutoNext() {
         waitingForFollowUp = false
+        readyTask?.cancel()
+        gettingReady = nil
         autoNextTask?.cancel()
         autoNextTask = nil
         autoNextIn = nil
@@ -1084,8 +1128,17 @@ final class CoachModel: ObservableObject {
         }
     }
     private var pendingStop: Task<Void, Never>?
-    /// Who the ready-made voicemail was written for.
+    /// Who the ready-made voicemail was written for, and whether it used their Salesforce page.
     private var voicemailFor: String?
+    private var voicemailUsedDetails = false
+    /// The page's details were read (or tried) for the person on screen.
+    private var detailsTried = false
+    /// Who Claude's personal opener on screen is for.
+    private var personalOpenerFor: String?
+    private var instantOpenerID = -1
+    /// "Getting Burcin's script ready..." while the app waits to dial.
+    @Published private(set) var gettingReady: String?
+    private var readyTask: Task<Void, Never>?
     private var detailsPending = false
 
     private func openStream(_ speaker: Speaker, key: String) -> DeepgramStream {
@@ -1366,6 +1419,7 @@ final class CoachModel: ObservableObject {
         voicemailTask?.cancel()
         voicemailScript = nil
         let forWho = calling
+        let usedDetails = detailsTried
         voicemailFor = forWho
         guard let key = Keychain.read(.anthropic) else { return }
         let client = CoachSpeed.fastest.client(apiKey: key) // voicemails always use Haiku: fast
@@ -1382,6 +1436,7 @@ final class CoachModel: ObservableObject {
             s.sayComplete = true
             s.stage = "Voicemail"
             if !Task.isCancelled, !s.say.isEmpty, self?.calling == forWho {
+                self?.voicemailUsedDetails = usedDetails
                 self?.voicemailScript = s
                 if self?.voicemailActive == true { self?.fillFollowUp(from: s) }
             }
@@ -1479,6 +1534,7 @@ final class CoachModel: ObservableObject {
         // A ready-to-read line right away (from the opener template), so there's always a script
         // on screen before the phone rings. Claude's personal version replaces it when it's ready.
         seq += 1
+        instantOpenerID = seq
         show(instantOpener(for: calling), id: seq, kind: .opener)
         ask(.opener, user: CoachPrompt.opener(calling: calling, details: recordDetails, style: openerStyle))
     }
@@ -1556,6 +1612,7 @@ final class CoachModel: ObservableObject {
             latency = max(0, Date().timeIntervalSince(confirmedAt ?? askedAt))
         }
         if id == shownID {
+            if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
             suggestion = s // same answer, still streaming in
             note(s)
             return
@@ -1578,6 +1635,7 @@ final class CoachModel: ObservableObject {
     }
 
     private func show(_ s: Suggestion, id: Int, kind: Kind) {
+        if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
         pending = nil
         shownID = id
         shownAt = Date()

@@ -651,7 +651,7 @@ struct CoachView: View {
 
             if coach.status == .ready && coach.calling != nil && coach.currentAttemptKey == nil {
                 // A lead is open in Salesforce and not called yet: call their Mobile right from here.
-                bigButton(coach.dialing ? "Calling..." : "Call \(currentName)", icon: "phone.fill") {
+                bigButton(coach.gettingReady ?? (coach.dialing ? "Calling..." : "Call \(currentName)"), icon: "phone.fill") {
                     coach.callOpenLead()
                 }
                 .disabled(coach.dialing)
