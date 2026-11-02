@@ -168,7 +168,7 @@ enum Salesforce {
     /// The list view's people who can be called: they have a Mobile number and aren't Do Not Call.
     /// Everyone else is left off the list. The Phone field is never used.
     /// Contacts with no Mobile and a blank Relationship Status are marked "Not Quality Prospect".
-    /// Contacts marked "Not Quality Prospect" or "Negative" are left off.
+    /// Contacts marked "Not Quality Prospect" or "Negative", and Unqualified Leads, are left off.
     static func rows(of view: ListView) async throws -> [Row] {
         let all = try await allRows(of: view)
         let isContact = view.object == "Contact"
@@ -179,15 +179,15 @@ enum Salesforce {
                 .filter { $0.allSatisfy { $0.isLetter || $0.isNumber } }
             guard !ids.isEmpty else { continue }
             let list = ids.map { "'\($0)'" }.joined(separator: ",")
-            let fields = "Id, MobilePhone, DoNotCall" + (isContact ? ", Relationship_Status__c" : "")
+            let fields = "Id, MobilePhone, DoNotCall" + (isContact ? ", Relationship_Status__c" : ", Status")
             for r in try await query("SELECT \(fields) FROM \(view.object) WHERE Id IN (\(list))") {
                 guard let id = r["Id"] as? String else { continue }
                 let mobile = (r["MobilePhone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
                 if mobile.isEmpty {
                     // Only blank statuses: never overwrite Engaged, Champion, and so on.
                     if isContact, (r["Relationship_Status__c"] as? String ?? "").isEmpty { noMobile.append(id) }
-                } else if isContact, removedStatuses.contains(r["Relationship_Status__c"] as? String ?? "") {
-                    continue // Not Quality Prospect or Negative: off the list
+                } else if removedStatuses.contains(r[isContact ? "Relationship_Status__c" : "Status"] as? String ?? "") {
+                    continue // Not Quality Prospect, Negative, or an Unqualified Lead: off the list
                 } else if (r["DoNotCall"] as? Bool) != true {
                     callable.insert(id)
                 }
@@ -199,7 +199,7 @@ enum Salesforce {
         return all.filter { keep.contains(String($0.id.prefix(15))) }
     }
 
-    // MARK: Relationship Status (Contacts only; Leads don't have this field)
+    // MARK: Status (Contact: Relationship Status. Lead: Lead Status.)
 
     /// Contact.Relationship_Status__c picklist values in this org.
     static let relationshipStatuses = [
@@ -207,21 +207,32 @@ enum Salesforce {
         "Prior Relationship", "Prior Relationship (Verified)", "Former Salesforce Employee",
         "Not at Salesforce", "Not Quality Prospect", "Negative",
     ]
-    /// These come off the call list for good.
-    static let removedStatuses: Set<String> = ["Not Quality Prospect", "Negative"]
+    /// Lead.Status picklist values in this org.
+    static let leadStatuses = ["New", "Contacted", "Nurturing", "Interested", "AE Engaged", "Qualified", "Unqualified"]
 
-    static func relationshipStatus(contactID: String) async throws -> String? {
-        guard contactID.allSatisfy({ $0.isLetter || $0.isNumber }) else { return nil }
-        return try await query("SELECT Relationship_Status__c FROM Contact WHERE Id = '\(contactID)'")
-            .first?["Relationship_Status__c"] as? String
+    /// These come off the call list for good.
+    static let removedStatuses: Set<String> = ["Not Quality Prospect", "Negative", "Unqualified"]
+
+    /// "003..." = Contact, "00Q..." = Lead.
+    static func objectFor(id: String) -> String? {
+        id.hasPrefix("003") ? "Contact" : id.hasPrefix("00Q") ? "Lead" : nil
+    }
+    static func statusField(_ object: String) -> String { object == "Lead" ? "Status" : "Relationship_Status__c" }
+    static func statuses(_ object: String) -> [String] { object == "Lead" ? leadStatuses : relationshipStatuses }
+
+    static func status(of id: String) async throws -> String? {
+        guard id.allSatisfy({ $0.isLetter || $0.isNumber }), let object = objectFor(id: id) else { return nil }
+        let field = statusField(object)
+        return try await query("SELECT \(field) FROM \(object) WHERE Id = '\(id)'").first?[field] as? String
     }
 
-    static func setRelationshipStatus(contactID: String, to value: String) async throws {
-        guard contactID.allSatisfy({ $0.isLetter || $0.isNumber }), relationshipStatuses.contains(value) else {
+    static func setStatus(of id: String, to value: String) async throws {
+        guard id.allSatisfy({ $0.isLetter || $0.isNumber }), let object = objectFor(id: id),
+              statuses(object).contains(value) else {
             throw SFError(message: "Unexpected record.")
         }
-        _ = try await send("PATCH", "/services/data/\(apiVersion)/sobjects/Contact/\(contactID)",
-                           body: ["Relationship_Status__c": value])
+        _ = try await send("PATCH", "/services/data/\(apiVersion)/sobjects/\(object)/\(id)",
+                           body: [statusField(object): value])
     }
 
     /// Sets Relationship Status = "Not Quality Prospect" on Contacts (200 at a time).

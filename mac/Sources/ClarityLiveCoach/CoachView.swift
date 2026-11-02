@@ -168,7 +168,7 @@ struct CoachView: View {
                     onSetupAircall: { showAircall = true }
                 )
             }
-            if coach.relationshipContactID != nil {
+            if coach.statusRecordID != nil {
                 RelationshipCard(coach: coach)
             }
             warnings
@@ -988,10 +988,10 @@ struct FollowUpCard: View {
 }
 
 
-// MARK: - Relationship Status
+// MARK: - Relationship Status / Lead Status
 
-/// Every Relationship Status as a round radio button, two columns, with a Save button.
-/// Saves to the Contact in Salesforce. "Not Quality Prospect" and "Negative" take them off the list.
+/// Contact: every Relationship Status. Lead: every Lead Status. Round radio buttons, two columns, Save.
+/// Saves to Salesforce. "Not Quality Prospect", "Negative" and "Unqualified" take them off the list.
 struct RelationshipCard: View {
     @ObservedObject var coach: CoachModel
     @State private var picked: String?
@@ -1000,14 +1000,15 @@ struct RelationshipCard: View {
     private let columns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
 
     var body: some View {
-        let current = picked ?? coach.relationshipStatus
+        let object = coach.statusObject ?? "Contact"
+        let current = picked ?? coach.recordStatus
         VStack(alignment: .leading, spacing: 8) {
-            Text("Relationship Status").font(.callout.weight(.semibold))
+            Text(object == "Lead" ? "Lead Status" : "Relationship Status").font(.callout.weight(.semibold))
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
-                ForEach(Salesforce.relationshipStatuses, id: \.self) { value in
+                ForEach(Salesforce.statuses(object), id: \.self) { value in
                     Button {
                         picked = value
-                        pickedFor = coach.relationshipContactID
+                        pickedFor = coach.statusRecordID
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: current == value ? "largecircle.fill.circle" : "circle")
@@ -1020,12 +1021,12 @@ struct RelationshipCard: View {
                 }
             }
             HStack(spacing: 8) {
-                Button(coach.savingRelationship ? "Saving..." : "Save") {
-                    if let picked { coach.saveRelationship(picked) }
+                Button(coach.savingStatus ? "Saving..." : "Save") {
+                    if let picked { coach.saveStatus(picked) }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(picked == nil || picked == coach.relationshipStatus || coach.savingRelationship)
-                if let message = coach.relationshipMessage {
+                .disabled(picked == nil || picked == coach.recordStatus || coach.savingStatus)
+                if let message = coach.statusMessage {
                     Text(message).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -1033,9 +1034,9 @@ struct RelationshipCard: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-        .onChange(of: coach.relationshipContactID) {
+        .onChange(of: coach.statusRecordID) {
             // New person on screen: start fresh.
-            if pickedFor != coach.relationshipContactID { picked = nil; pickedFor = nil }
+            if pickedFor != coach.statusRecordID { picked = nil; pickedFor = nil }
         }
     }
 }

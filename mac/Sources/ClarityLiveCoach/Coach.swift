@@ -346,63 +346,62 @@ final class CoachModel: ObservableObject {
     @Published private(set) var dialing = false
     @Published var dialError: String?
 
-    // MARK: Relationship Status (Contacts only)
+    // MARK: Status card (Contact: Relationship Status. Lead: Lead Status.)
 
-    /// The Contact on screen, if the open record is a Contact. Leads don't have Relationship Status.
-    @Published private(set) var relationshipContactID: String?
+    /// The Contact or Lead on screen.
+    @Published private(set) var statusRecordID: String?
     /// What Salesforce says right now (nil = blank or not loaded yet).
-    @Published private(set) var relationshipStatus: String?
-    @Published private(set) var savingRelationship = false
-    @Published var relationshipMessage: String?
+    @Published private(set) var recordStatus: String?
+    @Published private(set) var savingStatus = false
+    @Published var statusMessage: String?
 
-    /// Notices which Contact is on screen and loads its Relationship Status.
+    /// "Contact" or "Lead" for the record on screen.
+    var statusObject: String? { statusRecordID.flatMap(Salesforce.objectFor) }
+
+    /// Notices which Contact or Lead is on screen and loads its status.
     func refreshRelationship() {
-        let id: String?
-        if leads.isActive {
-            id = leads.details.flatMap { $0.object == "Contact" ? $0.id : nil }
-        } else {
-            id = SalesforceChrome.url().flatMap(CallList.recordID).flatMap { $0.hasPrefix("003") ? $0 : nil }
-        }
-        guard id != relationshipContactID else { return }
-        relationshipContactID = id
-        relationshipStatus = nil
-        relationshipMessage = nil
-        guard let id, Salesforce.isConnected else { return }
+        let id: String? = leads.isActive ? leads.details?.id : SalesforceChrome.url().flatMap(CallList.recordID)
+        let usable = id.flatMap { Salesforce.objectFor(id: $0) == nil ? nil : $0 }
+        guard usable != statusRecordID else { return }
+        statusRecordID = usable
+        recordStatus = nil
+        statusMessage = nil
+        guard let usable, Salesforce.isConnected else { return }
         Task { [weak self] in
-            let value = try? await Salesforce.relationshipStatus(contactID: id)
-            guard let self, self.relationshipContactID == id else { return }
-            self.relationshipStatus = value ?? nil
+            let value = try? await Salesforce.status(of: usable)
+            guard let self, self.statusRecordID == usable else { return }
+            self.recordStatus = value ?? nil
         }
     }
 
-    /// The Save button: writes Relationship Status to the Contact in Salesforce.
-    /// "Not Quality Prospect" and "Negative" also take them off the call list.
-    func saveRelationship(_ value: String) {
-        guard let id = relationshipContactID, !savingRelationship else { return }
+    /// The Save button: writes the status to Salesforce.
+    /// "Not Quality Prospect", "Negative" and "Unqualified" also take them off the call list.
+    func saveStatus(_ value: String) {
+        guard let id = statusRecordID, !savingStatus else { return }
         guard Salesforce.isConnected else {
-            relationshipMessage = "Sign in to Salesforce first: gear menu, then Salesforce."
+            statusMessage = "Sign in to Salesforce first: gear menu, then Salesforce."
             return
         }
-        savingRelationship = true
-        relationshipMessage = nil
+        savingStatus = true
+        statusMessage = nil
         Task { [weak self] in
             do {
-                try await Salesforce.setRelationshipStatus(contactID: id, to: value)
+                try await Salesforce.setStatus(of: id, to: value)
                 guard let self else { return }
-                self.savingRelationship = false
-                guard self.relationshipContactID == id else { return }
-                self.relationshipStatus = value
+                self.savingStatus = false
+                guard self.statusRecordID == id else { return }
+                self.recordStatus = value
                 if Salesforce.removedStatuses.contains(value) {
                     RemovedList.add(id)
-                    self.relationshipMessage = "Saved. Taken off your list."
+                    self.statusMessage = "Saved. Taken off your list."
                 } else {
                     RemovedList.remove(id)
-                    self.relationshipMessage = "Saved."
+                    self.statusMessage = "Saved."
                 }
                 self.callList.refreshUpNext()
             } catch {
-                self?.savingRelationship = false
-                self?.relationshipMessage = error.localizedDescription
+                self?.savingStatus = false
+                self?.statusMessage = error.localizedDescription
             }
         }
     }
