@@ -156,7 +156,8 @@ struct CoachView: View {
     private var coachColumn: some View {
         VStack(alignment: .leading, spacing: gap) {
             topBar
-            if Salesforce.isConnected { leadHeader }
+            // The Chrome list is the default. This header only shows if a Salesforce list was picked in the gear menu.
+            if Salesforce.isConnected && coach.leads.selected != nil { leadHeader }
             StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: coach.status != .ready)
             scriptCard
             belowCard
@@ -305,6 +306,18 @@ struct CoachView: View {
             Button(coach.status == .paused ? "Resume" : "Pause") { coach.togglePause() }
                 .disabled(coach.status == .ready)
             Button("Start listening now (new call)") { coach.startByHand() }
+            if Salesforce.isConnected {
+                Menu("Use a Salesforce list instead of Chrome") {
+                    ForEach(coach.leads.views) { view in
+                        Button(view.title) { Task { await coach.leads.open(view) } }
+                    }
+                    if coach.leads.selected != nil {
+                        Divider()
+                        Button("Go back to my Chrome list") { coach.leads.close() }
+                    }
+                }
+                .disabled(coach.status != .ready)
+            }
             Button("Reset who's been called today") {
                 coach.callList.clearCalledToday()
                 coach.leads.clearCalledToday()

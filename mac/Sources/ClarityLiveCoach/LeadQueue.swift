@@ -60,6 +60,15 @@ final class LeadQueue: ObservableObject {
         }
     }
 
+    /// Stops using the Salesforce list; the app goes back to the list open in Chrome.
+    func close() {
+        selected = nil
+        rows = []
+        details = nil
+        index = 0
+        UserDefaults.standard.removeObject(forKey: "sfListView")
+    }
+
     /// Picks up changes made in Salesforce (new leads, edits), keeping the current lead.
     func reload() async {
         guard let selected else { return }

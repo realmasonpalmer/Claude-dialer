@@ -366,12 +366,32 @@ final class CoachModel: ObservableObject {
         statusRecordID = usable
         recordStatus = nil
         statusMessage = nil
-        guard let usable, Salesforce.isConnected else { return }
+        guard let usable else { return }
+        if RemovedList.contains(usable) { skipRemoved(usable); return }
+        guard Salesforce.isConnected else { return }
         Task { [weak self] in
             let value = try? await Salesforce.status(of: usable)
             guard let self, self.statusRecordID == usable else { return }
             self.recordStatus = value ?? nil
+            if let value, Salesforce.removedStatuses.contains(value) {
+                RemovedList.add(usable)
+                self.skipRemoved(usable)
+            }
         }
+    }
+
+    /// Someone already marked Not Quality Prospect, Negative or Unqualified came up between calls:
+    /// move on to the next person (without calling). Only for people on the call list, so opening
+    /// a record by hand to look at it doesn't jump away.
+    private func skipRemoved(_ id: String) {
+        guard status == .ready, !dialing else { return }
+        let onList = leads.isActive
+            ? leads.current.map { String($0.id.prefix(15)) == String(id.prefix(15)) } ?? false
+            : callList.records.contains { String($0.id.prefix(15)) == String(id.prefix(15)) }
+        guard onList else { return }
+        statusMessage = nil
+        problem = "Skipped someone marked off your list."
+        nextLead(dial: false)
     }
 
     /// The Save button: writes the status to Salesforce.
