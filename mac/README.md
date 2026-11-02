@@ -5,6 +5,13 @@ for the full picture (files, setup state, next tasks).
 
 ## Build
 
+- **Fastest install (new teammates):** open Terminal, paste this and press Enter. It installs Apple's free tools if needed, downloads, builds and opens the app:
+
+  ```bash
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/confident-gates-ji8r2l/mac/scripts/get.sh)"
+  ```
+
+  Then click the gear, then Setup, and follow the 7 steps.
 - Needs macOS 14.4+ and Apple's free command line tools (`xcode-select --install`).
 - From this folder: `bash scripts/install.sh`. It builds into `~/Library/Caches/ClarityLiveCoach-build`,
   signs with a local certificate (`scripts/setup-signing.sh`, made once so macOS remembers
