@@ -136,7 +136,18 @@ enum Aircall {
         // POST /v1/numbers/:id/messages/native/send  { to, body }. No setup needed on the number;
         // the text shows in the Aircall app so anyone on the line can continue the conversation.
         do {
-            _ = try await request("/numbers/\(numberID)/messages/native/send", method: "POST", body: ["to": to, "body": body])
+            // Never hang: if Aircall hasn't answered in 20 seconds, stop waiting and say so.
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    _ = try await request("/numbers/\(numberID)/messages/native/send", method: "POST", body: ["to": to, "body": body])
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(20))
+                    throw AircallError(message: "Aircall didn't answer in 20 seconds. Check the Aircall app to see if the text went out before you try again.")
+                }
+                try await group.next()
+                group.cancelAll()
+            }
         } catch let failed as NotFound {
             throw AircallError(message: plainWords(failed.detail))
         }
