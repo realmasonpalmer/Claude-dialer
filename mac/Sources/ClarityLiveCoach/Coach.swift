@@ -595,6 +595,8 @@ final class CoachModel: ObservableObject {
 
     /// Scores every answered call and suggests script improvements over time.
     let lab = CallLab()
+    /// Dials, pickups, texts, LinkedIn notes and more, counted on this Mac.
+    let touchpoints = Touchpoints()
     /// Real free time from the booking calendar (Calendly or Google), for booking.
     let availability = Availability()
     /// Meeting times already offered on this call, and the next two to offer.
@@ -859,6 +861,7 @@ final class CoachModel: ObservableObject {
             currentAttemptKey = key
             attempts[key, default: 0] += 1
         }
+        touchpoints.log(.dial)
         status = .live
         quietTicks = 0
         availability.refresh() // fresh free times for this call
@@ -889,12 +892,25 @@ final class CoachModel: ObservableObject {
         lastWordsAt = nil
     }
 
+    /// Counts the call that just ended. Picked up = a real person talked (not voicemail, not
+    /// only a screener). Conversation = they kept talking: 3+ turns, or 45+ seconds after pickup.
+    private func logTouchpoints(answered: Bool) {
+        if sawVoicemail { touchpoints.log(.voicemail) }
+        guard answered else { return }
+        touchpoints.log(.pickup)
+        let prospectTurns = turns.filter { $0.speaker == .prospect }.count
+        let talked = firstProspectAt.map { Date().timeIntervalSince($0) } ?? 0
+        if prospectTurns >= 3 || talked >= 45 { touchpoints.log(.conversation) }
+        if goalHit { touchpoints.log(.meeting) }
+    }
+
     /// Clears everything about this prospect and gets the next opener ready.
     func nextCall() {
         if status != .ready {
             // Reached a person = they spoke, and it wasn't a voicemail or only a screener.
             let theySpoke = turns.contains { $0.speaker == .prospect }
             lastCallAnswered = theySpoke && !sawVoicemail && !screenerActive
+            logTouchpoints(answered: lastCallAnswered)
         }
         history = []
         historyIndex = nil
@@ -1185,6 +1201,7 @@ final class CoachModel: ObservableObject {
         Task { [weak self] in
             do {
                 try await Aircall.sendText(to: f.phone, body: f.text)
+                self?.touchpoints.log(.text)
                 self?.followUp?.textStatus = "Sent"
                 self?.followUp?.textDone = true
             } catch {
@@ -1208,6 +1225,7 @@ final class CoachModel: ObservableObject {
                 NSWorkspace.shared.open(url)
             }
         }
+        if followUp?.linkedinDone != true { touchpoints.log(.linkedin) } // count once per person
         followUp?.linkedinDone = true
     }
 

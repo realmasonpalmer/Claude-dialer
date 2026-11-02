@@ -133,6 +133,7 @@ struct CoachView: View {
     @StateObject private var updater = Updater()
     @State private var askName = false
     @AppStorage("repName") private var repName = ""
+    @AppStorage("showTouchpoints") private var showTouchpoints = true
     @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
     @AppStorage("wholeLine") private var wholeLine = true
     @AppStorage("nextDials") private var nextDials = true
@@ -170,6 +171,9 @@ struct CoachView: View {
             }
             if coach.statusRecordID != nil {
                 RelationshipCard(coach: coach)
+            }
+            if showTouchpoints && coach.status == .ready {
+                TouchpointsCard(touchpoints: coach.touchpoints)
             }
             warnings
             Spacer(minLength: 0)
@@ -290,6 +294,7 @@ struct CoachView: View {
             }
             Toggle("Show each line all at once", isOn: $wholeLine)
             Toggle("Next calls right away", isOn: $nextDials)
+            Toggle("Show touchpoints", isOn: $showTouchpoints)
             Toggle("Aircall phone inside the coach", isOn: $appPhone)
             Toggle("Rotate proven openers", isOn: Binding(
                 get: { coach.openers.rotate },
