@@ -923,15 +923,15 @@ struct FollowUpCard: View {
                 // LinkedIn message (already connected)
                 row(done: f.linkedinMessageDone, title: "LinkedIn message (already connected)", message: f.linkedinMessage) {
                     if f.linkedinMessageDone {
-                        Button("Open again") { onLinkedInMessage() }.buttonStyle(.link)
+                        Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
                     } else {
-                        Button(f.linkedinURL == nil ? "Search LinkedIn + copy message" : "Open profile + copy message") { onLinkedInMessage() }
+                        Button("Copy message") { onLinkedInMessage() }
                             .buttonStyle(.borderedProminent)
                             .disabled(f.linkedinMessage.isEmpty)
                     }
                 }
                 if f.linkedinMessageDone {
-                    Text("On their profile: click Message. Right-click the box, click Paste, then Send.")
+                    Text("Copied. On their profile: click Message, paste (Command-V), then Send.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 

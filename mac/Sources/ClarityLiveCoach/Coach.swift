@@ -1464,6 +1464,15 @@ final class CoachModel: ObservableObject {
         guard let f = followUp else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message ? f.linkedinMessage : f.linkedin, forType: .string)
+        // The message only gets copied: the profile is already open from the note button.
+        if message {
+            if followUp?.linkedinMessageDone != true, !(f.key.map(DialHistory.linkedInMessageToday) ?? false) {
+                touchpoints.log(.linkedinMessage)
+                if let key = f.key { DialHistory.logLinkedInMessage(key) }
+            }
+            followUp?.linkedinMessageDone = true
+            return
+        }
         if let profile = f.linkedinURL ?? (leads.isActive ? nil : Self.linkedInProfile(details: recordDetails)) {
             NSWorkspace.shared.open(profile)
         } else {
