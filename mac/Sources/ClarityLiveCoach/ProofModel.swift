@@ -247,7 +247,13 @@ final class CaptureEngine {
 
     /// onChunk(isRep, speech) is called from audio threads with each 16 kHz mono chunk.
     /// The buffer is safe to keep: it is a fresh conversion output.
+    /// The call-side processes being listened to right now.
+    private(set) var tapTargets: [AudioObjectID] = []
+    private var onChunk: ((Bool, AVAudioPCMBuffer) -> Void)?
+
     func start(processes: [AudioObjectID], onChunk: @escaping (Bool, AVAudioPCMBuffer) -> Void) throws {
+        self.onChunk = onChunk
+        tapTargets = processes
         let micConverter = self.micConverter, tapConverter = self.tapConverter, writers = self.writers
         do {
             // With a Bluetooth headset, Aircall should be the only app using its mic: two apps on it
@@ -270,9 +276,23 @@ final class CaptureEngine {
         }
     }
 
+    /// Switches the call side to other processes (Aircall's audio showed up after listening began).
+    /// The mic keeps running.
+    func retargetTap(processes: [AudioObjectID]) throws {
+        guard let onChunk else { return }
+        let tapConverter = self.tapConverter, writers = self.writers
+        try tap.start(processes: processes) { buffer in
+            guard let speech = tapConverter.convert(buffer) else { return }
+            writers.write(speech, isRep: false)
+            onChunk(false, speech)
+        }
+        tapTargets = processes
+    }
+
     func stop() {
         mic.stop()
         tap.stop()
+        tapTargets = []
     }
 }
 

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Combine
+import CoreAudio
 import Foundation
 
 // MARK: - What Claude sends back
@@ -946,6 +947,7 @@ final class CoachModel: ObservableObject {
                 if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
             }
             checkAircallEveryFewSeconds()
+            if aircallTicks % 2 == 0, Date().timeIntervalSince(callStartedAt) < 30 { followCallAudio() }
             if AudioProcess.doubleCall(in: AudioProcess.others()) {
                 problem = "Two calls at once: Aircall is signed in here and in Salesforce. Log out of the Aircall panel in Salesforce."
             }
@@ -1068,6 +1070,7 @@ final class CoachModel: ObservableObject {
     private var waitingForNewCall = false
     private var callStartedAt = Date.distantPast
     private var heardCallAudio = false
+    private var retargets = 0
 
     private func checkAircallForNewCall() {
         aircallTicks += 1
@@ -1134,6 +1137,7 @@ final class CoachModel: ObservableObject {
         stagesSeen = []
         callStartedAt = Date()
         heardCallAudio = false
+        retargets = 0
         aircallSaysOver = 0
         aircallTicks = 0
         journeyStep = 0
@@ -1269,6 +1273,7 @@ final class CoachModel: ObservableObject {
                 guard let samples = speech.int16ChannelData?[0] else { return }
                 streams.send(Data(bytes: samples, count: Int(speech.frameLength) * 2), isRep: isRep)
             }
+            ActivityLog.add("Listening to: \(Self.names(of: chrome))")
             return true
         } catch {
             streams.closeAll()
@@ -1280,6 +1285,29 @@ final class CoachModel: ObservableObject {
     /// Stops listening. Transcription stops right away, but the audio tap is removed a few
     /// seconds later: tearing it down while Aircall plays the hang-up tone makes that tone
     /// stutter and repeat.
+    private static func names(of ids: [AudioObjectID]) -> String {
+        let all = AudioProcess.others()
+        let names = ids.compactMap { id in all.first { $0.id == id }?.name }
+        return names.isEmpty ? "\(ids.count) process(es)" : Set(names).sorted().joined(separator: ", ")
+    }
+
+    /// Listening starts a second after dialing, sometimes before Aircall's call audio exists.
+    /// Once Aircall is clearly on the call, make sure that's what the app listens to.
+    private func followCallAudio() {
+        let processes = AudioProcess.others()
+        guard AudioProcess.aircallAppOnCall(in: processes) || AudioProcess.chromeOnCall(in: processes) else { return }
+        let targets = AudioProcess.callAudioTargets(in: processes)
+        // Only add missing call audio (never drop what's working), and at most twice a call.
+        guard retargets < 2, !targets.isEmpty, !Set(targets).isSubset(of: Set(capture.tapTargets)) else { return }
+        retargets += 1
+        do {
+            try capture.retargetTap(processes: targets)
+            ActivityLog.add("Switched listening to: \(Self.names(of: targets))")
+        } catch {
+            ActivityLog.add("Couldn't switch listening: \(error.localizedDescription)")
+        }
+    }
+
     private func stopAudio() {
         streams.closeAll()
         pendingStop?.cancel()
