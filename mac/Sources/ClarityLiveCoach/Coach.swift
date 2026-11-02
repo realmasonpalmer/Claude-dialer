@@ -509,10 +509,15 @@ final class CoachModel: ObservableObject {
             return
         }
         if status != .ready { endCall() }
+        let upcoming = callList.upNextInfo?.name
         if callList.openNext() {
-            suggestion = Suggestion()
-            calling = nil // forces a fresh read once the new page loads
-            tabTicks = 1  // read on the very next tick
+            // Show their opener now, before the page loads and before the phone rings.
+            let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
+            calling = upcoming.map { "\(kind) \"\($0)\"" }
+            recordDetails = nil
+            prepareOpener()
+            detailsPending = true // read their page once it loads, for a more personal line
+            tabTicks = 1  // read the page on the very next tick
             if dialNow {
                 dialFromSalesforcePage(expecting: callList.lastOpenedID)
             }
@@ -760,7 +765,8 @@ final class CoachModel: ObservableObject {
                 callList.refreshUpNext()
                 let record = SalesforceTab.currentRecord()
                 refreshRelationship()
-                if record != calling {
+                if record != calling || (detailsPending && record != nil) {
+                    detailsPending = false
                     calling = record
                     if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
                     recordDetails = nil
@@ -1069,6 +1075,7 @@ final class CoachModel: ObservableObject {
         }
     }
     private var pendingStop: Task<Void, Never>?
+    private var detailsPending = false
 
     private func openStream(_ speaker: Speaker, key: String) -> DeepgramStream {
         DeepgramStream(apiKey: key, keyterms: useKeyterms ? DeepgramStream.defaultKeyterms : []) { [weak self] event in
@@ -1456,7 +1463,31 @@ final class CoachModel: ObservableObject {
     // MARK: Claude
 
     private func prepareOpener() {
+        // A ready-to-read line right away (from the opener template), so there's always a script
+        // on screen before the phone rings. Claude's personal version replaces it when it's ready.
+        seq += 1
+        show(instantOpener(for: calling), id: seq, kind: .opener)
         ask(.opener, user: CoachPrompt.opener(calling: calling, details: recordDetails, style: openerStyle))
+    }
+
+    /// The opener template filled in with their first name, your name and your company. No waiting.
+    private func instantOpener(for calling: String?) -> Suggestion {
+        var t = openerStyle?.template ?? Opener.all[0].template
+        if t.contains("[a ") { t = Opener.all[0].template } // needs Claude to fill in; use the plain one
+        let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+        t = t.replacingOccurrences(of: "[first name]", with: Screener.firstName(calling) ?? "there")
+            .replacingOccurrences(of: "[rep]", with: rep.isEmpty ? "[your name]" : rep)
+            .replacingOccurrences(of: "[company]", with: shortCompany)
+        return Suggestion(say: t, cue: openerStyle?.name ?? "Opener", stage: "Opener", sayComplete: true)
+    }
+
+    /// "Clarity" from the campaign's company description.
+    private var shortCompany: String {
+        let c = campaign.company
+        if c.localizedCaseInsensitiveContains("Clarity") { return "Clarity" }
+        let first = c.components(separatedBy: CharacterSet(charactersIn: ",.;:")).first ?? ""
+        let words = first.split(separator: " ").prefix(3).joined(separator: " ")
+        return words.isEmpty ? "[company]" : words
     }
 
     private func ask(_ kind: Kind, user: String, early: String? = nil) {
@@ -1516,6 +1547,8 @@ final class CoachModel: ObservableObject {
             note(s)
             return
         }
+        // The call is live and someone already talked: keep the opener the rep is reading.
+        if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect }) { return }
         let waited = Date().timeIntervalSince(shownAt)
         if kind == .opener || kind == .voicemail || shownID == 0 || waited >= hold {
             show(s, id: id, kind: kind)
