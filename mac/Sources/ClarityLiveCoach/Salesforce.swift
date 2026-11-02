@@ -73,9 +73,32 @@ enum Salesforce {
         let (data, response) = try await URLSession.shared.data(for: req)
         let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw SFError(message: "Salesforce sign-in failed: \((json["error_description"] as? String) ?? "unknown error")")
+            let error = (json["error"] as? String) ?? ""
+            let detail = (json["error_description"] as? String) ?? "unknown error"
+            throw SFError(message: "Salesforce sign-in failed: \(detail). " + fix(error: error, detail: detail))
         }
         return json
+    }
+
+    /// What to change in Salesforce for the usual sign-in errors, in plain words.
+    private static func fix(error: String, detail: String) -> String {
+        let d = (error + " " + detail).lowercased()
+        if d.contains("invalid client credentials") || d.contains("client secret") || d.contains("invalid_client ") {
+            return "Fix: in Salesforce Setup, open the External Client App > Policies/Settings > OAuth, uncheck \"Require secret for Web Server Flow\" and \"Require secret for Refresh Token Flow\", save, wait 2 minutes, then sign in again."
+        }
+        if d.contains("invalid_client_id") || d.contains("client identifier invalid") {
+            return "Fix: copy the Consumer Key again (no spaces). A brand-new app can take up to 10 minutes to work."
+        }
+        if d.contains("redirect") {
+            return "Fix: the app's Callback URL must be exactly \(ChromeLogin.redirectURI)"
+        }
+        if d.contains("verifier") || d.contains("pkce") {
+            return "Fix: click Sign in again and finish within a few minutes."
+        }
+        if d.contains("expired") || d.contains("authorization code") {
+            return "Fix: click Sign in again."
+        }
+        return ""
     }
 
     private static func refresh() async throws {
