@@ -167,6 +167,9 @@ struct CoachView: View {
             StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: coach.status != .ready)
             scriptCard
             belowCard
+            if coach.statusRecordID != nil {
+                RelationshipCard(coach: coach)
+            }
             if coach.followUp != nil {
                 FollowUpCard(
                     followUp: $coach.followUp,
@@ -176,9 +179,6 @@ struct CoachView: View {
                     onLinkedInMessage: { coach.openLinkedIn(message: true) },
                     onSetupAircall: { showAircall = true }
                 )
-            }
-            if coach.statusRecordID != nil {
-                RelationshipCard(coach: coach)
             }
             if showTouchpoints && coach.status == .ready {
                 TouchpointsCard(touchpoints: coach.touchpoints)
@@ -190,12 +190,12 @@ struct CoachView: View {
             Spacer(minLength: 0)
             if appPhone { AircallPhonePanel() }
             if let left = coach.autoNextIn { autoNextBar(left) }
-            if coach.waitingForFollowUp {
+            if coach.waitingForText && coach.autoNextIn == nil {
                 HStack(spacing: 8) {
-                    Text("Send the text and a LinkedIn note or message. The next call starts after.")
+                    Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    Button("Skip and call next") { coach.followUp = nil }
+                    Button("Skip text") { coach.startNextSequence() }
                 }
                 .padding(10)
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
@@ -537,7 +537,7 @@ struct CoachView: View {
     private func autoNextBar(_ left: Int) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "timer")
-            Text("\(nextDials ? "Calling" : "Next:") \(coach.nextLeadName ?? "next lead") in \(left)")
+            Text("Calling \(coach.autoNextName ?? coach.nextLeadName ?? "next person") in \(left)")
                 .font(.callout.weight(.semibold))
             Spacer(minLength: 0)
             Button("Wait") { coach.cancelAutoNext() }
@@ -904,34 +904,6 @@ struct FollowUpCard: View {
                     .help("Close")
                 }
 
-                // Text
-                row(done: f.textDone, title: "Text", message: f.text) {
-                    if f.textDone {
-                        Label("Sent", systemImage: "checkmark").foregroundStyle(.green)
-                    } else if canSend {
-                        HStack(spacing: 6) {
-                            TextField("Their phone", text: phoneBinding)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 130)
-                            Button("Send text") { onSend() }
-                                .buttonStyle(.borderedProminent)
-                                .keyboardShortcut("t", modifiers: .command)
-                                .disabled(f.text.isEmpty || f.phone.isEmpty || f.textStatus == "Sending...")
-                        }
-                    } else {
-                        HStack(spacing: 12) {
-                            Button("Copy") { copy(f.text); followUp?.textDone = true }
-                            Button("Send from Aircall in one click...") { onSetupAircall() }
-                                .buttonStyle(.link)
-                        }
-                    }
-                }
-                if let status = f.textStatus, status != "Sent" {
-                    Text(status).font(.caption)
-                        .foregroundStyle(status == "Sending..." ? Color.secondary : Color.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
                 // LinkedIn
                 row(done: f.linkedinDone, title: "LinkedIn note", message: f.linkedin) {
                     if f.linkedinDone {
@@ -961,6 +933,34 @@ struct FollowUpCard: View {
                 if f.linkedinMessageDone {
                     Text("On their profile: click Message. Right-click the box, click Paste, then Send.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+
+                // Text
+                row(done: f.textDone, title: "Text", message: f.text) {
+                    if f.textDone {
+                        Label("Sent", systemImage: "checkmark").foregroundStyle(.green)
+                    } else if canSend {
+                        HStack(spacing: 6) {
+                            TextField("Their phone", text: phoneBinding)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 130)
+                            Button("Send text") { onSend() }
+                                .buttonStyle(.borderedProminent)
+                                .keyboardShortcut("t", modifiers: .command)
+                                .disabled(f.text.isEmpty || f.phone.isEmpty || f.textStatus == "Sending...")
+                        }
+                    } else {
+                        HStack(spacing: 12) {
+                            Button("Copy") { copy(f.text); followUp?.textDone = true }
+                            Button("Send from Aircall in one click...") { onSetupAircall() }
+                                .buttonStyle(.link)
+                        }
+                    }
+                }
+                if let status = f.textStatus, status != "Sent" {
+                    Text(status).font(.caption)
+                        .foregroundStyle(status == "Sending..." ? Color.secondary : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(12)

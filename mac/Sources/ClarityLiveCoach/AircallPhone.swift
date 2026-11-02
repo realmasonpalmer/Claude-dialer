@@ -115,11 +115,15 @@ struct AircallPhoneView: NSViewRepresentable {
 /// "Aircall phone" bar in the coach: Show opens the phone on the right, Hide tucks it away.
 struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
+    @AppStorage("nextDials") private var autoDial = true
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "phone.circle")
             Text("Aircall phone").font(.callout.weight(.semibold))
+            Toggle("Auto-dial", isOn: $autoDial)
+                .toggleStyle(.checkbox)
+                .help("On: after you send the text, the next person loads and is called after a 5 second countdown.")
             Spacer(minLength: 0)
             if phone.shown {
                 Button("Reload") { phone.reload() }

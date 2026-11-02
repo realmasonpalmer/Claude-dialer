@@ -509,19 +509,48 @@ final class CoachModel: ObservableObject {
             return
         }
         if status != .ready { endCall() }
-        if callList.openNext() {
-            let upcoming = callList.records.first { $0.id == callList.lastOpenedID }?.name
-            // Show their opener now, before the page loads and before the phone rings.
-            let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
-            calling = upcoming.map { "\(kind) \"\($0)\"" }
-            recordDetails = nil
-            prepareOpener()
-            detailsPending = true // read their page once it loads, for a more personal line
-            tabTicks = 1  // read the page on the very next tick
-            if dialNow {
-                dialFromSalesforcePage(expecting: callList.lastOpenedID)
-            }
+        if openNextInChrome(), dialNow {
+            dialFromSalesforcePage(expecting: callList.lastOpenedID)
         }
+    }
+
+    /// Opens the next person in the Salesforce tab and points the coach at them right away.
+    private func openNextInChrome() -> Bool {
+        guard callList.openNext() else { return false }
+        let upcoming = callList.records.first { $0.id == callList.lastOpenedID }?.name
+        // Show their opener now, before the page loads and before the phone rings.
+        let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
+        calling = upcoming.map { "\(kind) \"\($0)\"" }
+        recordDetails = nil
+        detailsTried = false
+        personalOpenerFor = nil
+        prepareOpener()
+        detailsPending = true // read their page once it loads, for a more personal line
+        tabTicks = 1  // read the page on the very next tick
+        return true
+    }
+
+    // MARK: Moving on after a call: send the text, load the next person, count down, dial
+
+    /// The "Auto-dial" switch next to Aircall phone.
+    var autoDial: Bool {
+        get { UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "nextDials"); objectWillChange.send() }
+    }
+
+    /// The text was sent (or skipped): open the next person, wait until their opener,
+    /// voicemail and follow-ups are all for them, then count down 5 seconds and dial.
+    /// With Auto-dial off, it only opens the next person.
+    func startNextSequence() {
+        cancelAutoNext()
+        guard status == .ready else { return }
+        followUp = nil // the last person's follow-ups are done
+        if leads.isActive {
+            if autoDial { startAutoNext() } else { nextLead(dial: false) }
+            return
+        }
+        guard openNextInChrome() else { return }
+        if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 5) }
     }
 
     // MARK: Double dial
@@ -574,7 +603,7 @@ final class CoachModel: ObservableObject {
     }
 
     /// Dials only once the script and follow-ups are for this exact person. Gives up after 25 s.
-    private func callWhenReady(onFail: @escaping () -> Void = {}) {
+    private func callWhenReady(countdown: Int = 0, onFail: @escaping () -> Void = {}) {
         readyTask?.cancel()
         readyTask = Task { [weak self] in
             let start = Date()
@@ -583,6 +612,24 @@ final class CoachModel: ObservableObject {
                 let waited = Date().timeIntervalSince(start)
                 if self.readyToDial(waited: waited) {
                     self.gettingReady = nil
+                    // Everything matches: "Calling Burcin Sonmezer in 5", with a Wait button.
+                    if countdown > 0 {
+                        let who = self.calling
+                        self.autoNextName = who.flatMap { c in
+                            c.firstIndex(of: "\"").map { String(c[c.index(after: $0)...]).replacingOccurrences(of: "\"", with: "") }
+                        }
+                        for left in stride(from: countdown, through: 1, by: -1) {
+                            self.autoNextIn = left
+                            try? await Task.sleep(for: .seconds(1))
+                            guard !Task.isCancelled, self.status == .ready else { self.autoNextIn = nil; return }
+                        }
+                        self.autoNextIn = nil
+                        // Last check: still the same person, still all theirs.
+                        guard self.calling == who, self.readyToDial(waited: 99) else {
+                            self.problem = "The Salesforce page changed during the countdown. Click Call when ready."
+                            return
+                        }
+                    }
                     if !self.callFromPage() { onFail() }
                     return
                 }
@@ -633,7 +680,7 @@ final class CoachModel: ObservableObject {
     private var noMobileSkips = 0
 
     /// Waits for the lead's Salesforce page to load, then clicks its Mobile number (Aircall in Salesforce dials).
-    private func dialFromSalesforcePage(expecting id: String?) {
+    private func dialFromSalesforcePage(expecting id: String?, countdown: Int = 0) {
         Task { [weak self] in
             for _ in 0..<16 {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -642,7 +689,7 @@ final class CoachModel: ObservableObject {
                 if SalesforceChrome.mobileNumber() != nil {
                     // Page loaded and has a Mobile: dial once their script and follow-ups are ready.
                     self.noMobileSkips = 0
-                    self.callWhenReady { [weak self] in self?.problem = "No mobile number on this Salesforce page. Click Next." }
+                    self.callWhenReady(countdown: countdown) { [weak self] in self?.problem = "No mobile number on this Salesforce page. Click Next." }
                     return
                 }
             }
@@ -662,15 +709,18 @@ final class CoachModel: ObservableObject {
     /// After a voicemail: the text and LinkedIn note to send. Stays after the call until checked off.
     @Published var followUp: FollowUp? { didSet { followUpChanged() } }
 
-    /// After a 2nd-try voicemail: the next call waits until the text and LinkedIn note are
-    /// done (or the card is closed), then the 5-second countdown starts.
-    @Published private(set) var waitingForFollowUp = false
+    /// After a call that's done (no redial): sending the text is the cue to move on.
+    @Published private(set) var waitingForText = false
+    private var textWasDone = false
 
     private func followUpChanged() {
-        guard waitingForFollowUp, status == .ready else { return }
-        if followUp == nil || followUp?.allDone == true {
-            waitingForFollowUp = false
-            startAutoNext()
+        let done = followUp?.textDone == true
+        defer { textWasDone = done }
+        guard waitingForText, status == .ready else { return }
+        // Text just sent, or the card was closed: on to the next person.
+        if (done && !textWasDone) || followUp == nil {
+            waitingForText = false
+            startNextSequence()
         }
     }
 
@@ -869,12 +919,11 @@ final class CoachModel: ObservableObject {
         nextCall()
         waitingForNewCall = true
         endedAt = Date()
-        if moveOn {
-            if let f = followUp, !f.allDone {
-                waitingForFollowUp = true // starts once the text and LinkedIn note are done
-            } else {
-                startAutoNext()
-            }
+        if !shouldOfferRedial, let f = followUp {
+            // Voicemail, done with them: send the text, then the next call starts.
+            if f.textDone { startNextSequence() } else { waitingForText = true }
+        } else if moveOn {
+            startNextSequence()
         }
     }
 
@@ -910,7 +959,8 @@ final class CoachModel: ObservableObject {
 
     /// The rep clicked Wait (or moved on by hand).
     func cancelAutoNext() {
-        waitingForFollowUp = false
+        waitingForText = false
+        autoNextName = nil
         readyTask?.cancel()
         gettingReady = nil
         autoNextTask?.cancel()
@@ -1136,6 +1186,8 @@ final class CoachModel: ObservableObject {
     /// Who Claude's personal opener on screen is for.
     private var personalOpenerFor: String?
     private var instantOpenerID = -1
+    /// Who the countdown is for.
+    @Published private(set) var autoNextName: String?
     /// "Getting Burcin's script ready..." while the app waits to dial.
     @Published private(set) var gettingReady: String?
     private var readyTask: Task<Void, Never>?
