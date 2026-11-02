@@ -100,3 +100,5 @@ meant to replace Aircall, a Twilio dialer server, and a web-page coach. Don't re
 ## Done 2026-11-02
 
 - **Fix: "No mobile number" when the number is on the page.** When Salesforce's click-to-dial is off (crossed-out phone icon), the number isn't a clickable link, so the old finder missed it. `SalesforceChrome.mobileNumber()` now also reads `lightning-formatted-phone`, the element's `value` or text, and as a last resort the visible `[field-label="Mobile"]` field's text, then pulls the number out with a regex. Call/Redial no longer say "no mobile number" when the app is just busy dialing.
+- **Voicemails always use Haiku** (`CoachSpeed.fastest`), in `prepareVoicemail()` and in `ask(.voicemail, ...)`, whatever the Speed setting is. Mason asked for it so the message is ready fast.
+- Open issue: on a Redial, the voicemail greeting didn't show in the transcript, so voicemail wasn't detected (detection is word matching, not Claude). Suspect the app starts listening late after a redial (waits for Aircall audio or 8 s in `tick()` via `pendingDialSince`). Not fixed yet.

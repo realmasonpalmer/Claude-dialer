@@ -1156,7 +1156,7 @@ final class CoachModel: ObservableObject {
         voicemailTask?.cancel()
         voicemailScript = nil
         guard let key = Keychain.read(.anthropic) else { return }
-        let client = CoachSpeed.current.client(apiKey: key)
+        let client = CoachSpeed.fastest.client(apiKey: key) // voicemails always use Haiku: fast
         let system = self.system
         let user = CoachPrompt.voicemail(calling: calling, details: recordDetails)
         voicemailTask = Task { [weak self] in
@@ -1279,7 +1279,8 @@ final class CoachModel: ObservableObject {
         specBasis = early.map(normalized)
         specHeld = nil
         confirmedAt = nil
-        let client = CoachSpeed.current.client(apiKey: key)
+        // Voicemails always use Haiku, so the message is ready before the beep.
+        let client = (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)
         let system = self.system
         thinking = true
 
