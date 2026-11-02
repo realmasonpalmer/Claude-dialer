@@ -32,19 +32,21 @@ enum Salesforce {
         authorize.queryItems = [
             .init(name: "response_type", value: "code"),
             .init(name: "client_id", value: clientID),
-            .init(name: "redirect_uri", value: redirectURI),
+            .init(name: "redirect_uri", value: ChromeLogin.redirectURI),
             .init(name: "code_challenge", value: challenge),
             .init(name: "code_challenge_method", value: "S256"),
             .init(name: "scope", value: "api refresh_token"),
         ]
-        let callback = try await WebLogin.run(url: authorize.url!, scheme: callbackScheme)
-        guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
-            .queryItems?.first(where: { $0.name == "code" })?.value else {
-            throw SFError(message: "Salesforce didn't finish the sign-in. Try again.")
+        // Signs in through Chrome, where the rep is already logged in to Salesforce.
+        let callback = try await ChromeLogin.run(url: authorize.url!)
+        let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        guard let code = items.first(where: { $0.name == "code" })?.value else {
+            let why = items.first(where: { $0.name == "error_description" })?.value
+            throw SFError(message: why.map { "Salesforce said: \($0)" } ?? "Salesforce didn't finish the sign-in. Try again.")
         }
         let tokens = try await tokenRequest([
             "grant_type": "authorization_code", "code": code, "client_id": clientID,
-            "redirect_uri": redirectURI, "code_verifier": verifier,
+            "redirect_uri": ChromeLogin.redirectURI, "code_verifier": verifier,
         ])
         Keychain.save(clientID, for: .sfClientID)
         save(tokens)
@@ -394,7 +396,7 @@ struct SalesforceConnectView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Connect Salesforce").font(.title2.weight(.semibold))
-                Text("Your list views and lead details show right in the coach. Read-only: the app never changes Salesforce.")
+                Text("Signs in through Chrome, where you're already logged in: click Allow there. Your list views and lead details show in the coach. The only thing the app changes is Relationship Status / Lead Status when you click Save, and Not Quality Prospect on Contacts with no Mobile.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -402,7 +404,7 @@ struct SalesforceConnectView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("1. Setup > External Client App Manager > New External Client App.")
                         Text("2. Name: Clarity Live Coach. Contact email: yours.")
-                        Text("3. Check Enable OAuth. Callback URL: \(Salesforce.redirectURI)")
+                        Text("3. Check Enable OAuth. Callback URL: \(ChromeLogin.redirectURI)")
                         Text("4. Scopes: \"Manage user data via APIs (api)\" and \"Perform requests at any time (refresh_token, offline_access)\".")
                         Text("5. Check \"Require Proof Key for Code Exchange (PKCE)\". Uncheck \"Require secret for Web Server Flow\" and \"Require secret for Refresh Token Flow\".")
                         Text("6. Create. Then open it > Settings > OAuth Settings > Consumer Key and Secret. Salesforce emails a code. Copy the Consumer Key here.")
