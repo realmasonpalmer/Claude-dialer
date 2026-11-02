@@ -606,7 +606,19 @@ final class CoachModel: ObservableObject {
     }
 
     /// After a voicemail: the text and LinkedIn note to send. Stays after the call until checked off.
-    @Published var followUp: FollowUp?
+    @Published var followUp: FollowUp? { didSet { followUpChanged() } }
+
+    /// After a 2nd-try voicemail: the next call waits until the text and LinkedIn note are
+    /// done (or the card is closed), then the 5-second countdown starts.
+    @Published private(set) var waitingForFollowUp = false
+
+    private func followUpChanged() {
+        guard waitingForFollowUp, status == .ready else { return }
+        if followUp == nil || followUp?.allDone == true {
+            waitingForFollowUp = false
+            startAutoNext()
+        }
+    }
 
     /// Proven openers, rotated call by call, with your own scoreboard.
     let openers = OpenerBook()
@@ -791,7 +803,13 @@ final class CoachModel: ObservableObject {
         nextCall()
         waitingForNewCall = true
         endedAt = Date()
-        if moveOn { startAutoNext() }
+        if moveOn {
+            if let f = followUp, !f.allDone {
+                waitingForFollowUp = true // starts once the text and LinkedIn note are done
+            } else {
+                startAutoNext()
+            }
+        }
     }
 
     // MARK: Auto next
@@ -826,6 +844,7 @@ final class CoachModel: ObservableObject {
 
     /// The rep clicked Wait (or moved on by hand).
     func cancelAutoNext() {
+        waitingForFollowUp = false
         autoNextTask?.cancel()
         autoNextTask = nil
         autoNextIn = nil
@@ -888,6 +907,8 @@ final class CoachModel: ObservableObject {
             attempts[key, default: 0] += 1
         }
         touchpoints.log(.dial)
+        // Calling someone new: the last person's follow-up card goes away.
+        if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
         status = .live
         quietTicks = 0
         availability.refresh() // fresh free times for this call

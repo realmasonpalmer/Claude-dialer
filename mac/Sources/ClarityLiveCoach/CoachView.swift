@@ -182,6 +182,16 @@ struct CoachView: View {
             Spacer(minLength: 0)
             if appPhone { AircallPhonePanel() }
             if let left = coach.autoNextIn { autoNextBar(left) }
+            if coach.waitingForFollowUp {
+                HStack(spacing: 8) {
+                    Text("Send the text and LinkedIn note. The next call starts after.")
+                        .font(.callout).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Skip and call next") { coach.followUp = nil }
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
             navigation
         }
         .padding(.horizontal, margin)
