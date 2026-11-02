@@ -173,6 +173,7 @@ struct CoachView: View {
                     canSend: Aircall.isSetUp,
                     onSend: { coach.sendFollowUpText() },
                     onLinkedIn: { coach.openLinkedIn() },
+                    onLinkedInMessage: { coach.openLinkedIn(message: true) },
                     onSetupAircall: { showAircall = true }
                 )
             }
@@ -191,7 +192,7 @@ struct CoachView: View {
             if let left = coach.autoNextIn { autoNextBar(left) }
             if coach.waitingForFollowUp {
                 HStack(spacing: 8) {
-                    Text("Send the text and LinkedIn note. The next call starts after.")
+                    Text("Send the text and a LinkedIn note or message. The next call starts after.")
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Button("Skip and call next") { coach.followUp = nil }
@@ -885,6 +886,7 @@ struct FollowUpCard: View {
     var canSend: Bool
     var onSend: () -> Void
     var onLinkedIn: () -> Void
+    var onLinkedInMessage: () -> Void
     var onSetupAircall: () -> Void
 
     var body: some View {
@@ -943,6 +945,21 @@ struct FollowUpCard: View {
                 }
                 if f.linkedinDone {
                     Text("On their profile: click Connect, then Add a note. Right-click the box, click Paste, then Send.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                // LinkedIn message (already connected)
+                row(done: f.linkedinMessageDone, title: "LinkedIn message (already connected)", message: f.linkedinMessage) {
+                    if f.linkedinMessageDone {
+                        Button("Open again") { onLinkedInMessage() }.buttonStyle(.link)
+                    } else {
+                        Button(f.linkedinURL == nil ? "Search LinkedIn + copy message" : "Open profile + copy message") { onLinkedInMessage() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(f.linkedinMessage.isEmpty)
+                    }
+                }
+                if f.linkedinMessageDone {
+                    Text("On their profile: click Message. Right-click the box, click Paste, then Send.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

@@ -17,6 +17,7 @@ struct Suggestion: Equatable {
     /// Voicemail follow-ups: a text to send and a LinkedIn connection note.
     var textMessage = ""
     var linkedin = ""
+    var linkedinMessage = ""
 
     /// Claude answers in a tiny line format so words can show while they stream:
     ///   SAY: ...
@@ -37,6 +38,7 @@ struct Suggestion: Equatable {
             else if trimmed.hasPrefix("STAGE:") { s.stage = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("SKIP") { s.skip = true }
             else if trimmed.hasPrefix("TEXT:") { s.textMessage = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces) }
+            else if trimmed.hasPrefix("LINKEDIN MESSAGE:") { s.linkedinMessage = String(trimmed.dropFirst(17)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("LINKEDIN:") { s.linkedin = String(trimmed.dropFirst(9)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("OFFERED:") {
                 s.offered = trimmed.dropFirst(8).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).uppercased() }
@@ -147,11 +149,13 @@ enum CoachPrompt {
         or a common pain for their title if there are none); then "I'll send you a quick text so you have my number."
         No pitch, no hype, no email.
         CUE: one short delivery tip. STAGE: Voicemail.
-        Then add two more lines:
+        Then add three more lines:
         TEXT: <the text message to send right after. Under 25 words. Rep's name and company, the same one reason,
         and one easy yes/no question.>
         LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Says the rep just tried calling,
         gives the same specific reason, no pitch, no links, no emojis.>
+        LINKEDIN MESSAGE: <a LinkedIn direct message, for when they're already connected. Under 400 characters.
+        Says the rep just tried calling, gives the same specific reason, one easy question. No links, no emojis.>
         """
     }
 
@@ -189,8 +193,12 @@ struct FollowUp: Equatable {
     var linkedinURL: URL?
     /// "Sending...", "Sent", or an error, for the text row.
     var textStatus: String?
+    /// A LinkedIn direct message, for people who are already connected.
+    var linkedinMessage = ""
+    var linkedinMessageDone = false
 
-    var allDone: Bool { textDone && linkedinDone }
+    /// Text sent, plus a LinkedIn note or a LinkedIn message (one or the other, not both).
+    var allDone: Bool { textDone && (linkedinDone || linkedinMessageDone) }
 }
 
 // MARK: - Call state
@@ -1229,7 +1237,9 @@ final class CoachModel: ObservableObject {
                             textDone: earlier?.textDone ?? key.map(DialHistory.textedToday) ?? false,
                             linkedinDone: earlier?.linkedinDone ?? key.map(DialHistory.linkedInToday) ?? false,
                             phone: lead?.callNumber ?? Aircall.phone(in: recordDetails) ?? "",
-                            linkedinURL: lead?.linkedIn ?? Self.linkedInProfile(details: recordDetails))
+                            linkedinURL: lead?.linkedIn ?? Self.linkedInProfile(details: recordDetails),
+                            linkedinMessage: earlier?.linkedinMessage ?? "",
+                            linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
         if let script = voicemailScript { fillFollowUp(from: script) }
         else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
@@ -1242,6 +1252,7 @@ final class CoachModel: ObservableObject {
         guard followUpThisCall, var f = followUp else { return }
         if f.text.isEmpty { f.text = s.textMessage }
         if f.linkedin.isEmpty { f.linkedin = s.linkedin }
+        if f.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
         followUp = f
     }
 
@@ -1269,10 +1280,11 @@ final class CoachModel: ObservableObject {
 
     /// Opens their LinkedIn profile (from the Salesforce record), with the note already copied.
     /// Falls back to a name + company search only when the record has no LinkedIn link.
-    func openLinkedIn() {
+    /// - Parameter message: true = copy the direct message (already connected), false = the connection note.
+    func openLinkedIn(message: Bool = false) {
         guard let f = followUp else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(f.linkedin, forType: .string)
+        NSPasteboard.general.setString(message ? f.linkedinMessage : f.linkedin, forType: .string)
         if let profile = f.linkedinURL ?? (leads.isActive ? nil : Self.linkedInProfile(details: recordDetails)) {
             NSWorkspace.shared.open(profile)
         } else {
@@ -1283,6 +1295,14 @@ final class CoachModel: ObservableObject {
             }
         }
         // Count once per person per day.
+        if message {
+            if followUp?.linkedinMessageDone != true, !(f.key.map(DialHistory.linkedInMessageToday) ?? false) {
+                touchpoints.log(.linkedinMessage)
+                if let key = f.key { DialHistory.logLinkedInMessage(key) }
+            }
+            followUp?.linkedinMessageDone = true
+            return
+        }
         if followUp?.linkedinDone != true, !(f.key.map(DialHistory.linkedInToday) ?? false) {
             touchpoints.log(.linkedin)
             if let key = f.key { DialHistory.logLinkedIn(key) }
@@ -1518,7 +1538,7 @@ final class CoachModel: ObservableObject {
             stagesSeen.insert(s.stage)
             trackJourney(s.stage)
         }
-        if voicemailActive, !s.textMessage.isEmpty || !s.linkedin.isEmpty { fillFollowUp(from: s) }
+        if voicemailActive, !s.textMessage.isEmpty || !s.linkedin.isEmpty || !s.linkedinMessage.isEmpty { fillFollowUp(from: s) }
         // Remember which meeting times this line offered, so the next ones are different.
         if !s.offered.isEmpty {
             let dates = s.offered.compactMap { code in codeByDate.first { $0.value == code }?.key }

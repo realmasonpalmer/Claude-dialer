@@ -8,6 +8,7 @@ enum DialHistory {
         var pickups = 0
         var texts: [Date] = []
         var linkedIns: [Date] = []
+        var linkedInMessages: [Date] = []
 
         init() {}
 
@@ -18,6 +19,7 @@ enum DialHistory {
             pickups = try c.decodeIfPresent(Int.self, forKey: .pickups) ?? 0
             texts = try c.decodeIfPresent([Date].self, forKey: .texts) ?? []
             linkedIns = try c.decodeIfPresent([Date].self, forKey: .linkedIns) ?? []
+            linkedInMessages = try c.decodeIfPresent([Date].self, forKey: .linkedInMessages) ?? []
         }
     }
 
@@ -76,6 +78,14 @@ enum DialHistory {
         p.linkedIns.append(Date())
         all[key(id)] = p
     }
+
+    static func logLinkedInMessage(_ id: String) {
+        var p = person(id)
+        p.linkedInMessages.append(Date())
+        all[key(id)] = p
+    }
+
+    static func linkedInMessageToday(_ id: String) -> Bool { person(id).linkedInMessages.contains { Calendar.current.isDateInToday($0) } }
 
     /// Already texted / sent a LinkedIn note today: don't do it twice.
     static func textedToday(_ id: String) -> Bool { person(id).texts.contains { Calendar.current.isDateInToday($0) } }

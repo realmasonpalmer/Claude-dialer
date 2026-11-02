@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class Touchpoints: ObservableObject {
     enum Kind: String, Codable, CaseIterable {
-        case dial, pickup, conversation, voicemail, text, linkedin, meeting
+        case dial, pickup, conversation, voicemail, text, linkedin, linkedinMessage, meeting
     }
     struct Event: Codable { let kind: Kind; let at: Date }
 
@@ -43,9 +43,9 @@ final class Touchpoints: ObservableObject {
         return events.filter { $0.kind == kind && $0.at >= start }.count
     }
 
-    /// Every way you reached out: dials + texts + LinkedIn notes.
+    /// Every way you reached out: dials + texts + LinkedIn notes + LinkedIn messages.
     func total(in period: Period) -> Int {
-        count(.dial, in: period) + count(.text, in: period) + count(.linkedin, in: period)
+        count(.dial, in: period) + count(.text, in: period) + count(.linkedin, in: period) + count(.linkedinMessage, in: period)
     }
 
     private static func start(of period: Period) -> Date {
@@ -90,7 +90,8 @@ struct TouchpointsCard: View {
                 GridRow { stat("Calls", dials); stat("Picked up", pickups) }
                 GridRow { stat("Conversations", t.count(.conversation, in: period)); stat("Voicemails", t.count(.voicemail, in: period)) }
                 GridRow { stat("Texts", t.count(.text, in: period)); stat("LinkedIn notes", t.count(.linkedin, in: period)) }
-                GridRow { stat("Meetings booked", meetings); stat("Pickup rate", percent(pickups, of: dials)) }
+                GridRow { stat("LinkedIn messages", t.count(.linkedinMessage, in: period)); stat("Meetings booked", meetings) }
+                GridRow { stat("Pickup rate", percent(pickups, of: dials)); Color.clear.frame(height: 1) }
             }
             if meetings > 0 {
                 Text("\(dials / max(meetings, 1)) calls per meeting").font(.caption).foregroundStyle(.secondary)
