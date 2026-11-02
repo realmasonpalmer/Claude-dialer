@@ -6,8 +6,8 @@ import Network
 /// for Salesforce to send Chrome back with the sign-in code. Nothing leaves the Mac.
 @MainActor
 final class ChromeLogin {
-    static let port: UInt16 = 53682
-    static var redirectURI: String { "http://localhost:\(port)/callback" }
+    nonisolated static let port: UInt16 = 53682
+    nonisolated static var redirectURI: String { "http://localhost:\(port)/callback" }
 
     private static var current: ChromeLogin?
     private var listener: NWListener?

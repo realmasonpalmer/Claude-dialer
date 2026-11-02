@@ -25,7 +25,7 @@ struct SetupView: View {
         let action: () -> Void
     }
 
-    static func doneCount(coach: CoachModel) -> (done: Int, total: Int) {
+    @MainActor static func doneCount(coach: CoachModel) -> (done: Int, total: Int) {
         let required = [
             !(UserDefaults.standard.string(forKey: "repName") ?? "").isEmpty,
             Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil,
