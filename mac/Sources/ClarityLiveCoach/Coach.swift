@@ -509,8 +509,8 @@ final class CoachModel: ObservableObject {
             return
         }
         if status != .ready { endCall() }
-        let upcoming = callList.upNextInfo?.name
         if callList.openNext() {
+            let upcoming = callList.records.first { $0.id == callList.lastOpenedID }?.name
             // Show their opener now, before the page loads and before the phone rings.
             let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
             calling = upcoming.map { "\(kind) \"\($0)\"" }
@@ -568,6 +568,7 @@ final class CoachModel: ObservableObject {
     @discardableResult
     func callFromPage() -> Bool {
         guard status == .ready, !dialing else { return false }
+        syncRecord() // make sure the script and voicemail are for this person
         // The Aircall phone inside the coach (or the desktop app): dial through the API.
         if AircallPhone.isOn || Aircall.canPlaceCalls {
             guard let mobile = SalesforceChrome.mobileNumber() else { return false }
@@ -744,6 +745,31 @@ final class CoachModel: ObservableObject {
 
     // MARK: Call lifecycle
 
+    /// Points the coach at the record open in Chrome right now: name, opener, voicemail,
+    /// follow-ups and status all for that one person. Called every second between calls,
+    /// and always right before dialing, so nothing from the last person carries over.
+    private func syncRecord() {
+        guard !leads.isActive else { return }
+        let record = SalesforceTab.currentRecord()
+        refreshRelationship()
+        guard record != calling || (detailsPending && record != nil) else { return }
+        detailsPending = false
+        calling = record
+        if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
+        recordDetails = nil
+        prepareOpener()
+        prepareVoicemail() // right away for this person; again with details below
+        // Salesforce fills in the page after the title changes: read the details a moment later.
+        detailsTask?.cancel()
+        detailsTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let self, !Task.isCancelled, self.calling == record, record != nil else { return }
+            self.recordDetails = SalesforceTab.pageText()
+            if self.recordDetails != nil, self.status == .ready { self.prepareOpener() }
+            self.prepareVoicemail()
+        }
+    }
+
     private func tick() {
         guard active else { return }
         let onCall = AudioProcess.anyCallApp(in: AudioProcess.others())
@@ -763,24 +789,7 @@ final class CoachModel: ObservableObject {
             if tabTicks % 2 == 0 {
                 callList.captureIfListView()
                 callList.refreshUpNext()
-                let record = SalesforceTab.currentRecord()
-                refreshRelationship()
-                if record != calling || (detailsPending && record != nil) {
-                    detailsPending = false
-                    calling = record
-                    if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
-                    recordDetails = nil
-                    prepareOpener()
-                    // Salesforce fills in the page after the title changes: read the details a moment later.
-                    detailsTask?.cancel()
-                    detailsTask = Task { [weak self] in
-                        try? await Task.sleep(for: .milliseconds(1500))
-                        guard let self, !Task.isCancelled, self.calling == record, record != nil else { return }
-                        self.recordDetails = SalesforceTab.pageText()
-                        if self.recordDetails != nil { self.prepareOpener() }
-                        self.prepareVoicemail()
-                    }
-                }
+                syncRecord()
             }
         }
         switch status {
@@ -1075,6 +1084,8 @@ final class CoachModel: ObservableObject {
         }
     }
     private var pendingStop: Task<Void, Never>?
+    /// Who the ready-made voicemail was written for.
+    private var voicemailFor: String?
     private var detailsPending = false
 
     private func openStream(_ speaker: Speaker, key: String) -> DeepgramStream {
@@ -1224,7 +1235,7 @@ final class CoachModel: ObservableObject {
             show(Suggestion(say: currentAttempts < 2 ? "Mailbox is full. Hang up and click Redial." : "Mailbox is full. Hang up. The next call starts by itself.",
                             cue: "No message possible.",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
-        } else if var script = voicemailScript {
+        } else if var script = voicemailScript, voicemailFor == calling {
             if currentAttempts < 2 {
                 script.cue = "1st try: hang up and click Redial. Leave this message on the 2nd try."
             }
@@ -1255,13 +1266,13 @@ final class CoachModel: ObservableObject {
                             linkedin: earlier?.linkedin ?? "",
                             textDone: earlier?.textDone ?? key.map(DialHistory.textedToday) ?? false,
                             linkedinDone: earlier?.linkedinDone ?? key.map(DialHistory.linkedInToday) ?? false,
-                            phone: lead?.callNumber ?? Aircall.phone(in: recordDetails) ?? "",
+                            phone: lead?.callNumber ?? Aircall.phone(in: recordDetails) ?? (leads.isActive ? nil : SalesforceChrome.mobileNumber()) ?? "",
                             linkedinURL: lead?.linkedIn ?? Self.linkedInProfile(details: recordDetails),
                             linkedinMessage: earlier?.linkedinMessage ?? "",
                             linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
-        if let script = voicemailScript { fillFollowUp(from: script) }
-        else if voicemailTask == nil { prepareVoicemail() } // it fills the card when done
+        if let script = voicemailScript, voicemailFor == calling { fillFollowUp(from: script) }
+        else if voicemailTask == nil || voicemailFor != calling { prepareVoicemail() } // it fills the card when done
     }
 
     private var followUpThisCall = false
@@ -1354,6 +1365,8 @@ final class CoachModel: ObservableObject {
     private func prepareVoicemail() {
         voicemailTask?.cancel()
         voicemailScript = nil
+        let forWho = calling
+        voicemailFor = forWho
         guard let key = Keychain.read(.anthropic) else { return }
         let client = CoachSpeed.fastest.client(apiKey: key) // voicemails always use Haiku: fast
         let system = self.system
@@ -1368,7 +1381,7 @@ final class CoachModel: ObservableObject {
             var s = Suggestion.parse(text)
             s.sayComplete = true
             s.stage = "Voicemail"
-            if !Task.isCancelled, !s.say.isEmpty {
+            if !Task.isCancelled, !s.say.isEmpty, self?.calling == forWho {
                 self?.voicemailScript = s
                 if self?.voicemailActive == true { self?.fillFollowUp(from: s) }
             }
