@@ -333,12 +333,27 @@ enum SalesforceChrome {
     }
 
     /// The Mobile number on the open record, so the app can call it through Aircall. Never the Phone field.
+    /// Works when click-to-dial is on, and when it's off (the crossed-out phone icon), since
+    /// Salesforce draws the number differently then. Last resort: the "Mobile" field's own text.
     static func mobileNumber() -> String? {
-        let raw = javascript(mobileFinder + "(function(){var el=mobileEl();if(!el)return '';"
-            + "var v=el.getAttribute('value');if(v)return v;"
-            + "var t=(el.shadowRoot||el).querySelector('a,button');return t?(t.innerText||t.textContent||'').trim():'';})()")
-        guard let raw, raw.filter(\.isNumber).count >= 10 else { return nil }
-        return raw
+        let raw = javascript(mobileFinder
+            + "function allText(n){if(!n)return '';var s=n.textContent||'';"
+            + "var all=n.querySelectorAll?n.querySelectorAll('*'):[];"
+            + "for(var i=0;i<all.length;i++){if(all[i].shadowRoot)s+=' '+allText(all[i].shadowRoot);}"
+            + "if(n.shadowRoot)s+=' '+allText(n.shadowRoot);return s;}"
+            + "(function(){var el=mobileEl();if(el){"
+            + "var v=el.value||el.getAttribute('value');if(v)return String(v);"
+            + "var t=allText(el).trim();if(t)return t;}"
+            + "var lr=listRoot(),items=deep(document,'[field-label]',[]);"
+            + "for(var i=0;i<items.length;i++){var it=items[i];"
+            + "if(!it.getClientRects().length||(lr&&inside(it,lr)))continue;"
+            + "if(/mobile/i.test(it.getAttribute('field-label')))return allText(it);}"
+            + "return '';})()")
+        guard let raw else { return nil }
+        // Pull just the phone number out of the text.
+        let pattern = #"(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}"#
+        guard let r = raw.range(of: pattern, options: .regularExpression) else { return nil }
+        return String(raw[r])
     }
 
     /// JavaScript: mobileEl() finds the click-to-dial number whose field label says Mobile.
@@ -352,7 +367,7 @@ enum SalesforceChrome {
         + "var l=x.querySelector('.test-id__field-label,.slds-form-element__label,p.slds-text-title');"
         + "if(l&&txt(l))return txt(l);}"
         + "n=n.parentNode||n.host;}return '';}"
-        + "function mobileEl(){var lr=listRoot(),els=deep(document,'lightning-click-to-dial',[]);"
+        + "function mobileEl(){var lr=listRoot(),els=deep(document,'lightning-click-to-dial,lightning-formatted-phone',[]);"
         + "for(var i=0;i<els.length;i++){var el=els[i];"
         + "if(!el.getClientRects().length||(lr&&inside(el,lr)))continue;"
         + "if(/mobile/i.test(label(el)))return el;}"

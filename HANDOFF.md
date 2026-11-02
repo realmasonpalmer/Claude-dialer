@@ -96,3 +96,7 @@ meant to replace Aircall, a Twilio dialer server, and a web-page coach. Don't re
 - Commit to `claude/confident-gates-ji8r2l` and push. Don't open a PR unless asked.
 - End commit messages with the attribution lines given in the session's system reminder.
 - Never put API keys in code or chat. Mason once pasted something that looked like a password; it was flagged and not used.
+
+## Done 2026-11-02
+
+- **Fix: "No mobile number" when the number is on the page.** When Salesforce's click-to-dial is off (crossed-out phone icon), the number isn't a clickable link, so the old finder missed it. `SalesforceChrome.mobileNumber()` now also reads `lightning-formatted-phone`, the element's `value` or text, and as a last resort the visible `[field-label="Mobile"]` field's text, then pulls the number out with a regex. Call/Redial no longer say "no mobile number" when the app is just busy dialing.

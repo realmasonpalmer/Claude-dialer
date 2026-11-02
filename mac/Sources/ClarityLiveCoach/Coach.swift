@@ -449,7 +449,7 @@ final class CoachModel: ObservableObject {
         cancelAutoNext()
         if leads.isActive {
             dial()
-        } else if !callFromPage() {
+        } else if !dialing, !callFromPage() {
             problem = "No mobile number on this Salesforce page. Click Next."
         }
     }
@@ -457,6 +457,7 @@ final class CoachModel: ObservableObject {
     /// The Call button for the lead open in Salesforce.
     func callOpenLead() {
         cancelAutoNext()
+        guard status == .ready, !dialing else { return } // busy, not a missing number
         if !callFromPage() { problem = "No mobile number on this Salesforce page. Click Next." }
     }
 
