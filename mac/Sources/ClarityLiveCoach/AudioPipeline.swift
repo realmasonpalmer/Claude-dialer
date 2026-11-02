@@ -1,4 +1,6 @@
 import AVFoundation
+import AudioToolbox
+import CoreAudio
 
 /// The format speech-to-text services want: 16 kHz, mono, 16-bit.
 let speechFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
@@ -52,8 +54,14 @@ func level(of buffer: AVAudioPCMBuffer) -> Float {
 final class MicCapture {
     private let engine = AVAudioEngine()
 
-    func start(onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
+    /// - Parameter device: a specific microphone (like the Mac's built-in one); nil = the system default.
+    func start(device: AudioDeviceID? = nil, onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
         let input = engine.inputNode
+        if var id = device, let unit = input.audioUnit {
+            // Ignore failure: then it simply uses the default mic.
+            _ = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                     &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+        }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else {
             throw CoreAudioError(status: -1, what: "Open microphone (no input device or no permission)")

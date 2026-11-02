@@ -250,7 +250,11 @@ final class CaptureEngine {
     func start(processes: [AudioObjectID], onChunk: @escaping (Bool, AVAudioPCMBuffer) -> Void) throws {
         let micConverter = self.micConverter, tapConverter = self.tapConverter, writers = self.writers
         do {
-            try mic.start { buffer in
+            // With a Bluetooth headset, Aircall should be the only app using its mic: two apps on it
+            // make the headset glitch (worst at hang-up). So the coach hears the rep through the
+            // Mac's built-in mic, unless that's turned off in Settings or there isn't one.
+            let useBuiltIn = UserDefaults.standard.object(forKey: "coachBuiltInMic") as? Bool ?? true
+            try mic.start(device: useBuiltIn ? builtInMicrophoneID() : nil) { buffer in
                 guard let speech = micConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: true)
                 onChunk(true, speech)

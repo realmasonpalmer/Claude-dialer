@@ -143,3 +143,38 @@ func defaultOutputDeviceUID() throws -> String {
     )
     return try readString(device, kAudioDevicePropertyDeviceUID)
 }
+
+// MARK: - Picking the coach's microphone
+
+/// The Mac's own microphone (MacBook or iMac), if it has one.
+func builtInMicrophoneID() -> AudioDeviceID? {
+    var addr = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr else { return nil }
+    var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids) == noErr else { return nil }
+    for id in ids {
+        let transport = (try? readProperty(id, kAudioDevicePropertyTransportType, UInt32(0))) ?? 0
+        guard transport == kAudioDeviceTransportTypeBuiltIn, hasInput(id) else { continue }
+        return id
+    }
+    return nil
+}
+
+/// True if the device has at least one input channel.
+private func hasInput(_ id: AudioDeviceID) -> Bool {
+    var addr = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyStreamConfiguration,
+        mScope: kAudioDevicePropertyScopeInput,
+        mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else { return false }
+    let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+    defer { raw.deallocate() }
+    guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, raw) == noErr else { return false }
+    let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
+    return list.contains { $0.mNumberChannels > 0 }
+}

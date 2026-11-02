@@ -15,6 +15,7 @@ struct SettingsPane: View {
     @AppStorage("showTouchpoints") private var showTouchpoints = true
     @AppStorage("appPhone") private var appPhone = true
     @AppStorage("maxDials") private var maxDials = 4
+    @AppStorage("coachBuiltInMic") private var builtInMic = true
     @State private var showScoreboard = false
     @State private var note: String?
 
@@ -71,6 +72,13 @@ struct SettingsPane: View {
                         coach.leads.clearCalledToday()
                         note = "Everyone on your list can be called again today."
                     }
+                }
+
+                section("Audio") {
+                    Toggle("Coach hears you with the Mac's built-in mic", isOn: $builtInMic)
+                    Text("Best with Bluetooth headphones: Aircall keeps the headset mic to itself, so calls and the hang-up tone don't glitch. Takes effect on the next call.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 section("During a call") {
