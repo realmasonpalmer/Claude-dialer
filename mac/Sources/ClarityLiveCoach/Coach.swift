@@ -635,7 +635,8 @@ final class CoachModel: ObservableObject {
         // Between calls, notice which record is open so the opener uses their name.
         // Dialed from the app: start listening once the Aircall app picks up the call (or after 8 s).
         if let since = pendingDialSince, status == .ready {
-            if AudioProcess.aircallAppOnCall(in: AudioProcess.others()) || Date().timeIntervalSince(since) > 8 {
+            // Start listening almost right away, so a "straight to voicemail" greeting is heard from word one.
+            if AudioProcess.aircallAppOnCall(in: AudioProcess.others()) || Date().timeIntervalSince(since) > 1 {
                 pendingDialSince = nil
                 waitingForNewCall = false
                 startCall()
@@ -676,7 +677,10 @@ final class CoachModel: ObservableObject {
         case .ready:
             waitingForNewCall = false // Chrome let go, so the next time it grabs the mic is a new call
         case .live:
-            if !startedByHand {
+            if onCall { heardCallAudio = true }
+            // Only count quiet after the call's audio has shown up once, so a call that's
+            // still ringing (we start listening right after dialing) isn't ended early.
+            if !startedByHand, heardCallAudio || Date().timeIntervalSince(callStartedAt) > 45 {
                 quietTicks = onCall ? 0 : quietTicks + 1
                 if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
             }
@@ -741,6 +745,7 @@ final class CoachModel: ObservableObject {
     /// After a call ends while Chrome still holds the mic, don't treat that as a new call.
     private var waitingForNewCall = false
     private var callStartedAt = Date.distantPast
+    private var heardCallAudio = false
 
     private func checkAircallForNewCall() {
         aircallTicks += 1
@@ -800,6 +805,7 @@ final class CoachModel: ObservableObject {
         sawVoicemail = false
         stagesSeen = []
         callStartedAt = Date()
+        heardCallAudio = false
         aircallSaysOver = 0
         aircallTicks = 0
         journeyStep = 0
@@ -930,7 +936,9 @@ final class CoachModel: ObservableObject {
                 // Check the recent words together, so a phrase split across chunks still matches.
                 let recent = String(((turns.last { $0.speaker == .prospect }?.text ?? "") + " " + text).suffix(400))
                 let early = repWordsInCall < 3 && Date().timeIntervalSince(firstProspectAt ?? Date()) < 15
-                if Voicemail.detects(recent, earlyInCall: early) {
+                let firstWords = turns.contains { $0.speaker == .rep } ? "" : (prospectSoFar + " " + text)
+                if Voicemail.detects(recent, earlyInCall: early)
+                    || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
                         showVoicemail(mailboxFull: Voicemail.mailboxFull(recent))
                     }
@@ -959,6 +967,17 @@ final class CoachModel: ObservableObject {
             useKeyterms = false // reconnect with the plainest settings
             streams.replace(speaker, with: openStream(speaker, key: key))
         }
+    }
+
+    /// Everything the prospect side has said this call (finished words only).
+    private var prospectSoFar: String {
+        turns.filter { $0.speaker == .prospect }.map(\.text).joined(separator: " ")
+    }
+
+    /// The rep clicked "Voicemail": the app missed it, so show the message now.
+    func markVoicemail() {
+        guard status == .live, !voicemailActive else { return }
+        showVoicemail(mailboxFull: false)
     }
 
     private func addFinal(_ text: String, from speaker: Speaker) {

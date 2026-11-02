@@ -48,12 +48,25 @@ enum Voicemail {
         "cannot come to the phone", "get back to you as soon as", "return your call", "forwarded to an automated",
         "automated voice", "voice messaging", "is not available. please", "sorry i missed your call",
         "sorry i can't answer", "sorry i cannot answer", "missed your call",
+        // Straight to voicemail and carrier recordings
+        "record your message", "please record", "when you have finished recording", "when you're finished recording",
+        "when you are finished recording", "finished recording", "press pound", "hang up or press", "for more options",
+        "at the sound of the tone", "after the signal", "voice mailbox", "has a mailbox", "has been forwarded",
+        "your call has been forwarded", "forwarded to voicemail", "is not accepting calls", "is not available to take",
+        "this is the voicemail", "reached the voicemail", "reached the mailbox", "leave your number",
+        "leave a detailed message", "leave your contact", "leave a short message", "leave a quick message",
+        "i'll call you back", "i will call you back", "i'll get back to you", "i will get back to you",
+        "call you back as soon", "get back to you shortly", "sorry i missed you", "sorry we missed your call",
+        "can't take your call", "unable to take your call", "google subscriber", "the subscriber you",
+        "the party you are trying", "the customer you are calling", "please try your call again",
+        "please try again later", "send a numeric page", "to page this person",
     ]
     private static let early = [
         "you've reached", "you have reached", "not available", "unavailable", "unable to answer", "unable to take",
         "can't get to the phone", "can't answer", "away from my desk", "away from the phone", "out of the office",
         "subscriber", "wireless customer", "the person you are trying", "the person you're trying",
         "the number you have dialed", "is not reachable",
+        "i'm not available right now", "i am not available right now", "not available right now",
     ]
     private static let fullPhrases = [
         "mailbox is full", "mailbox full", "cannot accept any messages", "not accepting messages",
@@ -66,6 +79,12 @@ enum Voicemail {
     }
 
     static func mailboxFull(_ text: String) -> Bool { contains(text, fullPhrases) }
+
+    /// Real people answer short ("Hello?", "This is Jane"). A recording talks on and on.
+    /// 18+ words before the rep says anything, early in the call = a voicemail greeting.
+    static func longGreeting(_ text: String, earlyInCall: Bool) -> Bool {
+        earlyInCall && text.split(separator: " ").count >= 18
+    }
 
     private static func contains(_ text: String, _ list: [String]) -> Bool {
         let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")

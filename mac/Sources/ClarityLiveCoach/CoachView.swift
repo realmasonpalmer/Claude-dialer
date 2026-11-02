@@ -218,6 +218,15 @@ struct CoachView: View {
         HStack(spacing: 8) {
             StatusPill(status: pillState, color: pillColor)
             Spacer()
+            if coach.status == .live && coach.kind != .voicemail {
+                Button {
+                    coach.markVoicemail()
+                } label: {
+                    Label("Voicemail", systemImage: "recordingtape")
+                }
+                .controlSize(.small)
+                .help("It went to voicemail and the app missed it: show your message now")
+            }
             if coach.status != .ready {
                 Button(role: .destructive) {
                     coach.endCall()
