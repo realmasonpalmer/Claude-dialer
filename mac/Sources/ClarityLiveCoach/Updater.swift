@@ -16,17 +16,31 @@ final class Updater: ObservableObject {
     private var installedSHA: String? { UserDefaults.standard.string(forKey: "installedSHA") }
 
     /// Asks GitHub for the newest version (at launch, then every 10 minutes).
-    func check() async {
+    /// - Parameter byHand: the rep clicked "Check for updates", so always say what happened.
+    func check(byHand: Bool = false) async {
         guard let url = URL(string: "https://api.github.com/repos/\(Self.repo)/commits/\(Self.branch)") else { return }
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 10
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
+        guard let (data, response) = try? await URLSession.shared.data(for: request) else {
+            if byHand { message = "Couldn't reach GitHub. Check your internet and try again." }
+            return
+        }
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sha = json["sha"] as? String else { return }
+              let sha = json["sha"] as? String else {
+            if byHand {
+                message = code == 403 || code == 429
+                    ? "GitHub says too many checks. Try again in an hour."
+                    : "Couldn't check for updates (GitHub error \(code))."
+            }
+            return
+        }
         latestSHA = sha
         updateAvailable = sha != installedSHA
+        if byHand { message = updateAvailable ? "An update is ready. Click Update at the top." : "You have the newest version." }
     }
 
     /// Starts the update. The app keeps working while it builds, then closes and reopens.

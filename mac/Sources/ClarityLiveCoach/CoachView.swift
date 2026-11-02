@@ -273,7 +273,7 @@ struct CoachView: View {
         Menu {
             Button("How to use") { showHelp = true }
             Button(updater.updateAvailable ? "Install update" : "Check for updates") {
-                if updater.updateAvailable { updater.update() } else { Task { await updater.check() } }
+                if updater.updateAvailable { updater.update() } else { Task { await updater.check(byHand: true) } }
             }
             Divider()
             Button(coach.lab.hasNewSuggestions ? "Script Lab (new suggestions)" : "Script Lab") {
