@@ -990,11 +990,25 @@ struct RelationshipCard: View {
 
     private let columns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
 
+    /// "Calls: 2 of 4" (or "Calls: 3 · picked up" once someone answered).
+    private func callsLabel(_ id: String) -> String {
+        _ = coach.touchpoints.events.count // redraw after each call
+        let p = DialHistory.person(id)
+        if p.pickups > 0 { return "Calls: \(p.dials.count) · picked up" }
+        return DialHistory.maxDials > 0 ? "Calls: \(p.dials.count) of \(DialHistory.maxDials)" : "Calls: \(p.dials.count)"
+    }
+
     var body: some View {
         let object = coach.statusObject ?? "Contact"
         let current = picked ?? coach.recordStatus
         VStack(alignment: .leading, spacing: 8) {
-            Text(object == "Lead" ? "Lead Status" : "Relationship Status").font(.callout.weight(.semibold))
+            HStack {
+                Text(object == "Lead" ? "Lead Status" : "Relationship Status").font(.callout.weight(.semibold))
+                Spacer()
+                if let id = coach.statusRecordID {
+                    Text(callsLabel(id)).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
                 ForEach(Salesforce.statuses(object), id: \.self) { value in
                     Button {

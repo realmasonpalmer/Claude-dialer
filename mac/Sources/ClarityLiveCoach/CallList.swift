@@ -44,7 +44,7 @@ final class CallList: ObservableObject {
     }
 
     /// How many on this list haven't been called today.
-    var leftToCall: Int { records.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) }.count }
+    var leftToCall: Int { records.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) }.count }
 
     init() {
         let d = UserDefaults.standard
@@ -102,7 +102,7 @@ final class CallList: ObservableObject {
         let from = currentIndex() ?? lastIndex
         var i = from + 1
         while i < records.count {
-            if !calledToday.contains(records[i].id) && !RemovedList.contains(records[i].id) { return (records[i], i + 1) }
+            if !calledToday.contains(records[i].id) && !RemovedList.contains(records[i].id) && !DialHistory.isMaxed(records[i].id) { return (records[i], i + 1) }
             i += 1
         }
         return nil

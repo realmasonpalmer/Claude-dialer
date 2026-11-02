@@ -14,6 +14,7 @@ struct SettingsPane: View {
     @AppStorage("nextDials") private var nextDials = true
     @AppStorage("showTouchpoints") private var showTouchpoints = true
     @AppStorage("appPhone") private var appPhone = true
+    @AppStorage("maxDials") private var maxDials = 4
     @State private var showScoreboard = false
     @State private var note: String?
 
@@ -52,6 +53,18 @@ struct SettingsPane: View {
                             ForEach(coach.leads.views) { Text($0.title).tag($0.id) }
                         }
                         .disabled(coach.status != .ready)
+                    }
+                    Picker("Take someone off after", selection: $maxDials) {
+                        Text("3 calls").tag(3)
+                        Text("4 calls").tag(4)
+                        Text("5 calls").tag(5)
+                        Text("Never").tag(0)
+                    }
+                    Text("Only if they never picked up. Counts every call, including redials.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Reset everyone's call counts") {
+                        DialHistory.resetAll()
+                        note = "Call counts reset. Everyone is back on the list."
                     }
                     Button("Reset who's been called today") {
                         coach.callList.clearCalledToday()

@@ -367,7 +367,7 @@ final class CoachModel: ObservableObject {
         recordStatus = nil
         statusMessage = nil
         guard let usable else { return }
-        if RemovedList.contains(usable) { skipRemoved(usable); return }
+        if RemovedList.contains(usable) || DialHistory.isMaxed(usable) { skipRemoved(usable); return }
         guard Salesforce.isConnected else { return }
         Task { [weak self] in
             let value = try? await Salesforce.status(of: usable)
@@ -522,6 +522,7 @@ final class CoachModel: ObservableObject {
     /// After a first try nobody answered (or voicemail), offer to call right back.
     var shouldOfferRedial: Bool {
         status == .ready && currentAttemptKey != nil && !lastCallAnswered && currentAttempts < 2
+            && !(currentAttemptKey.map(DialHistory.isMaxed) ?? false) // last try: no redial
     }
 
     /// Who the current lead is, for counting tries.
@@ -907,6 +908,7 @@ final class CoachModel: ObservableObject {
             attempts[key, default: 0] += 1
         }
         touchpoints.log(.dial)
+        if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
         status = .live
@@ -945,6 +947,7 @@ final class CoachModel: ObservableObject {
         if sawVoicemail { touchpoints.log(.voicemail) }
         guard answered else { return }
         touchpoints.log(.pickup)
+        if let key = currentAttemptKey { DialHistory.logPickup(key) }
         let prospectTurns = turns.filter { $0.speaker == .prospect }.count
         let talked = firstProspectAt.map { Date().timeIntervalSince($0) } ?? 0
         if prospectTurns >= 3 || talked >= 45 { touchpoints.log(.conversation) }
