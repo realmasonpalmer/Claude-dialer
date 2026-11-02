@@ -64,6 +64,7 @@ final class Touchpoints: ObservableObject {
 struct TouchpointsCard: View {
     @ObservedObject var touchpoints: Touchpoints
     @AppStorage("touchpointsPeriod") private var periodRaw = Touchpoints.Period.today.rawValue
+    @AppStorage("touchpointsOpen") private var open = false
 
     private var period: Touchpoints.Period { Touchpoints.Period(rawValue: periodRaw) ?? .today }
 
@@ -73,8 +74,21 @@ struct TouchpointsCard: View {
         let pickups = t.count(.pickup, in: period)
         let meetings = t.count(.meeting, in: period)
         VStack(alignment: .leading, spacing: 8) {
+            // Folded: one line. Click to see everything.
+            Button {
+                open.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
+                    Text(open ? "Touchpoints" : "\(t.total(in: period)) touchpoints \(period.rawValue.lowercased()) · \(dials) calls · \(meetings) meetings")
+                        .font(.callout.weight(.semibold))
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if open {
             HStack {
-                Text("Touchpoints").font(.callout.weight(.semibold))
                 Spacer()
                 Picker("", selection: $periodRaw) {
                     ForEach(Touchpoints.Period.allCases) { Text($0.rawValue).tag($0.rawValue) }
@@ -95,6 +109,7 @@ struct TouchpointsCard: View {
             }
             if meetings > 0 {
                 Text("\(dials / max(meetings, 1)) calls per meeting").font(.caption).foregroundStyle(.secondary)
+            }
             }
         }
         .padding(10)

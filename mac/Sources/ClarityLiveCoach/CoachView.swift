@@ -184,7 +184,7 @@ struct CoachView: View {
             }
             scriptCard
             belowCard
-            if coach.statusRecordID != nil {
+            if coach.statusRecordID != nil && coach.status == .ready {
                 RelationshipCard(coach: coach)
                     .id(coach.statusRecordID) // a fresh card per person: nothing picked carries over
             }
@@ -208,33 +208,7 @@ struct CoachView: View {
             .scrollBounceBehavior(.basedOnSize)
             Spacer(minLength: 0)
             if appPhone { AircallPhonePanel() }
-            if let message = coach.callMessage {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button {
-                        coach.callMessage = nil
-                    } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.borderless)
-                }
-                .padding(10)
-                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-            }
-            if let hint = nextHint, !coach.leads.isActive {
-                Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            if let left = coach.autoNextIn { autoNextBar(left) }
-            if coach.waitingForText && coach.autoNextIn == nil {
-                HStack(spacing: 8) {
-                    Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
-                        .font(.callout).fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button("Skip text") { coach.startNextSequence() }
-                }
-                .padding(10)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-            }
+            bottomBanner
             navigation
         }
         .padding(.horizontal, margin)
@@ -700,6 +674,37 @@ struct CoachView: View {
         return false
     }
 
+    /// One message above the buttons at a time, the most important first:
+    /// a call problem, the countdown, "send the text", then why Next can't move on.
+    @ViewBuilder private var bottomBanner: some View {
+        if let message = coach.callMessage {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button {
+                    coach.callMessage = nil
+                } label: { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+            }
+            .padding(10)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        } else if let left = coach.autoNextIn {
+            autoNextBar(left)
+        } else if coach.waitingForText {
+            HStack(spacing: 8) {
+                Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("Skip text") { coach.startNextSequence() }
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        } else if let hint = nextHint, !coach.leads.isActive {
+            Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     /// Why Next can't move on, shown as a line above the buttons (never squeezed into a button).
     private var nextHint: String? {
         guard coach.status == .ready else { return nil }
@@ -875,6 +880,8 @@ struct FollowUpCard: View {
     @Binding var followUp: FollowUp?
     /// The card is for someone other than the person on screen now.
     var isLastPerson = false
+    /// Show the LinkedIn message instead of the connection note.
+    @State private var useMessage = false
     var canSend: Bool
     var onSend: () -> Void
     var onLinkedIn: () -> Void
@@ -896,35 +903,42 @@ struct FollowUpCard: View {
                     .help("Close")
                 }
 
-                // LinkedIn
-                row(done: f.linkedinDone, title: "LinkedIn note", message: f.linkedin) {
-                    if f.linkedinDone {
-                        Button("Open again") { onLinkedIn() }.buttonStyle(.link)
-                    } else {
-                        Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
-                            .keyboardShortcut("l", modifiers: .command)
-                            .buttonStyle(.bordered)
-                            .disabled(f.linkedin.isEmpty)
+                // LinkedIn: one row. The note (not connected yet) or the message (already connected).
+                if useMessage || f.linkedinMessageDone {
+                    row(done: f.linkedinMessageDone, title: "LinkedIn message", message: f.linkedinMessage) {
+                        if f.linkedinMessageDone {
+                            Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
+                        } else {
+                            Button("Copy message") { onLinkedInMessage() }
+                                .buttonStyle(.bordered)
+                                .disabled(f.linkedinMessage.isEmpty)
+                        }
                     }
-                }
-                if f.linkedinDone {
-                    Text("On their profile: click Connect, then Add a note. Right-click the box, click Paste, then Send.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-
-                // LinkedIn message (already connected)
-                row(done: f.linkedinMessageDone, title: "LinkedIn message (already connected)", message: f.linkedinMessage) {
                     if f.linkedinMessageDone {
-                        Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
-                    } else {
-                        Button("Copy message") { onLinkedInMessage() }
-                            .buttonStyle(.bordered)
-                            .disabled(f.linkedinMessage.isEmpty)
+                        Text("Copied. On their profile: click Message, paste (Command-V), then Send.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if !f.linkedinDone {
+                        Button("Not connected yet? Use a connection note") { useMessage = false }
+                            .buttonStyle(.link).font(.caption)
                     }
-                }
-                if f.linkedinMessageDone {
-                    Text("Copied. On their profile: click Message, paste (Command-V), then Send.")
-                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    row(done: f.linkedinDone, title: "LinkedIn note", message: f.linkedin) {
+                        if f.linkedinDone {
+                            Button("Open again") { onLinkedIn() }.buttonStyle(.link)
+                        } else {
+                            Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
+                                .keyboardShortcut("l", modifiers: .command)
+                                .buttonStyle(.bordered)
+                                .disabled(f.linkedin.isEmpty)
+                        }
+                    }
+                    if f.linkedinDone {
+                        Text("On their profile: click Connect, then Add a note. Right-click the box, click Paste, then Send.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Button("Already connected? Use a message") { useMessage = true }
+                            .buttonStyle(.link).font(.caption)
+                    }
                 }
 
                 // Text
