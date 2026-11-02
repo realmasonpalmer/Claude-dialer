@@ -914,6 +914,18 @@ final class CoachModel: ObservableObject {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        if badNumberThisCall {
+            // Number doesn't work: no voicemail, no text, no redial. Off the list, on to the next.
+            badNumberThisCall = false
+            nextCall()
+            waitingForNewCall = true
+            endedAt = Date()
+            followUp = nil
+            lastCallAnswered = true
+            problem = "Bad number. Taken off your list."
+            startNextSequence()
+            return
+        }
         // 2nd try went to voicemail: they've had both calls. Move on by itself.
         let moveOn = sawVoicemail && currentAttempts >= 2
         nextCall()
@@ -1050,6 +1062,7 @@ final class CoachModel: ObservableObject {
         screenerActive = false
         openerBeforeScreener = nil
         voicemailActive = false
+        badNumberThisCall = false
         mailboxFullShown = false
         followUpThisCall = false
         cancelAutoNext()
@@ -1208,7 +1221,9 @@ final class CoachModel: ObservableObject {
                 let recent = String(((turns.last { $0.speaker == .prospect }?.text ?? "") + " " + text).suffix(400))
                 let early = repWordsInCall < 3 && Date().timeIntervalSince(firstProspectAt ?? Date()) < 15
                 let firstWords = turns.contains { $0.speaker == .rep } ? "" : (prospectSoFar + " " + text)
-                if Voicemail.detects(recent, earlyInCall: early)
+                if BadNumber.detects(recent) {
+                    if !badNumberThisCall { markBadNumber() }
+                } else if Voicemail.detects(recent, earlyInCall: early)
                     || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
                         showVoicemail(mailboxFull: Voicemail.mailboxFull(recent))
@@ -1320,6 +1335,19 @@ final class CoachModel: ObservableObject {
     func skipOfferedTimes() {
         offeredTimes.formUnion(nextOffer)
         nextOffer = pickNextPair(from: availability.offerSlots())
+    }
+
+    /// The carrier says the number doesn't work: show it, and skip voicemail and follow-ups.
+    private var badNumberThisCall = false
+    private func markBadNumber() {
+        badNumberThisCall = true
+        voicemailActive = false
+        sawVoicemail = false
+        followUp = nil
+        if let key = currentAttemptKey { DialHistory.markBadNumber(key) }
+        seq += 1
+        show(Suggestion(say: "Bad number. Hang up. The next call starts by itself.", cue: "The carrier says this number doesn't work.",
+                        stage: "Exit", sayComplete: true), id: seq, kind: .reply)
     }
 
     /// Instant voicemail card: the script written before the call, or "mailbox full, move on".

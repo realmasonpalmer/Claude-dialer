@@ -91,3 +91,23 @@ enum Voicemail {
         return list.contains { t.contains($0) }
     }
 }
+
+
+/// Spots carrier messages for numbers that don't work, so the app skips them instead of
+/// leaving a voicemail or offering a redial.
+enum BadNumber {
+    private static let phrases = [
+        "not in service", "no longer in service", "is not in service", "been disconnected",
+        "is disconnected", "not a working number", "is not working", "cannot be completed as dialed",
+        "can not be completed as dialed", "could not be completed", "call cannot be completed",
+        "check the number and dial again", "check the number and try again", "please check the number",
+        "not a valid number", "invalid number", "number is invalid", "number you have dialed is not",
+        "number you dialed is not", "has been changed", "temporarily out of service", "is not available for calls",
+        "does not accept calls", "is restricted", "not accepting calls at this time",
+    ]
+
+    static func detects(_ text: String) -> Bool {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        return phrases.contains { t.contains($0) }
+    }
+}

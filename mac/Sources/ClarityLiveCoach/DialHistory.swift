@@ -9,6 +9,8 @@ enum DialHistory {
         var texts: [Date] = []
         var linkedIns: [Date] = []
         var linkedInMessages: [Date] = []
+        /// The carrier said the number doesn't work.
+        var badNumber = false
 
         init() {}
 
@@ -20,6 +22,7 @@ enum DialHistory {
             texts = try c.decodeIfPresent([Date].self, forKey: .texts) ?? []
             linkedIns = try c.decodeIfPresent([Date].self, forKey: .linkedIns) ?? []
             linkedInMessages = try c.decodeIfPresent([Date].self, forKey: .linkedInMessages) ?? []
+            badNumber = try c.decodeIfPresent(Bool.self, forKey: .badNumber) ?? false
         }
     }
 
@@ -94,7 +97,14 @@ enum DialHistory {
     /// Called the max number of times and never picked up: off the list.
     static func isMaxed(_ id: String) -> Bool {
         let p = person(id)
+        if p.badNumber { return true }
         return maxDials > 0 && p.pickups == 0 && p.dials.count >= maxDials
+    }
+
+    static func markBadNumber(_ id: String) {
+        var p = person(id)
+        p.badNumber = true
+        all[key(id)] = p
     }
 
     static func resetAll() { all = [:] }
