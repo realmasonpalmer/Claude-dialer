@@ -102,6 +102,11 @@ struct SettingsPane: View {
                             NSApplication.shared.activate(ignoringOtherApps: true)
                         }
                         Button("Opener scoreboard") { showScoreboard = true }
+                        Button("Copy activity log") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(ActivityLog.recent(), forType: .string)
+                            note = "Copied the last 400 lines. Paste it to whoever is helping you."
+                        }
                         Button("Copy Next debug info") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(coach.callList.debugReport(), forType: .string)

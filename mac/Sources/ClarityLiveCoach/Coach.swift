@@ -516,12 +516,16 @@ final class CoachModel: ObservableObject {
 
     /// Opens the next person in the Salesforce tab and points the coach at them right away.
     private func openNextInChrome() -> Bool {
-        guard callList.openNext() else { return false }
+        guard callList.openNext() else {
+            ActivityLog.add("Next: couldn't open the next person (\(callList.message ?? "no reason"))")
+            return false
+        }
         callMessage = nil
         let upcoming = callList.records.first { $0.id == callList.lastOpenedID }?.name
         // Show their opener now, before the page loads and before the phone rings.
         let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
         calling = upcoming.map { "\(kind) \"\($0)\"" }
+        ActivityLog.add("Next: opened \(calling ?? "?")")
         recordDetails = nil
         detailsTried = false
         personalOpenerFor = nil
@@ -591,6 +595,7 @@ final class CoachModel: ObservableObject {
         guard status == .ready, !dialing, gettingReady == nil else { return } // busy, not a missing number
         callMessage = nil
         gettingReady = "Checking \(Screener.firstName(calling) ?? "their")'s info..."
+        ActivityLog.add("Call button: \(calling ?? "no record")")
         callWhenReady { [weak self] in self?.callMessage = "No mobile number on this Salesforce page. Click Next." }
     }
 
@@ -604,6 +609,16 @@ final class CoachModel: ObservableObject {
         let openerOK = personalOpenerFor == calling || waited > 10
         return detailsOK && voicemailOK && openerOK
     }
+
+    /// The one thing the app is still waiting for, in a few words (for the Call button).
+    private func waitingFor() -> String {
+        guard let calling else { return "an open Salesforce record" }
+        if SalesforceTab.currentRecord() != calling { return "the Salesforce page" }
+        if !detailsTried { return "their page details" }
+        if !(voicemailScript != nil && voicemailFor == calling && (voicemailUsedDetails || recordDetails == nil)) { return "their voicemail" }
+        return "their opener"
+    }
+    private var lastWaitingFor = ""
 
     /// What's still missing, in plain words, when the app won't dial.
     private func readinessGap() -> String {
@@ -624,6 +639,8 @@ final class CoachModel: ObservableObject {
                 let waited = Date().timeIntervalSince(start)
                 if self.readyToDial(waited: waited) {
                     self.gettingReady = nil
+                    self.lastWaitingFor = ""
+                    ActivityLog.add("Gate: ready for \(self.calling ?? "?") after \(Int(waited)) s")
                     // Everything matches: "Calling Burcin Sonmezer in 5", with a Wait button.
                     if countdown > 0 {
                         let who = self.calling
@@ -648,10 +665,17 @@ final class CoachModel: ObservableObject {
                 if waited > 25 {
                     self.gettingReady = nil
                     self.callMessage = "Didn't call: \(self.readinessGap()). Click Call to try again."
+                    ActivityLog.add("Gate: gave up after 25 s. \(self.readinessGap())")
+                    self.lastWaitingFor = ""
                     return
                 }
-                let name = Screener.firstName(self.calling) ?? "their"
-                self.gettingReady = name == "their" ? "Getting the script ready..." : "Getting \(name)'s script ready..."
+                let name = Screener.firstName(self.calling) ?? "Next call"
+                let missing = self.waitingFor()
+                self.gettingReady = "\(name): waiting for \(missing)..."
+                if missing != self.lastWaitingFor {
+                    self.lastWaitingFor = missing
+                    ActivityLog.add("Gate: \(self.calling ?? "nobody") waiting for \(missing) (page shows \(SalesforceTab.currentRecord() ?? "nothing"))")
+                }
                 try? await Task.sleep(for: .milliseconds(300))
             }
             self?.gettingReady = nil
@@ -667,7 +691,11 @@ final class CoachModel: ObservableObject {
         syncRecord() // make sure the script and voicemail are for this person
         // The Aircall phone inside the coach (or the desktop app): dial through the API.
         if AircallPhone.isOn || Aircall.canPlaceCalls {
-            guard let mobile = SalesforceChrome.mobileNumber() else { return false }
+            guard let mobile = SalesforceChrome.mobileNumber() else {
+                ActivityLog.add("Dial: no Mobile found on the page for \(calling ?? "?")")
+                return false
+            }
+            ActivityLog.add("Dial: \(calling ?? "?") at \(mobile)")
             dialing = true
             dialError = nil
             Task { [weak self] in
@@ -680,6 +708,7 @@ final class CoachModel: ObservableObject {
                 } catch {
                     self?.dialing = false
                     self?.callMessage = "Aircall didn't start the call: \(error.localizedDescription)"
+                    ActivityLog.add("Dial failed: \(error.localizedDescription)")
                 }
             }
             return true
@@ -854,6 +883,7 @@ final class CoachModel: ObservableObject {
         let record = SalesforceTab.currentRecord()
         refreshRelationship()
         guard record != calling || (detailsPending && record != nil) else { return }
+        if record != calling { ActivityLog.add("Record on screen: \(record ?? "none") (was \(calling ?? "none"))") }
         detailsPending = false
         calling = record
         if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
@@ -869,6 +899,7 @@ final class CoachModel: ObservableObject {
             guard let self, !Task.isCancelled, self.calling == record, record != nil else { return }
             self.recordDetails = SalesforceTab.pageText()
             self.detailsTried = true
+            ActivityLog.add("Page details for \(record ?? "?"): \(self.recordDetails == nil ? "couldn't read (Chrome setting?)" : "read")")
             if self.recordDetails != nil, self.status == .ready { self.prepareOpener() }
             self.prepareVoicemail()
         }
@@ -931,6 +962,7 @@ final class CoachModel: ObservableObject {
         let quickFail = !badNumberThisCall && !startedByHand && !sawVoicemail
             && Date().timeIntervalSince(callStartedAt) < 12
             && !turns.contains { $0.speaker == .prospect }
+        ActivityLog.add("Call ended: \(calling ?? "?") after \(Int(Date().timeIntervalSince(callStartedAt))) s. voicemail=\(sawVoicemail) theySpoke=\(turns.contains(where: { $0.speaker == .prospect })) bad=\(badNumberThisCall)")
         if quickFail, let key = currentAttemptKey {
             let fails = DialHistory.logFailedConnect(key)
             nextCall()
@@ -1089,6 +1121,7 @@ final class CoachModel: ObservableObject {
         }
         touchpoints.log(.dial)
         callMessage = nil
+        ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
@@ -1588,12 +1621,14 @@ final class CoachModel: ObservableObject {
             do {
                 try await client.stream(system: system, user: user) { text = $0 }
             } catch {
+                if !(error is CancellationError) { ActivityLog.add("Voicemail failed for \(forWho ?? "?"): \(error.localizedDescription)") }
                 return
             }
             var s = Suggestion.parse(text)
             s.sayComplete = true
             s.stage = "Voicemail"
             if !Task.isCancelled, !s.say.isEmpty, self?.calling == forWho {
+                ActivityLog.add("Voicemail ready for \(forWho ?? "?") (from page: \(usedDetails))")
                 self?.voicemailUsedDetails = usedDetails
                 self?.voicemailScript = s
                 if self?.voicemailActive == true { self?.fillFollowUp(from: s) }
@@ -1750,6 +1785,7 @@ final class CoachModel: ObservableObject {
             } catch {
                 // Keep the last good line on screen; just flag it.
                 self?.problem = "Coach hiccup: \(error.localizedDescription)"
+                ActivityLog.add("Claude error: \(error.localizedDescription)")
             }
             if self?.seq == id { self?.thinking = false }
         }
