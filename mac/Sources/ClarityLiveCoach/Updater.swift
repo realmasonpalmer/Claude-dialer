@@ -12,6 +12,7 @@ final class Updater: ObservableObject {
     @Published private(set) var updating = false
     @Published private(set) var message: String?
     private var latestSHA: String?
+    private var etag: String?
 
     private var installedSHA: String? { UserDefaults.standard.string(forKey: "installedSHA") }
 
@@ -23,11 +24,20 @@ final class Updater: ObservableObject {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 10
+        // "Anything new since last time?" GitHub answers 304 (no change) for free, so checking
+        // often doesn't use up its hourly limit.
+        if let etag, latestSHA != nil { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
         guard let (data, response) = try? await URLSession.shared.data(for: request) else {
             if byHand { message = "Couldn't reach GitHub. Check your internet and try again." }
             return
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 304, let latestSHA {
+            updateAvailable = latestSHA != installedSHA
+            if byHand { message = updateAvailable ? "An update is ready. Click Update at the top." : "You have the newest version." }
+            return
+        }
+        if let tag = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "ETag") { etag = tag }
         guard code == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let sha = json["sha"] as? String else {

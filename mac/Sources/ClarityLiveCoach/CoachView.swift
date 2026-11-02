@@ -245,13 +245,17 @@ struct CoachView: View {
             coach.activate(true)
         }
         .task {
-            // Look for a new version now and every 10 minutes, so the Update button shows up on its own.
+            // Look for a new version now and every 2 minutes, so the Update button shows up on its own.
             while !Task.isCancelled {
                 await updater.check()
-                try? await Task.sleep(for: .seconds(600))
+                try? await Task.sleep(for: .seconds(120))
             }
         }
         .onDisappear { coach.activate(false) }
+        // Also check whenever the rep switches back to the app.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await updater.check() }
+        }
         .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
         .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
         .sheet(isPresented: $showCalendar) { BookingCalendarView(availability: coach.availability) }
@@ -284,7 +288,13 @@ struct CoachView: View {
                 .keyboardShortcut("e", modifiers: .command)
                 .opacity(0).frame(width: 0, height: 0)
                 .allowsHitTesting(false)
-            if updater.updateAvailable && !updater.updating && coach.status == .ready {
+            // Updates live only here. It checks by itself every 10 minutes.
+            if updater.updating {
+                Button("Updating...") {}
+                    .controlSize(.small)
+                    .disabled(true)
+                    .help("Keep working. The app closes and reopens by itself in about 2 minutes.")
+            } else if updater.updateAvailable && coach.status == .ready {
                 Button("Update") { updater.update() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -524,7 +534,7 @@ struct CoachView: View {
     // MARK: Real warnings only, never cut off
 
     @ViewBuilder private var warnings: some View {
-        if let message = updater.message {
+        if let message = updater.message, !updater.updating, message.hasPrefix("The update") || message.hasPrefix("Couldn't") {
             Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         if let problem = coach.problem {

@@ -110,19 +110,6 @@ struct SettingsPane: View {
                     }
                 }
 
-                section("Updates") {
-                    HStack {
-                        Button(updater.updateAvailable ? "Install update" : "Check for updates") {
-                            if updater.updateAvailable { updater.update() } else { Task { await updater.check(byHand: true) } }
-                        }
-                        .disabled(updater.updating)
-                        if let message = updater.message {
-                            Text(message).font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-
                 if let note {
                     Text(note).font(.caption).foregroundStyle(.secondary)
                 }
