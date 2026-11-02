@@ -6,8 +6,6 @@ import SwiftUI
 /// list views and lead/contact details with Salesforce's standard REST API. Read-only.
 /// Needs an External Client App in Salesforce (setup steps in the Connect Salesforce sheet).
 enum Salesforce {
-    static let callbackScheme = "claritylivecoach"
-    static let redirectURI = "claritylivecoach://oauth/callback"
     static let apiVersion = "v66.0"
 
     struct SFError: LocalizedError {
@@ -375,33 +373,6 @@ extension Data {
     var base64URL: String {
         base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-    }
-}
-
-/// Shows Salesforce's own login page and waits for it to hand back to the app.
-@MainActor
-final class WebLogin: NSObject, ASWebAuthenticationPresentationContextProviding {
-    private static var current: WebLogin?
-    private var session: ASWebAuthenticationSession?
-
-    static func run(url: URL, scheme: String) async throws -> URL {
-        let login = WebLogin()
-        current = login
-        defer { current = nil }
-        return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callback, error in
-                if let callback { continuation.resume(returning: callback) }
-                else { continuation.resume(throwing: error ?? Salesforce.SFError(message: "Sign-in was cancelled.")) }
-            }
-            session.presentationContextProvider = login
-            session.prefersEphemeralWebBrowserSession = false
-            login.session = session
-            session.start()
-        }
-    }
-
-    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated { NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? ASPresentationAnchor() }
     }
 }
 

@@ -440,7 +440,9 @@ final class CoachModel: ObservableObject {
                     RemovedList.add(id)
                     self.statusMessage = "Saved. Taken off your list."
                     // Between calls: move on to the next person right away (without calling yet).
-                    if self.status == .ready { self.nextLead(dial: false) }
+                    if self.status == .ready, self.openingID == nil, self.gettingReady == nil, self.autoNextIn == nil {
+                        self.nextLead(dial: false)
+                    }
                 } else {
                     RemovedList.remove(id)
                     self.statusMessage = "Saved."
@@ -480,7 +482,7 @@ final class CoachModel: ObservableObject {
                 guard let self else { return }
                 self.dialing = false
                 self.leads.markCurrentCalled()
-                self.pendingDialSince = Date()
+                if self.status == .ready { self.pendingDialSince = Date() } // the call may already be live
             } catch {
                 self?.dialing = false
                 self?.dialError = error.localizedDescription
@@ -546,6 +548,8 @@ final class CoachModel: ObservableObject {
         // Show their opener now, before the page loads and before the phone rings.
         let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
         calling = upcoming.map { "\(kind) \"\($0)\"" }
+        openingID = callList.lastOpenedID
+        openingSince = Date()
         ActivityLog.add("Next: opened \(calling ?? "?")")
         recordDetails = nil
         detailsTried = false
@@ -725,7 +729,7 @@ final class CoachModel: ObservableObject {
                     guard let self else { return }
                     self.dialing = false
                     self.callList.markCurrentCalled()
-                    self.pendingDialSince = Date()
+                    if self.status == .ready { self.pendingDialSince = Date() } // the call may already be live
                 } catch {
                     self?.dialing = false
                     self?.callMessage = "Aircall didn't start the call: \(error.localizedDescription)"
@@ -743,11 +747,15 @@ final class CoachModel: ObservableObject {
 
     /// Waits for the lead's Salesforce page to load, then clicks its Mobile number (Aircall in Salesforce dials).
     private func dialFromSalesforcePage(expecting id: String?, countdown: Int = 0) {
-        Task { [weak self] in
+        readyTask?.cancel()
+        // Kept in readyTask, so Wait, Next and Call cancel it like everything else.
+        readyTask = Task { [weak self] in
+            var pageOpened = id == nil
             for _ in 0..<16 {
                 try? await Task.sleep(for: .milliseconds(500))
-                guard let self, self.status == .ready else { return }
+                guard let self, !Task.isCancelled, self.status == .ready else { return }
                 if let id, SalesforceChrome.url().flatMap(CallList.recordID) != id { continue } // not loaded yet
+                pageOpened = true
                 if SalesforceChrome.mobileNumber() != nil {
                     // Page loaded and has a Mobile: dial once their script and follow-ups are ready.
                     self.noMobileSkips = 0
@@ -755,8 +763,15 @@ final class CoachModel: ObservableObject {
                     return
                 }
             }
+            guard let self, !Task.isCancelled else { return }
+            guard pageOpened else {
+                // The page never opened: don't skip anyone, just say so.
+                self.callMessage = "Their Salesforce page didn't open. Click Call when it's showing."
+                ActivityLog.add("Next: page for \(id ?? "?") didn't open in 8 s")
+                return
+            }
             // No Mobile number: they're not on the call list. Skip to the next person (up to 20 in a row).
-            guard let self else { return }
+            ActivityLog.add("Next: no Mobile for \(self.calling ?? "?"), skipping")
             self.noMobileSkips += 1
             if self.noMobileSkips <= 20 {
                 self.problem = "No mobile number. Skipped to the next person."
@@ -901,6 +916,13 @@ final class CoachModel: ObservableObject {
     /// and always right before dialing, so nothing from the last person carries over.
     private func syncRecord() {
         guard !leads.isActive else { return }
+        // Just opened someone: ignore the old page until theirs shows, so nothing flips back.
+        // (The address changes before the tab title does, so also wait for the title, up to 3 s.)
+        if let waitingFor = openingID {
+            guard SalesforceChrome.url().flatMap(CallList.recordID) == waitingFor else { return }
+            if SalesforceTab.currentRecord() != calling, Date().timeIntervalSince(openingSince) < 3 { return }
+            openingID = nil
+        }
         let record = SalesforceTab.currentRecord()
         refreshRelationship()
         guard record != calling || (detailsPending && record != nil) else { return }
@@ -915,9 +937,11 @@ final class CoachModel: ObservableObject {
         prepareVoicemail() // right away for this person; again with details below
         // Salesforce fills in the page after the title changes: read the details a moment later.
         detailsTask?.cancel()
+        let pageID = SalesforceChrome.url().flatMap(CallList.recordID)
         detailsTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1200))
-            guard let self, !Task.isCancelled, self.calling == record, record != nil else { return }
+            guard let self, !Task.isCancelled, self.calling == record, record != nil,
+                  SalesforceChrome.url().flatMap(CallList.recordID) == pageID else { return }
             self.recordDetails = SalesforceTab.pageText()
             self.detailsTried = true
             ActivityLog.add("Page details for \(record ?? "?"): \(self.recordDetails == nil ? "couldn't read (Chrome setting?)" : "read")")
@@ -944,7 +968,7 @@ final class CoachModel: ObservableObject {
             tabTicks += 1
             if tabTicks % 2 == 0 {
                 callList.captureIfListView()
-                callList.refreshUpNext()
+                if openingID == nil { callList.refreshUpNext() }
                 syncRecord()
             }
         }
@@ -979,6 +1003,7 @@ final class CoachModel: ObservableObject {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        let hadVoicemail = sawVoicemail
         // Didn't connect: over in under 12 seconds, nobody talked, no voicemail. That's a bad
         // number's beeping tone or a dropped call, not a person who didn't pick up (that rings 20+ s).
         let quickFail = !badNumberThisCall && !startedByHand && !sawVoicemail
@@ -1013,7 +1038,7 @@ final class CoachModel: ObservableObject {
         nextCall()
         waitingForNewCall = true
         endedAt = Date()
-        if !shouldOfferRedial, let f = followUp {
+        if !shouldOfferRedial, hadVoicemail, let f = followUp {
             // Voicemail, done with them: send the text, then the next call starts.
             if f.textDone { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
         } else if moveOn {
@@ -1111,6 +1136,7 @@ final class CoachModel: ObservableObject {
     // answers in a row end it (so one slow answer can't end a live call).
     private var aircallTicks = 0
     private var aircallSaysOver = 0
+    private var aircallSawCall = false
     private var aircallCheck: Task<Void, Never>?
 
     private func checkAircallEveryFewSeconds() {
@@ -1123,8 +1149,15 @@ final class CoachModel: ObservableObject {
             guard let self else { return }
             self.aircallCheck = nil
             guard self.status == .live, let onCall else { return }
+            if onCall { self.aircallSawCall = true }
+            // Only trust "no call" once Aircall has listed this call: a slow or missing listing
+            // must never cut a live call short.
+            guard self.aircallSawCall else { return }
             self.aircallSaysOver = onCall ? 0 : self.aircallSaysOver + 1
-            if self.aircallSaysOver >= 2 { self.endCall() }
+            if self.aircallSaysOver >= 2 {
+                ActivityLog.add("Aircall says the call is over")
+                self.endCall()
+            }
         }
     }
 
@@ -1144,6 +1177,7 @@ final class CoachModel: ObservableObject {
         }
         touchpoints.log(.dial)
         callMessage = nil
+        pendingDialSince = nil // this dial is now the live call
         ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.
@@ -1159,6 +1193,7 @@ final class CoachModel: ObservableObject {
         heardCallAudio = false
         retargets = 0
         aircallSaysOver = 0
+        aircallSawCall = false
         aircallTicks = 0
         journeyStep = 0
         history = Array(history.suffix(1)) // keep the opener as the first line
@@ -1219,11 +1254,7 @@ final class CoachModel: ObservableObject {
             applyLead()
         } else {
             // Read Chrome a moment later, not while Aircall plays the hang-up tone.
-            afterHangUp { [weak self] in
-                guard let self else { return }
-                self.detailsPending = true
-                self.syncRecord()
-            }
+            afterHangUp { [weak self] in self?.syncRecord() } // same person: keep their ready voicemail
         }
     }
 
@@ -1341,6 +1372,8 @@ final class CoachModel: ObservableObject {
         }
     }
     private var pendingStop: Task<Void, Never>?
+    /// The record Id the ready-made voicemail is for (matches the follow-up card's key).
+    private var voicemailKey: String?
     /// Who the ready-made voicemail was written for, and whether it used their Salesforce page.
     private var voicemailFor: String?
     private var voicemailUsedDetails = false
@@ -1357,6 +1390,9 @@ final class CoachModel: ObservableObject {
     @Published private(set) var gettingReady: String?
     private var readyTask: Task<Void, Never>?
     private var detailsPending = false
+    /// The record Next just opened, until its page is showing.
+    private var openingID: String?
+    private var openingSince = Date.distantPast
 
     private func openStream(_ speaker: Speaker, key: String) -> DeepgramStream {
         DeepgramStream(apiKey: key, keyterms: useKeyterms ? DeepgramStream.defaultKeyterms : []) { [weak self] event in
@@ -1493,6 +1529,8 @@ final class CoachModel: ObservableObject {
     private var badNumberThisCall = false
     private func markBadNumber() {
         badNumberThisCall = true
+        coachTask?.cancel()
+        thinking = false
         voicemailActive = false
         sawVoicemail = false
         followUp = nil
@@ -1508,6 +1546,7 @@ final class CoachModel: ObservableObject {
         sawVoicemail = true
         screenerActive = false
         coachTask?.cancel()
+        thinking = false
         specTimer?.cancel()
         holdTask?.cancel()
         pending = nil
@@ -1564,7 +1603,8 @@ final class CoachModel: ObservableObject {
 
     /// Fills in the text and LinkedIn note. The rep sends each one with a button.
     private func fillFollowUp(from s: Suggestion) {
-        guard followUpThisCall, var f = followUp else { return }
+        // Only into the card of the person this voicemail was written for.
+        guard followUpThisCall, var f = followUp, f.key == nil || voicemailKey == nil || f.key == voicemailKey else { return }
         if f.text.isEmpty { f.text = s.textMessage }
         if f.linkedin.isEmpty { f.linkedin = s.linkedin }
         if f.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
@@ -1585,9 +1625,14 @@ final class CoachModel: ObservableObject {
                 try await Aircall.sendText(to: f.phone, body: f.text)
                 self?.touchpoints.log(.text)
                 if let key = f.key { DialHistory.logText(key) }
+                ActivityLog.add("Text sent to \(f.prospect ?? "?") at \(f.phone)")
+                // Only mark the card it was sent from (not a newer person's card).
+                guard self?.followUp?.key == f.key else { return }
                 self?.followUp?.textStatus = "Sent"
                 self?.followUp?.textDone = true
             } catch {
+                ActivityLog.add("Text failed: \(error.localizedDescription)")
+                guard self?.followUp?.key == f.key else { return }
                 self?.followUp?.textStatus = error.localizedDescription
             }
         }
@@ -1619,14 +1664,6 @@ final class CoachModel: ObservableObject {
             }
         }
         // Count once per person per day.
-        if message {
-            if followUp?.linkedinMessageDone != true, !(f.key.map(DialHistory.linkedInMessageToday) ?? false) {
-                touchpoints.log(.linkedinMessage)
-                if let key = f.key { DialHistory.logLinkedInMessage(key) }
-            }
-            followUp?.linkedinMessageDone = true
-            return
-        }
         if followUp?.linkedinDone != true, !(f.key.map(DialHistory.linkedInToday) ?? false) {
             touchpoints.log(.linkedin)
             if let key = f.key { DialHistory.logLinkedIn(key) }
@@ -1662,6 +1699,7 @@ final class CoachModel: ObservableObject {
         let forWho = calling
         let usedDetails = detailsTried
         voicemailFor = forWho
+        voicemailKey = recordKey()
         guard let key = Keychain.read(.anthropic) else { return }
         let client = CoachSpeed.fastest.client(apiKey: key) // voicemails always use Haiku: fast
         let system = self.system
@@ -1671,7 +1709,11 @@ final class CoachModel: ObservableObject {
             do {
                 try await client.stream(system: system, user: user) { text = $0 }
             } catch {
-                if !(error is CancellationError) { ActivityLog.add("Voicemail failed for \(forWho ?? "?"): \(error.localizedDescription)") }
+                if !(error is CancellationError) {
+                    ActivityLog.add("Voicemail failed for \(forWho ?? "?"): \(error.localizedDescription)")
+                    // Let the next try (or the voicemail card) write it again.
+                    if self?.calling == forWho { self?.voicemailTask = nil; self?.voicemailFor = nil }
+                }
                 return
             }
             var s = Suggestion.parse(text)
@@ -1691,6 +1733,7 @@ final class CoachModel: ObservableObject {
     private func showScreenerLine() {
         screenerActive = true
         coachTask?.cancel()
+        thinking = false
         holdTask?.cancel()
         pending = nil
         if kind == .opener { openerBeforeScreener = suggestion }
