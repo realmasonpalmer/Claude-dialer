@@ -551,7 +551,7 @@ final class CoachModel: ObservableObject {
             return
         }
         guard openNextInChrome() else { return }
-        if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 5) }
+        if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 3) }
     }
 
     // MARK: Double dial
@@ -964,6 +964,28 @@ final class CoachModel: ObservableObject {
             if f.textDone { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
         } else if moveOn {
             afterHangUp { [weak self] in self?.startNextSequence() }
+        } else if shouldOfferRedial, autoDial {
+            // 1st try, no answer: "Calling Jane Doe again in 3", then redial the same person.
+            startAutoRedial()
+        }
+    }
+
+    /// Counts down 3 seconds, then calls the same person again. Wait stops it.
+    private func startAutoRedial() {
+        autoNextTask?.cancel()
+        autoNextName = calling.flatMap { c in
+            c.firstIndex(of: "\"").map { String(c[c.index(after: $0)...]).replacingOccurrences(of: "\"", with: "") }
+        }.map { "\($0) again" }
+        autoNextTask = Task { [weak self] in
+            for left in stride(from: 3, through: 1, by: -1) {
+                self?.autoNextIn = left
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                if self.status != .ready { self.cancelAutoNext(); return }
+            }
+            guard let self, !Task.isCancelled, self.shouldOfferRedial else { return }
+            self.autoNextIn = nil
+            self.redial()
         }
     }
 
@@ -985,7 +1007,7 @@ final class CoachModel: ObservableObject {
         guard nextLeadName != nil else { return }
         autoNextTask?.cancel()
         autoNextTask = Task { [weak self] in
-            for left in stride(from: 5, through: 1, by: -1) {
+            for left in stride(from: 3, through: 1, by: -1) {
                 self?.autoNextIn = left
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
