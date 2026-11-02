@@ -927,7 +927,7 @@ final class CoachModel: ObservableObject {
             followUp = nil
             lastCallAnswered = true // no redial
             problem = fails >= 2 ? "Didn't connect again. Bad number: taken off your list." : "Didn't connect (bad number or network). Moving on."
-            startNextSequence()
+            afterHangUp { [weak self] in self?.startNextSequence() }
             return
         }
         if badNumberThisCall {
@@ -939,7 +939,7 @@ final class CoachModel: ObservableObject {
             followUp = nil
             lastCallAnswered = true
             problem = "Bad number. Taken off your list."
-            startNextSequence()
+            afterHangUp { [weak self] in self?.startNextSequence() }
             return
         }
         // 2nd try went to voicemail: they've had both calls. Move on by itself.
@@ -949,9 +949,9 @@ final class CoachModel: ObservableObject {
         endedAt = Date()
         if !shouldOfferRedial, let f = followUp {
             // Voicemail, done with them: send the text, then the next call starts.
-            if f.textDone { startNextSequence() } else { waitingForText = true }
+            if f.textDone { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
         } else if moveOn {
-            startNextSequence()
+            afterHangUp { [weak self] in self?.startNextSequence() }
         }
     }
 
@@ -987,6 +987,7 @@ final class CoachModel: ObservableObject {
 
     /// The rep clicked Wait (or moved on by hand).
     func cancelAutoNext() {
+        hangUpGen += 1
         waitingForText = false
         autoNextName = nil
         readyTask?.cancel()
@@ -1125,12 +1126,27 @@ final class CoachModel: ObservableObject {
         if leads.isActive {
             applyLead()
         } else {
-            calling = SalesforceTab.currentRecord()
-            recordDetails = calling == nil ? nil : SalesforceTab.pageText()
-            prepareOpener()
-            prepareVoicemail()
+            // Read Chrome a moment later, not while Aircall plays the hang-up tone.
+            afterHangUp { [weak self] in
+                guard let self else { return }
+                self.detailsPending = true
+                self.syncRecord()
+            }
         }
     }
+
+    /// Runs work 2 seconds after a call ends. Doing it all at the hang-up moment
+    /// (Chrome reads, saving, loading the next person) makes Aircall's hang-up tone skip.
+    private func afterHangUp(_ work: @escaping () -> Void) {
+        let gen = hangUpGen
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            // Skip it if the rep already moved on by hand (Next, Redial, Call).
+            guard let self, self.status == .ready, self.hangUpGen == gen else { return }
+            work()
+        }
+    }
+    private var hangUpGen = 0
 
     /// Scores the call if a real person answered (not voicemail): credits the opener,
     /// then saves it to the Script Lab.
