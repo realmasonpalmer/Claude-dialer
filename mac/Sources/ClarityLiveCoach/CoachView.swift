@@ -189,6 +189,19 @@ struct CoachView: View {
             .scrollBounceBehavior(.basedOnSize)
             Spacer(minLength: 0)
             if appPhone { AircallPhonePanel() }
+            if let message = coach.callMessage {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button {
+                        coach.callMessage = nil
+                    } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
             if let left = coach.autoNextIn { autoNextBar(left) }
             if coach.waitingForText && coach.autoNextIn == nil {
                 HStack(spacing: 8) {

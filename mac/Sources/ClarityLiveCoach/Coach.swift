@@ -517,6 +517,7 @@ final class CoachModel: ObservableObject {
     /// Opens the next person in the Salesforce tab and points the coach at them right away.
     private func openNextInChrome() -> Bool {
         guard callList.openNext() else { return false }
+        callMessage = nil
         let upcoming = callList.records.first { $0.id == callList.lastOpenedID }?.name
         // Show their opener now, before the page loads and before the phone rings.
         let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
@@ -588,7 +589,9 @@ final class CoachModel: ObservableObject {
     func callOpenLead() {
         cancelAutoNext()
         guard status == .ready, !dialing, gettingReady == nil else { return } // busy, not a missing number
-        callWhenReady { [weak self] in self?.problem = "No mobile number on this Salesforce page. Click Next." }
+        callMessage = nil
+        gettingReady = "Checking \(Screener.firstName(calling) ?? "their")'s info..."
+        callWhenReady { [weak self] in self?.callMessage = "No mobile number on this Salesforce page. Click Next." }
     }
 
     /// Everything on screen is for the person open in Salesforce: name, page details,
@@ -600,6 +603,15 @@ final class CoachModel: ObservableObject {
         // Claude's personal opener; after 10 seconds the instant one (already for them) is enough.
         let openerOK = personalOpenerFor == calling || waited > 10
         return detailsOK && voicemailOK && openerOK
+    }
+
+    /// What's still missing, in plain words, when the app won't dial.
+    private func readinessGap() -> String {
+        guard let calling else { return "no Salesforce record is open in Chrome" }
+        if SalesforceTab.currentRecord() != calling { return "the Salesforce page doesn't match \(Screener.firstName(calling) ?? "this person")" }
+        if !detailsTried { return "couldn't read their Salesforce page" }
+        if !(voicemailScript != nil && voicemailFor == calling) { return "their voicemail and follow-ups weren't written (check the Anthropic key)" }
+        return "their opener wasn't ready"
     }
 
     /// Dials only once the script and follow-ups are for this exact person. Gives up after 25 s.
@@ -626,7 +638,7 @@ final class CoachModel: ObservableObject {
                         self.autoNextIn = nil
                         // Last check: still the same person, still all theirs.
                         guard self.calling == who, self.readyToDial(waited: 99) else {
-                            self.problem = "The Salesforce page changed during the countdown. Click Call when ready."
+                            self.callMessage = "The Salesforce page changed during the countdown. Click Call when ready."
                             return
                         }
                     }
@@ -635,7 +647,7 @@ final class CoachModel: ObservableObject {
                 }
                 if waited > 25 {
                     self.gettingReady = nil
-                    self.problem = "Couldn't get the script ready for this person. Click Call to try again."
+                    self.callMessage = "Didn't call: \(self.readinessGap()). Click Call to try again."
                     return
                 }
                 let name = Screener.firstName(self.calling) ?? "their"
@@ -667,7 +679,7 @@ final class CoachModel: ObservableObject {
                     self.pendingDialSince = Date()
                 } catch {
                     self?.dialing = false
-                    self?.problem = error.localizedDescription
+                    self?.callMessage = "Aircall didn't start the call: \(error.localizedDescription)"
                 }
             }
             return true
@@ -689,7 +701,7 @@ final class CoachModel: ObservableObject {
                 if SalesforceChrome.mobileNumber() != nil {
                     // Page loaded and has a Mobile: dial once their script and follow-ups are ready.
                     self.noMobileSkips = 0
-                    self.callWhenReady(countdown: countdown) { [weak self] in self?.problem = "No mobile number on this Salesforce page. Click Next." }
+                    self.callWhenReady(countdown: countdown) { [weak self] in self?.callMessage = "No mobile number on this Salesforce page. Click Next." }
                     return
                 }
             }
@@ -1054,6 +1066,7 @@ final class CoachModel: ObservableObject {
             attempts[key, default: 0] += 1
         }
         touchpoints.log(.dial)
+        callMessage = nil
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
@@ -1191,7 +1204,7 @@ final class CoachModel: ObservableObject {
         }
         let chrome = AudioProcess.callAudioTargets(in: AudioProcess.others())
         guard !chrome.isEmpty else {
-            problem = "Can't hear the call yet. Open the Aircall app (or Aircall in Chrome) and start the call."
+            callMessage = "Can't hear the call yet. Open the Aircall app (or Aircall in Chrome) and start the call."
             return false
         }
         streams.set(rep: openStream(.rep, key: deepgramKey), prospect: openStream(.prospect, key: deepgramKey))
@@ -1231,6 +1244,8 @@ final class CoachModel: ObservableObject {
     /// Who Claude's personal opener on screen is for.
     private var personalOpenerFor: String?
     private var instantOpenerID = -1
+    /// Why a call didn't start. Shown right above the Call button and never wiped by a new line.
+    @Published var callMessage: String?
     /// Who the countdown is for.
     @Published private(set) var autoNextName: String?
     /// "Getting Burcin's script ready..." while the app waits to dial.
@@ -1677,7 +1692,7 @@ final class CoachModel: ObservableObject {
         if c.localizedCaseInsensitiveContains("Clarity") { return "Clarity" }
         let first = c.components(separatedBy: CharacterSet(charactersIn: ",.;:")).first ?? ""
         let words = first.split(separator: " ").prefix(3).joined(separator: " ")
-        return words.isEmpty ? "[company]" : words
+        return words.isEmpty ? "Clarity" : words
     }
 
     private func ask(_ kind: Kind, user: String, early: String? = nil) {
