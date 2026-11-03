@@ -1033,7 +1033,7 @@ final class CoachModel: ObservableObject {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
-        let hadVoicemail = sawVoicemail
+        let hadVoicemail = sawVoicemail // for the log
         // Didn't connect: over in under 12 seconds, nobody talked, no voicemail. That's a bad
         // number's beeping tone or a dropped call, not a person who didn't pick up (that rings 20+ s).
         let quickFail = !badNumberThisCall && !startedByHand && !sawVoicemail
@@ -1068,14 +1068,20 @@ final class CoachModel: ObservableObject {
         nextCall()
         waitingForNewCall = true
         endedAt = Date()
-        if !shouldOfferRedial, hadVoicemail, let f = followUp {
-            // Voicemail, done with them: send the text, then the next call starts.
+        // Didn't reach them (no answer or voicemail): the text and LinkedIn card shows after
+        // every such call, even when the voicemail greeting wasn't caught.
+        if !lastCallAnswered, followUp == nil || followUp?.key != currentAttemptKey {
+            startFollowUp()
+            ActivityLog.add("Follow-up card for \(calling ?? "?") (voicemail heard: \(hadVoicemail))")
+        }
+        if shouldOfferRedial, autoDial {
+            // 1st try, no answer: "Calling Jane Doe again in 3", then redial the same person.
+            startAutoRedial()
+        } else if !shouldOfferRedial, !lastCallAnswered, let f = followUp {
+            // Done with them for now: send the text, then the next call starts.
             if f.textDone { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
         } else if moveOn {
             afterHangUp { [weak self] in self?.startNextSequence() }
-        } else if shouldOfferRedial, autoDial {
-            // 1st try, no answer: "Calling Jane Doe again in 3", then redial the same person.
-            startAutoRedial()
         }
     }
 
