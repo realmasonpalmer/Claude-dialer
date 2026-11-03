@@ -142,9 +142,17 @@ enum CoachPrompt {
     }
 
     /// Written before the call, so it's ready the instant a voicemail greeting starts.
-    static func voicemail(calling: String?, details: String?) -> String {
+    static func voicemail(calling: String?, details: String?, earlierTexts: [String] = []) -> String {
+        let earlier = earlierTexts.isEmpty ? "" : """
+        This will be text number \(earlierTexts.count + 1) to this person. Texts already sent (oldest first):
+        \(earlierTexts.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
+        The new TEXT must be clearly different from every one of these: a new angle or question and new wording.
+        Don't reuse their opening words. Keep it short and friendly; later texts can be lighter (for example,
+        a quick "should I stop reaching out?" by the 4th or 5th text).
+
         """
-        \(about(calling, details))If this call goes to voicemail, what should the rep say after the beep?
+        return """
+        \(about(calling, details))\(earlier)If this call goes to voicemail, what should the rep say after the beep?
         Under 20 seconds, about 40 words. In this order: their first name; the rep's name and company;
         one reason tied to something specific about them, their role or their company (from the Salesforce facts,
         or a common pain for their title if there are none); then "I'll send you a quick text so you have my number."
@@ -1678,7 +1686,8 @@ final class CoachModel: ObservableObject {
             // Not written yet: ask now. The beep usually gives a few seconds.
             show(Suggestion(say: "Writing your voicemail...", cue: "Wait for the beep.", stage: "Voicemail", sayComplete: true),
                  id: seq, kind: .voicemail)
-            ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails))
+            ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails,
+                                                         earlierTexts: recordKey().map(DialHistory.sentTexts) ?? []))
         }
     }
 
@@ -1731,12 +1740,17 @@ final class CoachModel: ObservableObject {
             followUp?.textDone = true
             return
         }
+        if let key = f.key, DialHistory.alreadySent(f.text, to: key) {
+            followUp?.textStatus = "You already sent them these exact words. Edit the text, or wait a moment for a new one."
+            ActivityLog.add("Text blocked: same words as an earlier text to \(f.prospect ?? "?")")
+            return
+        }
         followUp?.textStatus = "Sending..."
         Task { [weak self] in
             do {
                 try await Aircall.sendText(to: f.phone, body: f.text)
                 self?.touchpoints.log(.text)
-                if let key = f.key { DialHistory.logText(key) }
+                if let key = f.key { DialHistory.logText(key, body: f.text) }
                 ActivityLog.add("Text sent to \(f.prospect ?? "?") at \(f.phone)")
                 // Only mark the card it was sent from (not a newer person's card).
                 guard self?.followUp?.key == f.key else { return }
@@ -1816,7 +1830,8 @@ final class CoachModel: ObservableObject {
         guard let key = Keychain.read(.anthropic) else { return }
         let client = CoachSpeed.fastest.client(apiKey: key) // voicemails always use Haiku: fast
         let system = self.system
-        let user = CoachPrompt.voicemail(calling: calling, details: recordDetails)
+        let user = CoachPrompt.voicemail(calling: calling, details: recordDetails,
+                                         earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [])
         voicemailTask = Task { [weak self] in
             var text = ""
             do {
@@ -1951,7 +1966,15 @@ final class CoachModel: ObservableObject {
         s.cue = "Ready-made voicemail (Claude didn't answer in time)."
         s.stage = "Voicemail"
         s.sayComplete = true
-        s.textMessage = "Hi \(first), \(me) with \(shortCompany). Just tried you. Does your team lose time retyping the same info across systems? Yes or no is fine."
+        let texts = [
+            "Hi \(first), \(me) with \(shortCompany). Just tried you. Does your team lose time retyping the same info across systems? Yes or no is fine.",
+            "Hi \(first), \(me) again from \(shortCompany). Quick one: is getting call notes into your CRM a headache for your team right now?",
+            "\(first), \(me) at \(shortCompany). Tried you once more. Worth a 15 minute look at cutting double data entry, or not a priority?",
+            "Hi \(first), \(me) from \(shortCompany). Still worth a quick chat about saving your team admin time, or should I check back next quarter?",
+            "\(first), last note from me (\(me), \(shortCompany)). Should I stop reaching out, or is there a better time to talk?",
+        ]
+        let sentBefore = recordKey().map { DialHistory.sentTexts($0).count } ?? 0
+        s.textMessage = texts[sentBefore % texts.count]
         s.linkedin = "Hi \(first), I just tried calling about how teams cut down on retyping info across systems. Would be glad to connect."
         s.linkedinMessage = "Hi \(first), I just tried calling you about how teams cut down on retyping info between systems. Is that something your team still deals with?"
         return s

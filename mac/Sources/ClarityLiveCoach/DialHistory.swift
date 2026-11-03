@@ -7,6 +7,8 @@ enum DialHistory {
         var dials: [Date] = []
         var pickups = 0
         var texts: [Date] = []
+        /// The words of every text sent to them, oldest first.
+        var textBodies: [String] = []
         var linkedIns: [Date] = []
         var linkedInMessages: [Date] = []
         /// The carrier said the number doesn't work.
@@ -22,6 +24,7 @@ enum DialHistory {
             dials = try c.decodeIfPresent([Date].self, forKey: .dials) ?? []
             pickups = try c.decodeIfPresent(Int.self, forKey: .pickups) ?? 0
             texts = try c.decodeIfPresent([Date].self, forKey: .texts) ?? []
+            textBodies = try c.decodeIfPresent([String].self, forKey: .textBodies) ?? []
             linkedIns = try c.decodeIfPresent([Date].self, forKey: .linkedIns) ?? []
             linkedInMessages = try c.decodeIfPresent([Date].self, forKey: .linkedInMessages) ?? []
             badNumber = try c.decodeIfPresent(Bool.self, forKey: .badNumber) ?? false
@@ -73,10 +76,21 @@ enum DialHistory {
         all[key(id)] = p
     }
 
-    static func logText(_ id: String) {
+    static func logText(_ id: String, body: String = "") {
         var p = person(id)
         p.texts.append(Date())
+        if !body.isEmpty { p.textBodies.append(body) }
         all[key(id)] = p
+    }
+
+    /// Texts already sent to them, newest last (for writing a different one).
+    static func sentTexts(_ id: String) -> [String] { person(id).textBodies }
+
+    /// True if this text is the same as one already sent to them (ignoring case and spacing).
+    static func alreadySent(_ body: String, to id: String) -> Bool {
+        let norm = { (t: String) in t.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: " ") }
+        let mine = norm(body)
+        return person(id).textBodies.contains { norm($0) == mine }
     }
 
     static func logLinkedIn(_ id: String) {
