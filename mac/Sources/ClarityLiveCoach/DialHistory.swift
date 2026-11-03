@@ -13,6 +13,9 @@ enum DialHistory {
         var linkedInMessages: [Date] = []
         /// The words of every LinkedIn message copied for them, oldest first.
         var linkedInMessageBodies: [String] = []
+        /// Voicemails left for them (when, and the words), oldest first.
+        var voicemails: [Date] = []
+        var voicemailBodies: [String] = []
         /// The carrier said the number doesn't work.
         var badNumber = false
         /// Calls that ended in seconds with nobody on the line (beeping tone, no connection).
@@ -30,6 +33,8 @@ enum DialHistory {
             linkedIns = try c.decodeIfPresent([Date].self, forKey: .linkedIns) ?? []
             linkedInMessages = try c.decodeIfPresent([Date].self, forKey: .linkedInMessages) ?? []
             linkedInMessageBodies = try c.decodeIfPresent([String].self, forKey: .linkedInMessageBodies) ?? []
+            voicemails = try c.decodeIfPresent([Date].self, forKey: .voicemails) ?? []
+            voicemailBodies = try c.decodeIfPresent([String].self, forKey: .voicemailBodies) ?? []
             badNumber = try c.decodeIfPresent(Bool.self, forKey: .badNumber) ?? false
             failedConnects = try c.decodeIfPresent(Int.self, forKey: .failedConnects) ?? 0
         }
@@ -107,6 +112,36 @@ enum DialHistory {
         p.linkedInMessages.append(Date())
         if !body.isEmpty { p.linkedInMessageBodies.append(body) }
         all[key(id)] = p
+    }
+
+    static func logVoicemail(_ id: String, body: String) {
+        var p = person(id)
+        p.voicemails.append(Date())
+        if !body.isEmpty { p.voicemailBodies.append(body) }
+        all[key(id)] = p
+    }
+
+    /// Everything we've done with this person, in plain words, for writing the next voicemail.
+    static func historySummary(_ id: String) -> String {
+        let p = person(id)
+        func when(_ d: Date?) -> String {
+            guard let d else { return "" }
+            let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: d),
+                                                       to: Calendar.current.startOfDay(for: Date())).day ?? 0
+            return days == 0 ? "today" : days == 1 ? "yesterday" : "\(days) days ago"
+        }
+        var lines: [String] = []
+        if !p.dials.isEmpty { lines.append("Calls so far: \(p.dials.count) (first \(when(p.dials.first))).") }
+        if !p.voicemails.isEmpty {
+            lines.append("Voicemails already left: \(p.voicemails.count), latest \(when(p.voicemails.last)).")
+            for v in p.voicemailBodies.suffix(3) { lines.append("  Earlier voicemail: \(v)") }
+        }
+        if !p.texts.isEmpty {
+            lines.append("Texts already sent: \(p.texts.count), latest \(when(p.texts.last)). They have the rep's number.")
+        }
+        if !p.linkedIns.isEmpty { lines.append("LinkedIn connection note sent \(when(p.linkedIns.last)).") }
+        if !p.linkedInMessages.isEmpty { lines.append("LinkedIn message sent \(when(p.linkedInMessages.last)).") }
+        return lines.joined(separator: "\n")
     }
 
     /// LinkedIn messages already sent to them, newest last.

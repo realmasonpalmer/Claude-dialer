@@ -142,7 +142,13 @@ enum CoachPrompt {
     }
 
     /// Written before the call, so it's ready the instant a voicemail greeting starts.
-    static func voicemail(calling: String?, details: String?, earlierTexts: [String] = [], earlierMessages: [String] = []) -> String {
+    static func voicemail(calling: String?, details: String?, earlierTexts: [String] = [], earlierMessages: [String] = [],
+                          history: String = "") -> String {
+        let past = history.isEmpty ? "" : """
+        What the rep has already done with this person:
+        \(history)
+
+        """
         let earlierLinkedIn = earlierMessages.isEmpty ? "" : """
         This will be LinkedIn message number \(earlierMessages.count + 1). LinkedIn messages already sent (oldest first):
         \(earlierMessages.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
@@ -158,10 +164,14 @@ enum CoachPrompt {
 
         """
         return """
-        \(about(calling, details))\(earlier)\(earlierLinkedIn)If this call goes to voicemail, what should the rep say after the beep?
+        \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)If this call goes to voicemail, what should the rep say after the beep?
         Under 20 seconds, about 40 words. In this order: their first name; the rep's name and company;
         one reason tied to something specific about them, their role or their company (from the Salesforce facts,
-        or a common pain for their title if there are none); then "I'll send you a quick text so you have my number."
+        or a common pain for their title if there are none); then one closing line that fits the history above:
+        - No text sent yet: "I'll send you a quick text so you have my number."
+        - A text was already sent: don't promise a first text again. Mention it instead, for example
+          "I sent you a text the other day, so you have my number" (use the real timing: today, yesterday, a few days ago).
+        - Voicemails were already left: don't repeat them. New angle and new wording, and it can be shorter and lighter.
         No pitch, no hype, no email.
         CUE: one short delivery tip. STAGE: Voicemail.
         Then add three more lines:
@@ -1057,6 +1067,10 @@ final class CoachModel: ObservableObject {
     func endCall() {
         guard status != .ready else { return }
         let hadVoicemail = sawVoicemail // for the log
+        if hadVoicemail, !(currentAttempts < 2 && autoDial), let key = currentAttemptKey,
+           let said = voicemailScript?.say, voicemailFor == calling {
+            DialHistory.logVoicemail(key, body: said)
+        }
         // Didn't connect: over in under 12 seconds, nobody talked, no voicemail. That's a bad
         // number's beeping tone or a dropped call, not a person who didn't pick up (that rings 20+ s).
         let quickFail = !badNumberThisCall && !startedByHand && !sawVoicemail
@@ -1700,7 +1714,8 @@ final class CoachModel: ObservableObject {
                  id: seq, kind: .voicemail)
             ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails,
                                                          earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
-                                                         earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? []))
+                                                         earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [],
+                                                         history: recordKey().map(DialHistory.historySummary) ?? ""))
         }
     }
 
@@ -1845,7 +1860,8 @@ final class CoachModel: ObservableObject {
         let system = self.system
         let user = CoachPrompt.voicemail(calling: calling, details: recordDetails,
                                          earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
-                                         earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [])
+                                         earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [],
+                                         history: recordKey().map(DialHistory.historySummary) ?? "")
         voicemailTask = Task { [weak self] in
             var text = ""
             do {
@@ -1977,7 +1993,12 @@ final class CoachModel: ObservableObject {
         let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
         let me = rep.isEmpty ? "[your name]" : rep
         var s = Suggestion()
-        s.say = "Hi \(first), this is \(me) with \(shortCompany). I help teams cut the time they spend retyping info between systems. I'll send you a quick text so you have my number."
+        let key = recordKey()
+        let texted = key.map { !DialHistory.person($0).texts.isEmpty } ?? false
+        let leftBefore = key.map { !DialHistory.person($0).voicemails.isEmpty } ?? false
+        s.say = leftBefore
+            ? "Hi \(first), \(me) from \(shortCompany) again. Still happy to share how teams like yours cut down on retyping info between systems. \(texted ? "You have my number from my text." : "I'll text you my number.")"
+            : "Hi \(first), this is \(me) with \(shortCompany). I help teams cut the time they spend retyping info between systems. \(texted ? "I sent you a text earlier, so you have my number." : "I'll send you a quick text so you have my number.")"
         s.cue = "Ready-made voicemail (Claude didn't answer in time)."
         s.stage = "Voicemail"
         s.sayComplete = true
