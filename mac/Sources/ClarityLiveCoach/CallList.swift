@@ -54,6 +54,7 @@ final class CallList: ObservableObject {
         }
         calledDay = d.string(forKey: "calledDay") ?? ""
         calledToday = Set(d.stringArray(forKey: "calledToday") ?? [])
+        listKey = d.data(forKey: "callListKey").flatMap { try? JSONDecoder().decode(ListKey.self, from: $0) }
         resetCalledIfNewDay()
     }
 
@@ -70,13 +71,70 @@ final class CallList: ObservableObject {
             if chromeBlocked { chromeBlocked = false }
         case .list(let found):
             if chromeBlocked { chromeBlocked = false }
-            guard !found.isEmpty, found != records else { return }
-            // Same list, more rows loaded (scrolling)? Keep our place. A different list? Start over.
-            let sameList = found.first?.id == records.first?.id
-            records = found
-            if !sameList { lastIndex = -1 }
+            guard !found.isEmpty else { return }
+            // Which list is this? (From the address bar while the list page shows.)
+            let key = SalesforceChrome.url().flatMap(Self.listKey)
+            if let key, key != listKey {
+                // A different list: start over with what's on screen, then load all of it from Salesforce.
+                listKey = key
+                records = found
+                lastIndex = -1
+                fullListKey = nil
+                message = nil
+                save()
+                Task { await loadFullList() }
+                return
+            }
+            // Same list, scrolled: add anyone new, never drop the people already learned.
+            let known = Set(records.map(\.id))
+            let added = found.filter { !known.contains($0.id) }
+            guard !added.isEmpty || records.isEmpty else { return }
+            records += added
             message = nil
             save()
+        }
+    }
+
+    /// The list on screen (object + list view), from an address like /lightning/o/Contact/list?filterName=00B...
+    @Published private(set) var listKey: ListKey?
+    private var fullListKey: ListKey?
+
+    struct ListKey: Equatable, Codable {
+        let object: String
+        let view: String
+    }
+
+    static func listKey(from url: String) -> ListKey? {
+        guard let o = url.range(of: "/lightning/o/") else { return nil }
+        let object = url[o.upperBound...].split(separator: "/").first.map(String.init) ?? ""
+        guard ["Lead", "Contact"].contains(object),
+              let comps = URLComponents(string: url),
+              let view = comps.queryItems?.first(where: { $0.name == "filterName" })?.value, !view.isEmpty else { return nil }
+        return ListKey(object: object, view: view)
+    }
+
+    /// Loads everyone on the list straight from Salesforce (up to 2,000), not just the rows on screen.
+    /// Keeps the person we're on. Returns true if it learned new people.
+    @discardableResult
+    func loadFullList() async -> Bool {
+        guard Salesforce.isConnected, let key = listKey, fullListKey != key else { return false }
+        do {
+            let rows = try await Salesforce.fullList(object: key.object, key: key.view)
+            guard !rows.isEmpty, listKey == key else { return false }
+            let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } } ?? ""
+            let currentID = lastIndex >= 0 && lastIndex < records.count ? records[lastIndex].id : nil
+            let before = Set(records.map { String($0.id.prefix(15)) })
+            records = rows.map { Record(id: $0.id, name: $0.name, url: "\(origin)/lightning/r/\(key.object)/\($0.id)/view") }
+            if let currentID, let i = records.firstIndex(where: { $0.id.prefix(15) == currentID.prefix(15) }) { lastIndex = i }
+            fullListKey = key
+            save()
+            refreshUpNext()
+            let newCount = records.filter { !before.contains(String($0.id.prefix(15))) }.count
+            ActivityLog.add("List: loaded \(records.count) people from Salesforce (\(newCount) new)")
+            return newCount > 0
+        } catch {
+            ActivityLog.problem("List: couldn't load the full list from Salesforce: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -119,6 +177,11 @@ final class CallList: ObservableObject {
 
     /// Scrolls the Salesforce list so it loads more rows, then reads them. True if new people showed up.
     func loadMore() async -> Bool {
+        // Best: ask Salesforce for the whole list.
+        if Salesforce.isConnected, listKey != nil {
+            fullListKey = nil
+            if await loadFullList() { return true }
+        }
         let before = records.count
         _ = SalesforceChrome.scrollListToBottom()
         try? await Task.sleep(for: .milliseconds(1500))
@@ -248,6 +311,7 @@ final class CallList: ObservableObject {
         if let data = try? JSONEncoder().encode(records) { d.set(data, forKey: "callList") }
         d.set(calledDay, forKey: "calledDay")
         d.set(Array(calledToday), forKey: "calledToday")
+        if let listKey, let data = try? JSONEncoder().encode(listKey) { d.set(data, forKey: "callListKey") }
     }
 }
 

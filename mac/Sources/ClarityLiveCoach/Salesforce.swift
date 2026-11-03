@@ -166,6 +166,7 @@ enum Salesforce {
         let id: String
         let label: String
         let object: String // "Lead" or "Contact"
+        var developerName: String = ""
         var title: String { "\(label) (\(object)s)" }
     }
 
@@ -181,7 +182,8 @@ enum Salesforce {
             let json = try await get("/services/data/\(apiVersion)/sobjects/\(object)/listviews") as? [String: Any]
             for v in (json?["listviews"] as? [[String: Any]]) ?? [] {
                 if let id = v["id"] as? String, let label = v["label"] as? String {
-                    views.append(ListView(id: id, label: label, object: object))
+                    views.append(ListView(id: id, label: label, object: object,
+                                          developerName: (v["developerName"] as? String) ?? ""))
                 }
             }
         }
@@ -268,6 +270,16 @@ enum Salesforce {
             _ = try await send("PATCH", "/services/data/\(apiVersion)/composite/sobjects",
                                body: ["allOrNone": false, "records": records])
         }
+    }
+
+    /// Everyone on a list view (up to 2,000), in the list's own order. `key` is the list view Id
+    /// or its API name, as in the address bar's filterName.
+    static func fullList(object: String, key: String) async throws -> [Row] {
+        let views = try await listViews()
+        guard let view = views.first(where: {
+            $0.object == object && ($0.id.prefix(15) == key.prefix(15) || $0.developerName == key)
+        }) else { throw SFError(message: "Couldn't find that list view in Salesforce.") }
+        return try await allRows(of: view)
     }
 
     private static func allRows(of view: ListView) async throws -> [Row] {
