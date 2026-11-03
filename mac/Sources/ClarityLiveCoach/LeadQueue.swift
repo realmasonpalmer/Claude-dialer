@@ -16,7 +16,7 @@ final class LeadQueue: ObservableObject {
 
     var isActive: Bool { Salesforce.isConnected && selected != nil && !rows.isEmpty }
     var current: Salesforce.Row? { rows.indices.contains(index) ? rows[index] : nil }
-    var leftToCall: Int { rows.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) }.count }
+    var leftToCall: Int { rows.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) && Cadence.isDue($0.id) }.count }
     var nextRow: Salesforce.Row? { nextIndex(after: index).map { rows[$0] } }
     var canGoBack: Bool { index > 0 }
 
@@ -53,7 +53,7 @@ final class LeadQueue: ObservableObject {
             error = nil
             UserDefaults.standard.set(view.id, forKey: "sfListView")
             // Start at the first one not called today.
-            index = rows.firstIndex { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) } ?? 0
+            index = rows.firstIndex { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) && Cadence.isDue($0.id) } ?? 0
             await loadDetails()
         } catch {
             self.error = error.localizedDescription
@@ -113,7 +113,7 @@ final class LeadQueue: ObservableObject {
     private func nextIndex(after i: Int) -> Int? {
         var j = i + 1
         while j < rows.count {
-            if !calledToday.contains(rows[j].id) && !RemovedList.contains(rows[j].id) && !DialHistory.isMaxed(rows[j].id) { return j }
+            if !calledToday.contains(rows[j].id) && !RemovedList.contains(rows[j].id) && !DialHistory.isMaxed(rows[j].id) && Cadence.isDue(rows[j].id) { return j }
             j += 1
         }
         return nil

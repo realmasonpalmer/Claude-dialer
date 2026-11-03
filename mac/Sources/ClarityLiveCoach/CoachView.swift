@@ -927,8 +927,11 @@ struct FollowUpCard: View {
                     .help("Close")
                 }
 
-                // LinkedIn: one row. The note (not connected yet) or the message (already connected).
-                if useMessage || f.linkedinMessageDone {
+                // LinkedIn: one row, only on the plan's LinkedIn days. The note (not connected yet)
+                // or the message (already connected; the plan's choice on the last call day).
+                if !f.linkedInDue && !f.linkedinDone && !f.linkedinMessageDone {
+                    EmptyView()
+                } else if useMessage || f.linkedInMessageFirst || f.linkedinMessageDone {
                     row(done: f.linkedinMessageDone, title: "LinkedIn message", message: f.linkedinMessage) {
                         if f.linkedinMessageDone {
                             Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
@@ -941,7 +944,7 @@ struct FollowUpCard: View {
                     if f.linkedinMessageDone {
                         Text("Copied. On their profile: click Message, paste (Command-V), then Send.")
                             .font(.caption).foregroundStyle(.secondary)
-                    } else if !f.linkedinDone {
+                    } else if !f.linkedinDone && !f.linkedInMessageFirst {
                         Button("Not connected yet? Use a connection note") { useMessage = false }
                             .buttonStyle(.link).font(.caption)
                     }
@@ -965,7 +968,8 @@ struct FollowUpCard: View {
                     }
                 }
 
-                // Text
+                // Text: only on the plan's text day (the 2nd call day), never to Washington numbers.
+                if f.textDue || f.textDone {
                 row(done: f.textDone, title: "Text", message: f.text) {
                     if f.textDone {
                         Label("Sent", systemImage: "checkmark").foregroundStyle(.green)
@@ -987,16 +991,22 @@ struct FollowUpCard: View {
                         }
                     }
                 }
+                }
                 if let status = f.textStatus, status != "Sent" {
                     Text(status).font(.caption)
                         .foregroundStyle(status == "Sending..." ? Color.secondary : Color.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if !f.textDue && !f.textDone && !f.linkedInDue {
+                    Text("Nothing to send today. The plan's text is on call day 2, LinkedIn on days 1 and 16.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(12)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
             .onChange(of: f.allDone) {
-                if f.allDone {
+                // Close only after something was actually sent (a day with nothing due keeps the card up).
+                if f.allDone, f.textDone || f.linkedinDone || f.linkedinMessageDone {
                     Task {
                         try? await Task.sleep(for: .seconds(4))
                         if followUp?.allDone == true { followUp = nil }
@@ -1049,7 +1059,8 @@ struct RelationshipCard: View {
         _ = coach.touchpoints.events.count // redraw after each call
         let p = DialHistory.person(id)
         if p.pickups > 0 { return "Calls: \(p.dials.count) · picked up" }
-        return DialHistory.maxDials > 0 ? "Calls: \(p.dials.count) of \(DialHistory.maxDials)" : "Calls: \(p.dials.count)"
+        _ = p
+        return Cadence.label(for: id)
     }
 
     var body: some View {

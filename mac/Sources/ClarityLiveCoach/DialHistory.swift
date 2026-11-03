@@ -132,9 +132,10 @@ enum DialHistory {
         }
         var lines: [String] = []
         if !p.dials.isEmpty { lines.append("Calls so far: \(p.dials.count) (first \(when(p.dials.first))).") }
-        if maxDials > 0 {
-            let left = max(maxDials - p.dials.count, 0)
-            lines.append(left > 0 ? "Calls left before the rep stops trying: \(left) (about 2 a day)." : "This is the rep's last call to them.")
+        if let s = Cadence.step(for: id) {
+            lines.append("Plan: call day \(s.index + 1) of 5 over 21 days (calls on days 1, 2, 5, 8, 16)."
+                + (s.isLast ? " This is the last call day: after today the rep stops calling."
+                            : " Next call day after today: day \(Cadence.callDays[s.index + 1])."))
         }
         if !p.voicemails.isEmpty {
             lines.append("Voicemails already left: \(p.voicemails.count), latest \(when(p.voicemails.last)).")
@@ -161,7 +162,7 @@ enum DialHistory {
     static func isMaxed(_ id: String) -> Bool {
         let p = person(id)
         if p.badNumber || p.failedConnects >= 2 { return true }
-        return maxDials > 0 && p.pickups == 0 && p.dials.count >= maxDials
+        return p.pickups == 0 && Cadence.isFinished(id) // the 21-day plan is done
     }
 
     /// Counts a call that didn't connect. Returns the total. Two = off the list.

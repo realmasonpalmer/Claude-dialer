@@ -44,7 +44,7 @@ final class CallList: ObservableObject {
     }
 
     /// How many on this list haven't been called today.
-    var leftToCall: Int { records.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) }.count }
+    var leftToCall: Int { records.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) && Cadence.isDue($0.id) }.count }
 
     init() {
         let d = UserDefaults.standard
@@ -159,7 +159,7 @@ final class CallList: ObservableObject {
         guard !records.isEmpty else { return nil }
         let from = index ?? currentIndex() ?? lastIndex
         func callable(_ r: Record) -> Bool {
-            !calledToday.contains(r.id) && !RemovedList.contains(r.id) && !DialHistory.isMaxed(r.id)
+            !calledToday.contains(r.id) && !RemovedList.contains(r.id) && !DialHistory.isMaxed(r.id) && Cadence.isDue(r.id)
         }
         var i = from + 1
         while i < records.count {

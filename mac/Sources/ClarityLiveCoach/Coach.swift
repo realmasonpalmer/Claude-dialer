@@ -242,9 +242,13 @@ struct FollowUp: Equatable {
     /// A LinkedIn direct message, for people who are already connected.
     var linkedinMessage = ""
     var linkedinMessageDone = false
+    /// What the 21-day plan says to send today.
+    var textDue = true
+    var linkedInDue = true
+    var linkedInMessageFirst = false // the last call day: a message, not a connection note
 
-    /// Text sent, plus a LinkedIn note or a LinkedIn message (one or the other, not both).
-    var allDone: Bool { textDone && (linkedinDone || linkedinMessageDone) }
+    /// Everything due today is done.
+    var allDone: Bool { (textDone || !textDue) && (!linkedInDue || linkedinDone || linkedinMessageDone) }
 }
 
 // MARK: - Call state
@@ -1070,6 +1074,7 @@ final class CoachModel: ObservableObject {
                 if f.phone.isEmpty { f.phone = Aircall.phone(in: self.recordDetails) ?? SalesforceChrome.mobileNumber() ?? "" }
                 if f.linkedinURL == nil { f.linkedinURL = Self.linkedInProfile(details: self.recordDetails) }
                 self.followUp = f
+                self.applyPlan()
             }
             ActivityLog.add("Page details for \(record ?? "?"): \(self.recordDetails == nil ? "couldn't read (Chrome setting?)" : "read")")
             if self.recordDetails != nil, self.status == .ready { self.prepareOpener() }
@@ -1141,6 +1146,7 @@ final class CoachModel: ObservableObject {
         guard status != .ready else { return }
         let hadVoicemail = sawVoicemail // for the log
         if hadVoicemail, !(currentAttempts < 2 && autoDial), let key = currentAttemptKey,
+           Cadence.step(for: key)?.leaveVoicemail ?? true,
            let said = voicemailScript?.say, voicemailFor == calling {
             DialHistory.logVoicemail(key, body: said)
         }
@@ -1190,7 +1196,7 @@ final class CoachModel: ObservableObject {
             startAutoRedial()
         } else if !shouldOfferRedial, !lastCallAnswered, let f = followUp {
             // Done with them for now: send the text, then the next call starts.
-            if f.textDone { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
+            if f.textDone || !f.textDue { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
         } else if moveOn {
             afterHangUp { [weak self] in self?.startNextSequence() }
         }
@@ -1801,9 +1807,17 @@ final class CoachModel: ObservableObject {
             show(Suggestion(say: currentAttempts < 2 ? "Mailbox is full. Hang up and click Redial." : "Mailbox is full. Hang up. The next call starts by itself.",
                             cue: "No message possible.",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
+        } else if let step = currentAttemptKey.flatMap(Cadence.step(for:)), !step.leaveVoicemail {
+            // Not a voicemail day in the 21-day plan.
+            show(Suggestion(say: currentAttempts < 2 ? "No voicemail today. Hang up. The redial starts by itself."
+                                                     : "No voicemail today. Hang up and move on.",
+                            cue: "Voicemails only on call days 1 and 4 (2 total). Today is call day \(step.index + 1).",
+                            stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
         } else if var script = voicemailScript, voicemailFor == calling {
             if currentAttempts < 2 {
                 script.cue = "1st try: hang up and click Redial. Leave this message on the 2nd try."
+            } else if let step = currentAttemptKey.flatMap(Cadence.step(for:)) {
+                script.cue = "Voicemail #\(step.voicemailNumber) of 2. Wait for the beep."
             }
             show(script, id: seq, kind: .voicemail)
         } else {
@@ -1840,6 +1854,7 @@ final class CoachModel: ObservableObject {
                             linkedinMessage: earlier?.linkedinMessage ?? "",
                             linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
+        applyPlan()
         if let script = voicemailScript, voicemailFor == calling { fillFollowUp(from: script) }
         else if detailsTried || leads.isActive, voicemailTask == nil || voicemailFor != calling {
             prepareVoicemail() // it fills the card when done (in Chrome mode, only once the page is read)
@@ -1847,6 +1862,19 @@ final class CoachModel: ObservableObject {
     }
 
     private var followUpThisCall = false
+
+    /// Today's 21-day plan step decides which follow-ups show: text only on the 2nd call day
+    /// (never to Washington numbers), LinkedIn note on the 1st, LinkedIn message on the last.
+    private func applyPlan() {
+        guard var f = followUp, let key = f.key else { return }
+        let step = Cadence.step(for: key)
+        let washington = Cadence.isWashington(f.phone)
+        f.textDue = (step?.textToday ?? false) && !washington
+        if washington, step?.textToday == true, !f.textDone { f.textStatus = "No text: Washington number (texts need consent there)." }
+        f.linkedInDue = (step?.linkedInConnect ?? false) || (step?.linkedInMessage ?? false)
+        f.linkedInMessageFirst = step?.linkedInMessage ?? false
+        followUp = f
+    }
 
     /// Fills in the text and LinkedIn note. The rep sends each one with a button.
     /// - Parameter replace: a better version (written from their Salesforce page) replaces

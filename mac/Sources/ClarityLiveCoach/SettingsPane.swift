@@ -14,7 +14,6 @@ struct SettingsPane: View {
     @AppStorage("nextDials") private var nextDials = true
     @AppStorage("showTouchpoints") private var showTouchpoints = true
     @AppStorage("appPhone") private var appPhone = true
-    @AppStorage("maxDials") private var maxDials = 4
     @AppStorage("coachBuiltInMic") private var builtInMic = true
     @State private var showScoreboard = false
     @State private var confirmReset = false
@@ -57,14 +56,8 @@ struct SettingsPane: View {
                         }
                         .disabled(coach.status != .ready)
                     }
-                    Picker("Take someone off after", selection: $maxDials) {
-                        Text("3 calls").tag(3)
-                        Text("4 calls").tag(4)
-                        Text("5 calls").tag(5)
-                        Text("Never").tag(0)
-                    }
-                    Text("Only if they never picked up. Counts every call, including redials.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text("21-day plan: calls on days 1, 2, 5, 8 and 16 (up to 2 dials each), 2 voicemails, 1 text. People come off the list when the plan ends or they pick up.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Reset everyone's call counts...") { confirmReset = true }
                         .confirmationDialog("Reset everyone's call counts?", isPresented: $confirmReset) {
                             Button("Reset", role: .destructive) {
