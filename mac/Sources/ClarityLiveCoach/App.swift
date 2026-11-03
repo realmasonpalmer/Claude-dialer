@@ -23,6 +23,12 @@ struct ClarityLiveCoachApp: App {
         }
         .defaultSize(width: 620, height: 780)
 
+        Window("Campaigns", id: "campaign-selector") {
+            CampaignSelectorView()
+                .environmentObject(campaigns)
+        }
+        .defaultSize(width: 620, height: 480)
+
         Window("Campaign", id: "campaign-editor") {
             CampaignEditorView()
                 .environmentObject(campaigns)

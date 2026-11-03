@@ -248,6 +248,7 @@ struct CoachView: View {
             coach.use(new)
             // A different campaign, or its list changed in the editor: open that list in Chrome.
             if old.id != new.id || old.listViewID != new.listViewID { openList(of: new) }
+            if old.id != new.id { coach.listDone = false }
         }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
@@ -308,20 +309,28 @@ struct CoachView: View {
     /// Pick a campaign, or create and edit one. Locked during a call.
     private var campaignMenu: some View {
         Menu {
-            ForEach(campaigns.campaigns) { campaign in
+            Button("Campaigns...") {
+                openWindow(id: "campaign-selector")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+            Divider()
+            // Only the active campaigns (up to 3): pick one to call its list.
+            if campaigns.activeCampaigns.isEmpty {
+                Text("No active campaigns. Open Campaigns... to activate up to 3.")
+            }
+            ForEach(campaigns.activeCampaigns) { campaign in
                 Button {
                     switchTo(campaign)
                 } label: {
                     if campaign.id == campaigns.selected.id {
-                        Label(campaign.listName.isEmpty ? campaign.name : "\(campaign.name) · \(campaign.listName)", systemImage: "checkmark")
+                        Label(campaign.name, systemImage: "checkmark")
                     } else {
-                        Text(campaign.listName.isEmpty ? campaign.name : "\(campaign.name) · \(campaign.listName)")
+                        Text(campaign.name)
                     }
                 }
             }
             Divider()
             Button("Edit this campaign...") { edit(campaigns.selected) }
-            Button("New campaign...") { edit(Campaign()) }
         } label: {
             Text(campaigns.selected.name).font(.caption.weight(.semibold)).lineLimit(1)
         }
@@ -351,7 +360,7 @@ struct CoachView: View {
         let all = campaigns.campaigns
         guard let i = all.firstIndex(where: { $0.id == campaigns.selected.id }) else { return nil }
         let after = all[(i + 1)...] + all[..<i]
-        return after.first { !$0.listViewID.isEmpty }
+        return after.first { $0.active && !$0.listViewID.isEmpty }
     }
 
     private func edit(_ campaign: Campaign) {

@@ -25,6 +25,10 @@ struct Campaign: Codable, Identifiable, Equatable {
     var listObject = ""
     var listViewID = ""
     var listName = ""
+    /// Active campaigns (up to 3) are the ones being called. Paused ones wait.
+    var active = false
+    /// People on the Salesforce list, last time it was counted.
+    var listSize = 0
 
     init(id: UUID = UUID(), name: String = "New campaign", objective: String = "", pastedScript: String = "",
          company: String = "", offer: String = "", idealCustomer: String = "", persona: String = "",
@@ -50,6 +54,8 @@ struct Campaign: Codable, Identifiable, Equatable {
         success = text(.success); exit = text(.exit)
         version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1
         listObject = text(.listObject); listViewID = text(.listViewID); listName = text(.listName)
+        active = (try? c.decodeIfPresent(Bool.self, forKey: .active)) ?? false
+        listSize = (try? c.decodeIfPresent(Int.self, forKey: .listSize)) ?? 0
     }
 
     /// The sections, in the order the editor and the prompt show them.
@@ -127,9 +133,25 @@ final class CampaignStore: ObservableObject {
         }
         let saved = UserDefaults.standard.string(forKey: "selectedCampaign").flatMap(UUID.init)
         selectedID = campaigns.contains { $0.id == saved } ? saved : campaigns.first?.id
+        // First run with active campaigns: the one in use starts out active.
+        if !campaigns.contains(where: \.active), let id = selectedID { setActive(id, true) }
     }
 
     var selected: Campaign { campaigns.first { $0.id == selectedID } ?? campaigns.first ?? .clarityDiscovery }
+
+    /// Up to 3 campaigns are active at a time.
+    static let maxActive = 3
+    var activeCampaigns: [Campaign] { campaigns.filter(\.active) }
+
+    /// Turns a campaign on or off. Returns false if 3 are already active.
+    @discardableResult
+    func setActive(_ id: UUID, _ on: Bool) -> Bool {
+        guard var c = campaigns.first(where: { $0.id == id }) else { return false }
+        if on, !c.active, activeCampaigns.count >= Self.maxActive { return false }
+        c.active = on
+        save(c)
+        return true
+    }
 
     func save(_ campaign: Campaign) {
         if let data = try? JSONEncoder().encode(campaign) {
