@@ -11,6 +11,8 @@ enum DialHistory {
         var textBodies: [String] = []
         var linkedIns: [Date] = []
         var linkedInMessages: [Date] = []
+        /// The words of every LinkedIn message copied for them, oldest first.
+        var linkedInMessageBodies: [String] = []
         /// The carrier said the number doesn't work.
         var badNumber = false
         /// Calls that ended in seconds with nobody on the line (beeping tone, no connection).
@@ -27,6 +29,7 @@ enum DialHistory {
             textBodies = try c.decodeIfPresent([String].self, forKey: .textBodies) ?? []
             linkedIns = try c.decodeIfPresent([Date].self, forKey: .linkedIns) ?? []
             linkedInMessages = try c.decodeIfPresent([Date].self, forKey: .linkedInMessages) ?? []
+            linkedInMessageBodies = try c.decodeIfPresent([String].self, forKey: .linkedInMessageBodies) ?? []
             badNumber = try c.decodeIfPresent(Bool.self, forKey: .badNumber) ?? false
             failedConnects = try c.decodeIfPresent(Int.self, forKey: .failedConnects) ?? 0
         }
@@ -99,11 +102,15 @@ enum DialHistory {
         all[key(id)] = p
     }
 
-    static func logLinkedInMessage(_ id: String) {
+    static func logLinkedInMessage(_ id: String, body: String = "") {
         var p = person(id)
         p.linkedInMessages.append(Date())
+        if !body.isEmpty { p.linkedInMessageBodies.append(body) }
         all[key(id)] = p
     }
+
+    /// LinkedIn messages already sent to them, newest last.
+    static func sentLinkedInMessages(_ id: String) -> [String] { person(id).linkedInMessageBodies }
 
     static func linkedInMessageToday(_ id: String) -> Bool { person(id).linkedInMessages.contains { Calendar.current.isDateInToday($0) } }
 

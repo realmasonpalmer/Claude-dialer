@@ -142,7 +142,13 @@ enum CoachPrompt {
     }
 
     /// Written before the call, so it's ready the instant a voicemail greeting starts.
-    static func voicemail(calling: String?, details: String?, earlierTexts: [String] = []) -> String {
+    static func voicemail(calling: String?, details: String?, earlierTexts: [String] = [], earlierMessages: [String] = []) -> String {
+        let earlierLinkedIn = earlierMessages.isEmpty ? "" : """
+        This will be LinkedIn message number \(earlierMessages.count + 1). LinkedIn messages already sent (oldest first):
+        \(earlierMessages.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
+        The new LINKEDIN MESSAGE must be clearly different from every one of these: a new angle or question and new wording.
+
+        """
         let earlier = earlierTexts.isEmpty ? "" : """
         This will be text number \(earlierTexts.count + 1) to this person. Texts already sent (oldest first):
         \(earlierTexts.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
@@ -152,7 +158,7 @@ enum CoachPrompt {
 
         """
         return """
-        \(about(calling, details))\(earlier)If this call goes to voicemail, what should the rep say after the beep?
+        \(about(calling, details))\(earlier)\(earlierLinkedIn)If this call goes to voicemail, what should the rep say after the beep?
         Under 20 seconds, about 40 words. In this order: their first name; the rep's name and company;
         one reason tied to something specific about them, their role or their company (from the Salesforce facts,
         or a common pain for their title if there are none); then "I'll send you a quick text so you have my number."
@@ -1687,7 +1693,8 @@ final class CoachModel: ObservableObject {
             show(Suggestion(say: "Writing your voicemail...", cue: "Wait for the beep.", stage: "Voicemail", sayComplete: true),
                  id: seq, kind: .voicemail)
             ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails,
-                                                         earlierTexts: recordKey().map(DialHistory.sentTexts) ?? []))
+                                                         earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
+                                                         earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? []))
         }
     }
 
@@ -1775,7 +1782,7 @@ final class CoachModel: ObservableObject {
         if message {
             if followUp?.linkedinMessageDone != true, !(f.key.map(DialHistory.linkedInMessageToday) ?? false) {
                 touchpoints.log(.linkedinMessage)
-                if let key = f.key { DialHistory.logLinkedInMessage(key) }
+                if let key = f.key { DialHistory.logLinkedInMessage(key, body: f.linkedinMessage) }
             }
             followUp?.linkedinMessageDone = true
             return
@@ -1831,7 +1838,8 @@ final class CoachModel: ObservableObject {
         let client = CoachSpeed.fastest.client(apiKey: key) // voicemails always use Haiku: fast
         let system = self.system
         let user = CoachPrompt.voicemail(calling: calling, details: recordDetails,
-                                         earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [])
+                                         earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
+                                         earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [])
         voicemailTask = Task { [weak self] in
             var text = ""
             do {
@@ -1976,7 +1984,15 @@ final class CoachModel: ObservableObject {
         let sentBefore = recordKey().map { DialHistory.sentTexts($0).count } ?? 0
         s.textMessage = texts[sentBefore % texts.count]
         s.linkedin = "Hi \(first), I just tried calling about how teams cut down on retyping info across systems. Would be glad to connect."
-        s.linkedinMessage = "Hi \(first), I just tried calling you about how teams cut down on retyping info between systems. Is that something your team still deals with?"
+        let messages = [
+            "Hi \(first), I just tried calling you about how teams cut down on retyping info between systems. Is that something your team still deals with?",
+            "Hi \(first), following up on my call. A lot of firms we work with lose hours a week moving client info by hand. Is that true for your team too?",
+            "\(first), tried you again today. Would a short look at getting call notes into your CRM automatically be useful, or not a focus right now?",
+            "Hi \(first), one more try. Happy to share what's worked for similar firms on cutting admin time. Worth 15 minutes sometime?",
+            "\(first), I'll stop reaching out after this. If saving your team admin time ever becomes a priority, I'm happy to help.",
+        ]
+        let messagesBefore = recordKey().map { DialHistory.sentLinkedInMessages($0).count } ?? 0
+        s.linkedinMessage = messages[messagesBefore % messages.count]
         return s
     }
 
