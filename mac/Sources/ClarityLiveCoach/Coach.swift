@@ -1036,7 +1036,10 @@ final class CoachModel: ObservableObject {
         // so the status, LinkedIn and text cards stay up. Only a different person switches them.
         guard record != nil else { return }
         guard record != calling || detailsPending else { return }
-        if record != calling { ActivityLog.add("Record on screen: \(record ?? "none") (was \(calling ?? "none"))") }
+        if record != calling {
+            ActivityLog.add("Record on screen: \(record ?? "none") (was \(calling ?? "none"))")
+            callMessage = nil // a new person: the last person's message no longer applies
+        }
         detailsPending = false
         calling = record
         if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
@@ -1090,6 +1093,9 @@ final class CoachModel: ObservableObject {
             if tabTicks % 2 == 0 {
                 callList.captureIfListView()
                 if openingID == nil { callList.refreshUpNext() }
+                if let m = callMessage, m.hasPrefix("Everyone on this Salesforce list"), case .ready = callList.state {
+                    callMessage = nil
+                }
                 syncRecord()
             }
         }
