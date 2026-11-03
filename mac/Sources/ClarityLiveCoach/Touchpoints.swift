@@ -7,7 +7,20 @@ final class Touchpoints: ObservableObject {
     enum Kind: String, Codable, CaseIterable {
         case dial, pickup, conversation, voicemail, text, linkedin, linkedinMessage, meeting
     }
-    struct Event: Codable { let kind: Kind; let at: Date }
+    struct Event: Codable {
+        let kind: Kind
+        let at: Date
+        /// The campaign it happened in (older events have none).
+        var campaign: String? = nil
+    }
+
+    /// The campaign being worked right now; every touchpoint is tagged with it.
+    var currentCampaign: String?
+    /// Which campaign the card shows: nil = all campaigns.
+    @Published var showCampaign: String?
+
+    /// Campaigns that have touchpoints, for the card's picker.
+    var campaignNames: [String] { Array(Set(events.compactMap(\.campaign))).sorted() }
 
     enum Period: String, CaseIterable, Identifiable {
         case today = "Today", week = "This week", month = "This month", all = "All time"
@@ -31,7 +44,7 @@ final class Touchpoints: ObservableObject {
     }
 
     func log(_ kind: Kind) {
-        events.append(Event(kind: kind, at: Date()))
+        events.append(Event(kind: kind, at: Date(), campaign: currentCampaign))
         // Keep about two years, so the file stays small.
         let cutoff = Calendar.current.date(byAdding: .day, value: -730, to: Date()) ?? .distantPast
         if events.first.map({ $0.at < cutoff }) == true { events.removeAll { $0.at < cutoff } }
@@ -40,7 +53,7 @@ final class Touchpoints: ObservableObject {
 
     func count(_ kind: Kind, in period: Period) -> Int {
         let start = Self.start(of: period)
-        return events.filter { $0.kind == kind && $0.at >= start }.count
+        return events.filter { $0.kind == kind && $0.at >= start && (showCampaign == nil || $0.campaign == showCampaign) }.count
     }
 
     /// Every way you reached out: dials + texts + LinkedIn notes + LinkedIn messages.
@@ -89,6 +102,13 @@ struct TouchpointsCard: View {
             .buttonStyle(.plain)
             if open {
             HStack {
+                // Compare campaigns: each list + script on its own.
+                Picker("", selection: $touchpoints.showCampaign) {
+                    Text("All campaigns").tag(String?.none)
+                    ForEach(touchpoints.campaignNames, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                .labelsHidden()
+                .fixedSize()
                 Spacer()
                 Picker("", selection: $periodRaw) {
                     ForEach(Touchpoints.Period.allCases) { Text($0.rawValue).tag($0.rawValue) }

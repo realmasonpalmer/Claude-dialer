@@ -306,16 +306,38 @@ struct CoachView: View {
         Menu {
             ForEach(campaigns.campaigns) { campaign in
                 Button {
-                    campaigns.selectedID = campaign.id
+                    switchTo(campaign)
                 } label: {
                     if campaign.id == campaigns.selected.id {
-                        Label(campaign.name, systemImage: "checkmark")
+                        Label(campaign.listName.isEmpty ? campaign.name : "\(campaign.name) · \(campaign.listName)", systemImage: "checkmark")
                     } else {
-                        Text(campaign.name)
+                        Text(campaign.listName.isEmpty ? campaign.name : "\(campaign.name) · \(campaign.listName)")
                     }
                 }
             }
             Divider()
+            if Salesforce.isConnected {
+                Menu(campaigns.selected.listName.isEmpty ? "Pick this campaign's Salesforce list..." : "List: \(campaigns.selected.listName)") {
+                    ForEach(coach.leads.views) { view in
+                        Button(view.title) {
+                            var c = campaigns.selected
+                            c.listObject = view.object
+                            c.listViewID = view.id
+                            c.listName = view.label
+                            campaigns.save(c)
+                            openList(of: c)
+                        }
+                    }
+                    if !campaigns.selected.listViewID.isEmpty {
+                        Divider()
+                        Button("No list (use whatever list is open in Chrome)") {
+                            var c = campaigns.selected
+                            c.listObject = ""; c.listViewID = ""; c.listName = ""
+                            campaigns.save(c)
+                        }
+                    }
+                }
+            }
             Button("Edit this campaign...") { edit(campaigns.selected) }
             Button("New campaign...") { edit(Campaign()) }
         } label: {
@@ -325,6 +347,30 @@ struct CoachView: View {
         .fixedSize()
         .disabled(coach.status != .ready)
         .help(coach.status == .ready ? "Choose or edit a campaign" : "Finish the call to switch campaigns")
+    }
+
+    /// Switches campaign (its script) and opens its Salesforce list in Chrome, so the app works that list.
+    private func switchTo(_ campaign: Campaign) {
+        campaigns.selectedID = campaign.id
+        coach.listDone = false
+        openList(of: campaign)
+    }
+
+    private func openList(of campaign: Campaign) {
+        guard !campaign.listViewID.isEmpty, !campaign.listObject.isEmpty else { return }
+        let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } }
+            ?? Keychain.read(.sfInstance) ?? ""
+        guard !origin.isEmpty else { return }
+        _ = SalesforceChrome.open("\(origin)/lightning/o/\(campaign.listObject)/list?filterName=\(campaign.listViewID)")
+        ActivityLog.add("Campaign: \(campaign.name), list \(campaign.listName)")
+    }
+
+    /// The campaign after this one that has a list (the next list to work today).
+    private var nextCampaign: Campaign? {
+        let all = campaigns.campaigns
+        guard let i = all.firstIndex(where: { $0.id == campaigns.selected.id }) else { return nil }
+        let after = all[(i + 1)...] + all[..<i]
+        return after.first { !$0.listViewID.isEmpty }
     }
 
     private func edit(_ campaign: Campaign) {
@@ -696,7 +742,23 @@ struct CoachView: View {
     /// One message above the buttons at a time, the most important first:
     /// a call problem, the countdown, "send the text", then why Next can't move on.
     @ViewBuilder private var bottomBanner: some View {
-        if let message = coach.callMessage {
+        if coach.listDone && coach.status == .ready {
+            let calledHere = coach.callList.records.filter { coach.callList.calledToday.contains($0.id) }.count
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(campaigns.selected.name) list done for today").font(.callout.weight(.semibold))
+                Text("\(calledHere) people called on this list today.").font(.caption).foregroundStyle(.secondary)
+                if let next = nextCampaign {
+                    Button("Start next list: \(next.name)") { switchTo(next) }
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Text("Pick another campaign at the top, or link a list to one (campaign menu).")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        } else if let message = coach.callMessage {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                 Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)

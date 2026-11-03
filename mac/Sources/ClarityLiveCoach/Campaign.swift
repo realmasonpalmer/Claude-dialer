@@ -21,6 +21,10 @@ struct Campaign: Codable, Identifiable, Equatable {
     var exit = ""
     /// Goes up each time a Script Lab suggestion is applied, so results can be compared by version.
     var version = 1
+    /// The Salesforce list view this campaign calls (its audience). Empty = whatever list is open in Chrome.
+    var listObject = ""
+    var listViewID = ""
+    var listName = ""
 
     init(id: UUID = UUID(), name: String = "New campaign", objective: String = "", pastedScript: String = "",
          company: String = "", offer: String = "", idealCustomer: String = "", persona: String = "",
@@ -45,6 +49,7 @@ struct Campaign: Codable, Identifiable, Equatable {
         objections = text(.objections); transitions = text(.transitions); closing = text(.closing)
         success = text(.success); exit = text(.exit)
         version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1
+        listObject = text(.listObject); listViewID = text(.listViewID); listName = text(.listName)
     }
 
     /// The sections, in the order the editor and the prompt show them.

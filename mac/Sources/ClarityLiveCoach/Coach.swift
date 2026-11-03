@@ -620,7 +620,8 @@ final class CoachModel: ObservableObject {
             if more, self.openNextInChrome(), dialNow {
                 self.dialFromSalesforcePage(expecting: self.callList.lastOpenedID)
             } else if !more {
-                self.callMessage = "Everyone on this Salesforce list has been called today. Open another list view, or scroll it down so more people load."
+                self.listDone = true // the banner offers the next campaign's list
+                ActivityLog.add("List done for today: \(self.campaign.name)")
             }
         }
     }
@@ -633,6 +634,7 @@ final class CoachModel: ObservableObject {
             return false
         }
         callMessage = nil
+        listDone = false
         let upcoming = callList.records.first { $0.id == callList.lastOpenedID }?.name
         // Show their opener now, before the page loads and before the phone rings.
         let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
@@ -668,7 +670,10 @@ final class CoachModel: ObservableObject {
             if autoDial { startAutoNext() } else { nextLead(dial: false) }
             return
         }
-        guard openNextInChrome() else { return }
+        guard openNextInChrome() else {
+            nextLead(dial: autoDial) // loads more of the list, or says the list is done
+            return
+        }
         if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 3) }
     }
 
@@ -946,8 +951,11 @@ final class CoachModel: ObservableObject {
     }
 
     func use(_ next: Campaign) {
+        touchpoints.currentCampaign = next.name
         guard next != campaign else { return }
         campaign = next
+        touchpoints.currentCampaign = next.name
+        listDone = false
         system = CoachPrompt.system(for: next)
         if status == .ready { prepareOpener() }
     }
@@ -1608,6 +1616,9 @@ final class CoachModel: ObservableObject {
         "followUp=\(followUp?.prospect ?? "none") autoDial=\(autoDial) attempts=\(currentAttempts) " +
         "salesforce=\(Salesforce.isConnected) aircall=\(Aircall.canPlaceCalls)"
     }
+
+    /// Everyone due today on this list has been called: time to switch to the next list.
+    @Published var listDone = false
 
     /// Who the countdown is for.
     @Published private(set) var autoNextName: String?
