@@ -192,7 +192,7 @@ struct CoachView: View {
             }
             scriptCard
             belowCard
-            if coach.statusRecordID != nil && coach.status == .ready {
+            if coach.statusRecordID != nil { // stays up during calls too, with the LinkedIn and text cards
                 RelationshipCard(coach: coach)
                     .id(coach.statusRecordID) // a fresh card per person: nothing picked carries over
             }
