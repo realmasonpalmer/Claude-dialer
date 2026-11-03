@@ -103,13 +103,27 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
 
     // MARK: Call audio from the page
 
+    /// True if a 16-bit chunk has more than near-silence in it.
+    private static func hasSound(_ pcm: Data) -> Bool {
+        pcm.withUnsafeBytes { raw in
+            let samples = raw.bindMemory(to: Int16.self)
+            guard !samples.isEmpty else { return false }
+            var peak: Int32 = 0
+            for s in samples { peak = max(peak, abs(Int32(s))) }
+            return peak > 300 // about -40 dB
+        }
+    }
+
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let side = body["side"] as? String,
               let payload = body["pcm"] as? String else { return }
         switch side {
         case "remote", "local":
             guard let pcm = Data(base64Encoded: payload) else { return }
-            if side == "remote" { lastRemoteAudio = Date() } else { lastLocalAudio = Date() }
+            // Only count real sound: silent chunks mean the page isn't really sharing the call.
+            if Self.hasSound(pcm) {
+                if side == "remote" { lastRemoteAudio = Date() } else { lastLocalAudio = Date() }
+            }
             onAudio?(side == "local", pcm)
         default:
             ActivityLog.add("Aircall phone audio: \(payload)")

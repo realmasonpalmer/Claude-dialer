@@ -1387,15 +1387,21 @@ final class CoachModel: ObservableObject {
             let startedAt = Date()
             directCheck?.cancel()
             directCheck = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(4))
-                guard let self, !Task.isCancelled, self.status == .live, self.directAudio else { return }
-                if phone.lastRemoteAudio < startedAt {
-                    // Nothing from the phone (call made elsewhere?): listen the old way.
+                // Check at 4 s and again at 8 s: the other side must have real sound by then
+                // (ringback or a voicemail greeting), or the phone isn't sharing the call: use the tap.
+                for checkAt in [4.0, 8.0] {
+                    try? await Task.sleep(for: .seconds(4))
+                    guard let self, !Task.isCancelled, self.status == .live, self.directAudio else { return }
+                    if phone.lastRemoteAudio > startedAt { break }
+                    if checkAt < 8 { continue }
                     phone.onAudio = nil
                     self.directAudio = false
-                    ActivityLog.add("No audio from the Aircall phone; using the audio tap")
+                    ActivityLog.problem("No sound from the Aircall phone after 8 s; using the audio tap")
                     if !self.startTap() { self.stopAudio() }
-                } else if phone.lastLocalAudio < startedAt {
+                    return
+                }
+                guard let self, !Task.isCancelled, self.status == .live, self.directAudio else { return }
+                if phone.lastLocalAudio < startedAt {
                     // The other side comes through, the rep's mic doesn't: add the Mac's mic.
                     phone.onAudio = { isRep, pcm in if !isRep { streams.send(pcm, isRep: false) } }
                     do {
