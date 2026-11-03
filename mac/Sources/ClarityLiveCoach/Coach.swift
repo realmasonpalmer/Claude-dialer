@@ -1333,6 +1333,9 @@ final class CoachModel: ObservableObject {
         if leads.isActive {
             applyLead()
         } else {
+            // The call is over: the voicemail (or any mid-call line) goes away and a fresh
+            // "when they pick up" opener shows right away, ready for the redial.
+            prepareOpener()
             // Read Chrome a moment later, not while Aircall plays the hang-up tone.
             afterHangUp { [weak self] in self?.syncRecord() } // same person: keep their ready voicemail
         }
