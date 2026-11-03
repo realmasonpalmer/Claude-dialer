@@ -39,8 +39,17 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       if (window.__clarityHooked) return; window.__clarityHooked = true;
       var post = function (m) { try { window.webkit.messageHandlers.clarityAudio.postMessage(m); } catch (e) {} };
       var ctx = null;
+      // One feed per side. A new call's audio replaces the old one, so old calls' silence
+      // never gets mixed into the new call.
+      var active = { remote: null, local: null };
+      function stop(side) {
+        var a = active[side]; if (!a) return;
+        try { a.node.onaudioprocess = null; a.src.disconnect(); a.node.disconnect(); a.silent.disconnect(); } catch (e) {}
+        active[side] = null;
+      }
       function pump(stream, side) {
         try {
+          stop(side);
           if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
           if (ctx.state === 'suspended') ctx.resume();
           var src = ctx.createMediaStreamSource(stream);
@@ -57,6 +66,12 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
           };
           var silent = ctx.createGain(); silent.gain.value = 0;
           src.connect(node); node.connect(silent); silent.connect(ctx.destination);
+          var mine = { src: src, node: node, silent: silent };
+          active[side] = mine;
+          // The call ended: stop this feed.
+          stream.getAudioTracks().forEach(function (t) {
+            t.addEventListener('ended', function () { if (active[side] === mine) stop(side); });
+          });
         } catch (err) { post({ side: 'error', pcm: String(err) }); }
       }
       var Orig = window.RTCPeerConnection;

@@ -399,7 +399,7 @@ enum SalesforceChrome {
             + "var h=a.href||'',p=h.indexOf('/lightning/r/');if(p<0)continue;"
             + "var parts=h.substring(p+13).split('/');"
             + "var id=(parts.length>2&&parts[2].indexOf('view')==0)?parts[1]:parts[0];"
-            + "var name=(a.textContent||'').trim();"
+            + "var name=((a.getAttribute('title')||a.innerText||a.textContent||'').split(String.fromCharCode(10))[0]||'').trim();"
             + "if(!name||seen[id])continue;"
             + "if(id.indexOf('00Q')!=0&&id.indexOf('003')!=0)continue;"
             + "seen[id]=1;out.push({id:id,name:name,url:h});}"

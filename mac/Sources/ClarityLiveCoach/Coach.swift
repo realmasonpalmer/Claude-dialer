@@ -1851,7 +1851,8 @@ final class CoachModel: ObservableObject {
             do {
                 try await client.stream(system: system, user: user) { text = $0 }
             } catch {
-                if !(error is CancellationError) {
+                let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
+                if !cancelled {
                     ActivityLog.problem("Voicemail failed for \(forWho ?? "?"): \(error.localizedDescription)")
                     self?.lastVoicemailError = error.localizedDescription
                     // Let the next try (or the voicemail card) write it again.
