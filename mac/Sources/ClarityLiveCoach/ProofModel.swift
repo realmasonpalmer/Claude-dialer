@@ -289,6 +289,19 @@ final class CaptureEngine {
         }
     }
 
+    /// Only the rep's mic (the call side comes straight from the Aircall phone).
+    func startMicOnly(onChunk: @escaping (Bool, AVAudioPCMBuffer) -> Void) throws {
+        let micConverter = self.micConverter, writers = self.writers
+        let useBuiltIn = UserDefaults.standard.object(forKey: "coachBuiltInMic") as? Bool ?? true
+        let onMic: (AVAudioPCMBuffer) -> Void = { buffer in
+            guard let speech = micConverter.convert(buffer) else { return }
+            writers.write(speech, isRep: true)
+            onChunk(true, speech)
+        }
+        if useBuiltIn, let builtIn = builtInMicrophoneID(), (try? mic.start(device: builtIn, onBuffer: onMic)) != nil { return }
+        try mic.start(device: nil, onBuffer: onMic)
+    }
+
     /// Switches the call side to other processes (Aircall's audio showed up after listening began).
     /// The mic keeps running.
     func retargetTap(processes: [AudioObjectID]) throws {

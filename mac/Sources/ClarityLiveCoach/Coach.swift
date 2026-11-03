@@ -1360,13 +1360,59 @@ final class CoachModel: ObservableObject {
             problem = "Add your Deepgram key: gear > Setup > AI keys."
             return false
         }
+        streams.set(rep: openStream(.rep, key: deepgramKey), prospect: openStream(.prospect, key: deepgramKey))
+
+        // The Aircall phone inside the coach hands over the call audio itself: no Core Audio tap,
+        // so nothing glitches (like the hang-up tone). If it doesn't within 4 s, use the tap.
+        if AircallPhone.isOn {
+            let streams = self.streams
+            let phone = AircallPhone.shared
+            phone.onAudio = { isRep, pcm in streams.send(pcm, isRep: isRep) }
+            directAudio = true
+            ActivityLog.add("Listening straight from the Aircall phone")
+            let startedAt = Date()
+            directCheck?.cancel()
+            directCheck = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, !Task.isCancelled, self.status == .live, self.directAudio else { return }
+                if phone.lastRemoteAudio < startedAt {
+                    // Nothing from the phone (call made elsewhere?): listen the old way.
+                    phone.onAudio = nil
+                    self.directAudio = false
+                    ActivityLog.add("No audio from the Aircall phone; using the audio tap")
+                    if !self.startTap() { self.stopAudio() }
+                } else if phone.lastLocalAudio < startedAt {
+                    // The other side comes through, the rep's mic doesn't: add the Mac's mic.
+                    phone.onAudio = { isRep, pcm in if !isRep { streams.send(pcm, isRep: false) } }
+                    do {
+                        try self.capture.startMicOnly { isRep, speech in
+                            guard let samples = speech.int16ChannelData?[0] else { return }
+                            streams.send(Data(bytes: samples, count: Int(speech.frameLength) * 2), isRep: true)
+                        }
+                        ActivityLog.add("Rep's side: Mac mic (the phone didn't share it)")
+                    } catch {
+                        ActivityLog.problem("Mic failed: \(error.localizedDescription)")
+                    }
+                } else {
+                    ActivityLog.add("Hearing both sides straight from the Aircall phone")
+                }
+            }
+            return true
+        }
+        return startTap()
+    }
+
+    private var directAudio = false
+    private var directCheck: Task<Void, Never>?
+
+    /// The old way: a Core Audio tap on the call app's sound, plus the mic.
+    private func startTap() -> Bool {
         let chrome = AudioProcess.callAudioTargets(in: AudioProcess.others())
         guard !chrome.isEmpty else {
             callMessage = "Can't hear the call yet. Open the Aircall app (or Aircall in Chrome) and start the call."
             ActivityLog.problem("Listening failed: no Aircall or Chrome audio found")
             return false
         }
-        streams.set(rep: openStream(.rep, key: deepgramKey), prospect: openStream(.prospect, key: deepgramKey))
         do {
             let streams = self.streams
             try capture.start(processes: chrome) { isRep, speech in
@@ -1395,6 +1441,7 @@ final class CoachModel: ObservableObject {
     /// Listening starts a second after dialing, sometimes before Aircall's call audio exists.
     /// Once Aircall is clearly on the call, make sure that's what the app listens to.
     private func followCallAudio() {
+        guard !directAudio else { return } // the phone hands over its audio itself
         let processes = AudioProcess.others()
         guard AudioProcess.aircallAppOnCall(in: processes) || AudioProcess.chromeOnCall(in: processes) else { return }
         let targets = AudioProcess.callAudioTargets(in: processes)
@@ -1410,6 +1457,9 @@ final class CoachModel: ObservableObject {
     }
 
     private func stopAudio() {
+        AircallPhone.shared.onAudio = nil
+        directCheck?.cancel()
+        directAudio = false
         streams.closeAll()
         pendingStop?.cancel()
         pendingStop = Task { [weak self] in

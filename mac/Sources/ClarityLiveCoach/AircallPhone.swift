@@ -6,7 +6,7 @@ import WebKit
 /// rings out here. No Aircall desktop app and no Aircall panel in Chrome needed.
 /// Calls are real Aircall calls, so they log to Salesforce like always.
 @MainActor
-final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigationDelegate {
+final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     static let shared = AircallPhone()
     nonisolated static let address = URL(string: "https://workspace.aircall.io")!
 
@@ -25,8 +25,70 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
     let webView: WKWebView
     private var popups: [NSWindow] = []
 
+    /// Call audio straight from the phone (16 kHz mono 16-bit): isRep = the rep's mic, false = the prospect.
+    /// Set by the coach while it listens. No Core Audio tap needed, so nothing glitches.
+    var onAudio: ((_ isRep: Bool, _ pcm: Data) -> Void)?
+    /// When audio last came straight from the phone, per side.
+    private(set) var lastRemoteAudio = Date.distantPast
+    private(set) var lastLocalAudio = Date.distantPast
+
+    /// Runs inside the Aircall page before it loads: copies the call's audio (the other person's
+    /// side from the WebRTC call, the rep's side from the mic) and hands it to the app.
+    private static let audioHook = """
+    (function () {
+      if (window.__clarityHooked) return; window.__clarityHooked = true;
+      var post = function (m) { try { window.webkit.messageHandlers.clarityAudio.postMessage(m); } catch (e) {} };
+      var ctx = null;
+      function pump(stream, side) {
+        try {
+          if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (ctx.state === 'suspended') ctx.resume();
+          var src = ctx.createMediaStreamSource(stream);
+          var node = ctx.createScriptProcessor(4096, 1, 1);
+          var ratio = ctx.sampleRate / 16000;
+          node.onaudioprocess = function (e) {
+            var input = e.inputBuffer.getChannelData(0);
+            var n = Math.floor(input.length / ratio);
+            var out = new Int16Array(n);
+            for (var i = 0; i < n; i++) { var v = input[Math.floor(i * ratio)]; v = v < -1 ? -1 : (v > 1 ? 1 : v); out[i] = v * 32767; }
+            var bytes = new Uint8Array(out.buffer), bin = '';
+            for (var j = 0; j < bytes.length; j++) bin += String.fromCharCode(bytes[j]);
+            post({ side: side, pcm: btoa(bin) });
+          };
+          var silent = ctx.createGain(); silent.gain.value = 0;
+          src.connect(node); node.connect(silent); silent.connect(ctx.destination);
+        } catch (err) { post({ side: 'error', pcm: String(err) }); }
+      }
+      var Orig = window.RTCPeerConnection;
+      if (Orig) {
+        var Hooked = function (a, b) {
+          var pc = new Orig(a, b);
+          pc.addEventListener('track', function (ev) {
+            if (ev.track && ev.track.kind === 'audio') pump(ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]), 'remote');
+          });
+          return pc;
+        };
+        Hooked.prototype = Orig.prototype;
+        Object.setPrototypeOf(Hooked, Orig);
+        window.RTCPeerConnection = Hooked;
+      }
+      var md = navigator.mediaDevices;
+      if (md && md.getUserMedia) {
+        var gum = md.getUserMedia.bind(md);
+        md.getUserMedia = function (c) {
+          return gum(c).then(function (stream) {
+            if (stream.getAudioTracks().length) pump(stream, 'local');
+            return stream;
+          });
+        };
+      }
+    })();
+    """
+
     override init() {
         let config = WKWebViewConfiguration()
+        config.userContentController.addUserScript(
+            WKUserScript(source: Self.audioHook, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.websiteDataStore = .default() // stays signed in between launches
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
@@ -36,6 +98,22 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
         super.init()
         webView.uiDelegate = self
         webView.navigationDelegate = self
+        config.userContentController.add(self, name: "clarityAudio")
+    }
+
+    // MARK: Call audio from the page
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let side = body["side"] as? String,
+              let payload = body["pcm"] as? String else { return }
+        switch side {
+        case "remote", "local":
+            guard let pcm = Data(base64Encoded: payload) else { return }
+            if side == "remote" { lastRemoteAudio = Date() } else { lastLocalAudio = Date() }
+            onAudio?(side == "local", pcm)
+        default:
+            ActivityLog.add("Aircall phone audio: \(payload)")
+        }
     }
 
     /// Loads the phone once, when the coach opens.
