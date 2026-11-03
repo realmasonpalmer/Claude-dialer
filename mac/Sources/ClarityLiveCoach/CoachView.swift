@@ -244,7 +244,11 @@ struct CoachView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await updater.check() }
         }
-        .onChange(of: campaigns.selected) { coach.use(campaigns.selected) }
+        .onChange(of: campaigns.selected) { old, new in
+            coach.use(new)
+            // A different campaign, or its list changed in the editor: open that list in Chrome.
+            if old.id != new.id || old.listViewID != new.listViewID { openList(of: new) }
+        }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
             SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
@@ -316,28 +320,6 @@ struct CoachView: View {
                 }
             }
             Divider()
-            if Salesforce.isConnected {
-                Menu(campaigns.selected.listName.isEmpty ? "Pick this campaign's Salesforce list..." : "List: \(campaigns.selected.listName)") {
-                    ForEach(coach.leads.views) { view in
-                        Button(view.title) {
-                            var c = campaigns.selected
-                            c.listObject = view.object
-                            c.listViewID = view.id
-                            c.listName = view.label
-                            campaigns.save(c)
-                            openList(of: c)
-                        }
-                    }
-                    if !campaigns.selected.listViewID.isEmpty {
-                        Divider()
-                        Button("No list (use whatever list is open in Chrome)") {
-                            var c = campaigns.selected
-                            c.listObject = ""; c.listViewID = ""; c.listName = ""
-                            campaigns.save(c)
-                        }
-                    }
-                }
-            }
             Button("Edit this campaign...") { edit(campaigns.selected) }
             Button("New campaign...") { edit(Campaign()) }
         } label: {
@@ -351,9 +333,8 @@ struct CoachView: View {
 
     /// Switches campaign (its script) and opens its Salesforce list in Chrome, so the app works that list.
     private func switchTo(_ campaign: Campaign) {
-        campaigns.selectedID = campaign.id
+        campaigns.selectedID = campaign.id // its list opens via onChange below
         coach.listDone = false
-        openList(of: campaign)
     }
 
     private func openList(of campaign: Campaign) {
