@@ -179,12 +179,21 @@ enum CoachPrompt {
         No pitch, no hype, no email.
         CUE: one short delivery tip. STAGE: Voicemail.
         Then add three more lines:
-        TEXT: <the text message to send right after. Under 25 words. Rep's name and company, the same one reason,
-        and one easy yes/no question.>
+        TEXT: <the text message to send right after. Under 30 words. Sounds like a real person texting, not marketing.
+        Rep's first name and company, then one specific problem firms like theirs have (tied to their role or company),
+        then one easy yes/no question about THEIR situation (e.g. "Is that still a headache for your team?").>
         LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Says the rep just tried calling,
         gives the same specific reason, no pitch, no links, no emojis.>
         LINKEDIN MESSAGE: <a LinkedIn direct message, for when they're already connected. Under 400 characters.
         Says the rep just tried calling, gives the same specific reason, one easy question. No links, no emojis.>
+        Rules for the voicemail, TEXT and both LinkedIn lines:
+        - Never name anyone they haven't met (no "Oliver", no "my partner", no "our team lead"). They only know the rep.
+        - Don't ask for a meeting, a call length or a day in a first touch. Ask about their situation instead.
+          Only after earlier texts or voicemails (see the history) can a later one offer a short call, and then as
+          a simple question ("Worth a quick chat?"), still without naming anyone else.
+        - One idea per message. No jargon, no "quick look at yours", no hype.
+        Good TEXT example: "Hi Eric, Mason with Clarity. Just tried you. A lot of tax firms still retype new client
+        info into 3 or 4 systems. Is that true for your team too?"
         """
     }
 
