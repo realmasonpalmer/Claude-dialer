@@ -9,6 +9,9 @@ struct CampaignEditorView: View {
     @State private var organizing = false
     @State private var message: String?
     @State private var showSections = false
+    /// Salesforce list views to pick this campaign's audience from.
+    @State private var listViews: [Salesforce.ListView] = []
+    @State private var loadingLists = false
 
     private var isNew: Bool { !store.campaigns.contains { $0.id == draft.id } }
 
@@ -45,6 +48,43 @@ struct CampaignEditorView: View {
             field("Campaign name", text: $draft.name, placeholder: "e.g. Q4 RevOps outreach")
             field("Goal of these calls", text: $draft.objective,
                   placeholder: "e.g. Book a 30 minute meeting, or transfer to Mason")
+            listPicker
+        }
+    }
+
+    /// Who this campaign calls: a Salesforce list view. Picking the campaign opens this list.
+    private var listPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Salesforce list to call").font(.headline)
+            if !Salesforce.isConnected {
+                Text("Sign in to Salesforce first (gear > Setup > Salesforce), then pick the list here.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else if loadingLists && listViews.isEmpty {
+                ProgressView().controlSize(.small)
+            } else {
+                Picker("", selection: Binding(
+                    get: { draft.listViewID },
+                    set: { id in
+                        if let v = listViews.first(where: { $0.id == id }) {
+                            draft.listViewID = v.id; draft.listObject = v.object; draft.listName = v.label
+                        } else {
+                            draft.listViewID = ""; draft.listObject = ""; draft.listName = ""
+                        }
+                    }
+                )) {
+                    Text("None (use whatever list is open in Chrome)").tag("")
+                    ForEach(listViews) { Text($0.title).tag($0.id) }
+                }
+                .labelsHidden()
+                Text("Picking this campaign opens this list in Chrome and calls everyone on it who's due today.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .task {
+            guard Salesforce.isConnected, listViews.isEmpty else { return }
+            loadingLists = true
+            listViews = (try? await Salesforce.listViews()) ?? []
+            loadingLists = false
         }
     }
 
