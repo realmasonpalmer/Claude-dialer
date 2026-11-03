@@ -411,7 +411,9 @@ final class CoachModel: ObservableObject {
     func refreshRelationship() {
         let id: String? = leads.isActive ? leads.details?.id : SalesforceChrome.url().flatMap(CallList.recordID)
         let usable = id.flatMap { Salesforce.objectFor(id: $0) == nil ? nil : $0 }
-        guard usable != statusRecordID else { return }
+        // No record on screen (LinkedIn opened, a list page, Chrome busy): keep the last person.
+        // Only a different person's record switches the status card.
+        guard usable != nil, usable != statusRecordID else { return }
         statusRecordID = usable
         recordStatus = nil
         statusMessage = nil
@@ -987,7 +989,10 @@ final class CoachModel: ObservableObject {
         }
         let record = SalesforceTab.currentRecord()
         refreshRelationship()
-        guard record != calling || (detailsPending && record != nil) else { return }
+        // Nothing on screen (LinkedIn opened, a list page): keep everything for the last person,
+        // so the status, LinkedIn and text cards stay up. Only a different person switches them.
+        guard record != nil else { return }
+        guard record != calling || detailsPending else { return }
         if record != calling { ActivityLog.add("Record on screen: \(record ?? "none") (was \(calling ?? "none"))") }
         detailsPending = false
         calling = record
@@ -998,7 +1003,7 @@ final class CoachModel: ObservableObject {
         prepareOpener()
         prepareVoicemail() // right away for this person; again with details below
         // Their text and LinkedIn card is always up while their record is open.
-        if record != nil { startFollowUp() } else { followUp = nil }
+        startFollowUp()
         // Salesforce fills in the page after the title changes: read the details a moment later.
         detailsTask?.cancel()
         let pageID = SalesforceChrome.url().flatMap(CallList.recordID)
