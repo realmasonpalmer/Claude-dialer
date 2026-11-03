@@ -467,6 +467,7 @@ final class CoachModel: ObservableObject {
         recordDetails = d.promptText
         prepareOpener()
         prepareVoicemail()
+        startFollowUp()
         refreshRelationship()
     }
 
@@ -959,6 +960,8 @@ final class CoachModel: ObservableObject {
         personalOpenerFor = nil
         prepareOpener()
         prepareVoicemail() // right away for this person; again with details below
+        // Their text and LinkedIn card is always up while their record is open.
+        if record != nil { startFollowUp() } else { followUp = nil }
         // Salesforce fills in the page after the title changes: read the details a moment later.
         detailsTask?.cancel()
         let pageID = SalesforceChrome.url().flatMap(CallList.recordID)
@@ -968,6 +971,12 @@ final class CoachModel: ObservableObject {
                   SalesforceChrome.url().flatMap(CallList.recordID) == pageID else { return }
             self.recordDetails = SalesforceTab.pageText()
             self.detailsTried = true
+            // Fill in the card's phone and LinkedIn link now that the page is loaded.
+            if var f = self.followUp, f.key == self.recordKey() {
+                if f.phone.isEmpty { f.phone = Aircall.phone(in: self.recordDetails) ?? SalesforceChrome.mobileNumber() ?? "" }
+                if f.linkedinURL == nil { f.linkedinURL = Self.linkedInProfile(details: self.recordDetails) }
+                self.followUp = f
+            }
             ActivityLog.add("Page details for \(record ?? "?"): \(self.recordDetails == nil ? "couldn't read (Chrome setting?)" : "read")")
             if self.recordDetails != nil, self.status == .ready { self.prepareOpener() }
             self.prepareVoicemail()
@@ -1653,12 +1662,14 @@ final class CoachModel: ObservableObject {
     private var followUpThisCall = false
 
     /// Fills in the text and LinkedIn note. The rep sends each one with a button.
-    private func fillFollowUp(from s: Suggestion) {
+    /// - Parameter replace: a better version (written from their Salesforce page) replaces
+    ///   anything not sent yet.
+    private func fillFollowUp(from s: Suggestion, replace: Bool = false) {
         // Only into the card of the person this voicemail was written for.
-        guard followUpThisCall, var f = followUp, f.key == nil || voicemailKey == nil || f.key == voicemailKey else { return }
-        if f.text.isEmpty { f.text = s.textMessage }
-        if f.linkedin.isEmpty { f.linkedin = s.linkedin }
-        if f.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
+        guard var f = followUp, f.key == nil || voicemailKey == nil || f.key == voicemailKey else { return }
+        if (f.text.isEmpty || (replace && !f.textDone)), !s.textMessage.isEmpty { f.text = s.textMessage }
+        if (f.linkedin.isEmpty || (replace && !f.linkedinDone)), !s.linkedin.isEmpty { f.linkedin = s.linkedin }
+        if (f.linkedinMessage.isEmpty || (replace && !f.linkedinMessageDone)), !s.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
         followUp = f
     }
 
@@ -1776,7 +1787,7 @@ final class CoachModel: ObservableObject {
                 ActivityLog.add("Voicemail ready for \(forWho ?? "?") (from page: \(usedDetails))")
                 self?.voicemailUsedDetails = usedDetails
                 self?.voicemailScript = s
-                if self?.voicemailActive == true { self?.fillFollowUp(from: s) }
+                self?.fillFollowUp(from: s, replace: usedDetails) // the card is always up for the person on screen
             }
             if !Task.isCancelled { self?.voicemailTask = nil }
         }
