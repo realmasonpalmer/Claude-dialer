@@ -426,9 +426,26 @@ final class CoachModel: ObservableObject {
         if RemovedList.contains(usable) || DialHistory.isMaxed(usable) { skipRemoved(usable); return }
         guard Salesforce.isConnected else { return }
         Task { [weak self] in
-            let value = try? await Salesforce.status(of: usable)
+            // Only act on a real answer from Salesforce (an error is not "blank").
+            let loaded: String?
+            do { loaded = try await Salesforce.status(of: usable) } catch { return }
             guard let self, self.statusRecordID == usable else { return }
-            self.recordStatus = value ?? nil
+            let value = loaded?.trimmingCharacters(in: .whitespaces)
+            if (value ?? "").isEmpty {
+                // A Contact with no Relationship Status yet: set it to No Relationship.
+                if Salesforce.objectFor(id: usable) == "Contact" {
+                    self.recordStatus = "No Relationship"
+                    do {
+                        try await Salesforce.setStatus(of: usable, to: "No Relationship")
+                        ActivityLog.add("Status: blank, saved No Relationship for \(self.calling ?? usable)")
+                    } catch {
+                        if self.statusRecordID == usable { self.recordStatus = nil }
+                        ActivityLog.problem("Couldn't set No Relationship: \(error.localizedDescription)")
+                    }
+                }
+                return
+            }
+            self.recordStatus = value
             if let value, Salesforce.removedStatuses.contains(value) {
                 RemovedList.add(usable)
                 self.skipRemoved(usable)
