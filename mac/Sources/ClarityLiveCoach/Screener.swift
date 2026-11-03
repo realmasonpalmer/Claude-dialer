@@ -104,6 +104,14 @@ enum BadNumber {
         "not a valid number", "invalid number", "number is invalid", "number you have dialed is not",
         "number you dialed is not", "has been changed", "temporarily out of service", "is not available for calls",
         "does not accept calls", "is restricted", "not accepting calls at this time",
+        // "Can't receive calls" and other carrier refusals
+        "cannot receive calls", "can't receive calls", "can not receive calls", "unable to receive calls",
+        "not able to receive calls", "is not able to receive", "cannot accept calls", "can't accept calls",
+        "is not accepting calls", "not accepting incoming calls", "calling restrictions", "has restricted",
+        "has been restricted", "no longer available", "cannot be reached", "can't be reached",
+        "is not reachable at this", "call cannot be completed at this time", "your call cannot be completed",
+        "your call could not be completed", "not been completed", "has been suspended", "is suspended",
+        "number has been disconnected", "is no longer a working", "not a valid phone number",
     ]
 
     static func detects(_ text: String) -> Bool {

@@ -1092,6 +1092,7 @@ final class CoachModel: ObservableObject {
         ActivityLog.add("Call ended: \(calling ?? "?") after \(Int(Date().timeIntervalSince(callStartedAt))) s. voicemail=\(sawVoicemail) theySpoke=\(turns.contains(where: { $0.speaker == .prospect })) bad=\(badNumberThisCall)")
         if quickFail, let key = currentAttemptKey {
             let fails = DialHistory.logFailedConnect(key)
+            if fails >= 2 { markNotQualityProspect(key, reason: "didn't connect twice") }
             nextCall()
             waitingForNewCall = true
             endedAt = Date()
@@ -1694,10 +1695,31 @@ final class CoachModel: ObservableObject {
         voicemailActive = false
         sawVoicemail = false
         followUp = nil
-        if let key = currentAttemptKey { DialHistory.markBadNumber(key) }
+        if let key = currentAttemptKey { markNotQualityProspect(key, reason: "carrier says the number can't take calls") }
         seq += 1
         show(Suggestion(say: "Bad number. Hang up. The next call starts by itself.", cue: "The carrier says this number doesn't work.",
                         stage: "Exit", sayComplete: true), id: seq, kind: .reply)
+    }
+
+    /// Bad number: off the call list for good (in the app), and marked in Salesforce as
+    /// Not Quality Prospect (Contacts) or Unqualified (Leads). Nothing is deleted in Salesforce.
+    private func markNotQualityProspect(_ id: String, reason: String) {
+        DialHistory.markBadNumber(id)
+        RemovedList.add(id)
+        callList.refreshUpNext()
+        guard let object = Salesforce.objectFor(id: id) else { return }
+        let value = object == "Lead" ? "Unqualified" : "Not Quality Prospect"
+        ActivityLog.add("Bad number (\(reason)): \(calling ?? id) taken off the list, marking \(value)")
+        guard Salesforce.isConnected else { return }
+        Task { [weak self] in
+            do {
+                try await Salesforce.setStatus(of: id, to: value)
+                ActivityLog.add("Status: saved \(value) (bad number)")
+                if self?.statusRecordID == id { self?.recordStatus = value }
+            } catch {
+                ActivityLog.problem("Couldn't mark the bad number in Salesforce: \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Instant voicemail card: the script written before the call, or "mailbox full, move on".
