@@ -132,6 +132,10 @@ enum DialHistory {
         }
         var lines: [String] = []
         if !p.dials.isEmpty { lines.append("Calls so far: \(p.dials.count) (first \(when(p.dials.first))).") }
+        if maxDials > 0 {
+            let left = max(maxDials - p.dials.count, 0)
+            lines.append(left > 0 ? "Calls left before the rep stops trying: \(left) (about 2 a day)." : "This is the rep's last call to them.")
+        }
         if !p.voicemails.isEmpty {
             lines.append("Voicemails already left: \(p.voicemails.count), latest \(when(p.voicemails.last)).")
             for v in p.voicemailBodies.suffix(3) { lines.append("  Earlier voicemail: \(v)") }

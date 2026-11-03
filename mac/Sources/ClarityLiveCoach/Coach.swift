@@ -184,9 +184,12 @@ enum CoachPrompt {
         No pitch, no hype, no email.
         CUE: one short delivery tip. STAGE: Voicemail.
         Then add three more lines:
-        TEXT: <the text message to send right after. Under 30 words. Sounds like a real person texting, not marketing.
+        TEXT: <the text message to send right after. Under 40 words. Sounds like a real person texting, not marketing.
         Rep's first name and company, then one specific problem firms like theirs have (tied to their role or company),
-        then one easy yes/no question about THEIR situation (e.g. "Is that still a headache for your team?").>
+        then one easy yes/no question about THEIR situation (e.g. "Is that still a headache for your team?"),
+        then one short line saying what happens next, so they know they'll hear from the rep again. Make it true to
+        the history: calls left = "I'll try you again tomorrow if I don't hear back." or "I'll send you a note on
+        LinkedIn too."; last call = "I won't keep calling. Reach out anytime." Vary the wording each time.>
         LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Says the rep just tried calling,
         gives the same specific reason, no pitch, no links, no emojis.>
         LINKEDIN MESSAGE: <a LinkedIn direct message, for when they're already connected. Under 400 characters.
@@ -2102,11 +2105,11 @@ final class CoachModel: ObservableObject {
         s.stage = "Voicemail"
         s.sayComplete = true
         let texts = [
-            "Hi \(first), \(me) with \(shortCompany). Just tried you. Does your team lose time retyping the same info across systems? Yes or no is fine.",
-            "Hi \(first), \(me) again from \(shortCompany). Quick one: is getting call notes into your CRM a headache for your team right now?",
-            "\(first), \(me) at \(shortCompany). Tried you once more. Worth a 15 minute look at cutting double data entry, or not a priority?",
-            "Hi \(first), \(me) from \(shortCompany). Still worth a quick chat about saving your team admin time, or should I check back next quarter?",
-            "\(first), last note from me (\(me), \(shortCompany)). Should I stop reaching out, or is there a better time to talk?",
+            "Hi \(first), \(me) with \(shortCompany). Just tried you. Does your team lose time retyping the same info across systems? I'll try you again tomorrow if I don't hear back.",
+            "Hi \(first), \(me) again from \(shortCompany). Quick one: is getting call notes into your CRM a headache for your team? I'll send you a note on LinkedIn too.",
+            "\(first), \(me) at \(shortCompany). Tried you once more. Is cutting double data entry on your list this year, or not a priority? I'll give you one more try this week.",
+            "Hi \(first), \(me) from \(shortCompany). Still worth a quick chat about saving your team admin time? If now's busy, I'll check back next week.",
+            "\(first), last note from me (\(me), \(shortCompany)). I won't keep calling. If cutting admin time ever comes up, reach out anytime.",
         ]
         let sentBefore = recordKey().map { DialHistory.sentTexts($0).count } ?? 0
         s.textMessage = texts[sentBefore % texts.count]
