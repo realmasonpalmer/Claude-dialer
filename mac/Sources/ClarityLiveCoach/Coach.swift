@@ -599,8 +599,22 @@ final class CoachModel: ObservableObject {
             return
         }
         if status != .ready { endCall() }
-        if openNextInChrome(), dialNow {
-            dialFromSalesforcePage(expecting: callList.lastOpenedID)
+        if openNextInChrome() {
+            if dialNow { dialFromSalesforcePage(expecting: callList.lastOpenedID) }
+            return
+        }
+        // Ran out of people the app can see: scroll the Salesforce list to load more, then try again.
+        Task { [weak self] in
+            guard let self else { return }
+            self.gettingReady = "Loading more people..."
+            let more = await self.callList.loadMore()
+            self.gettingReady = nil
+            ActivityLog.add("Next: loaded more rows from the list (\(more ? "found more" : "none"))")
+            if more, self.openNextInChrome(), dialNow {
+                self.dialFromSalesforcePage(expecting: self.callList.lastOpenedID)
+            } else if !more {
+                self.callMessage = "Everyone on this Salesforce list has been called today. Open another list view, or scroll it down so more people load."
+            }
         }
     }
 

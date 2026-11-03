@@ -687,8 +687,10 @@ struct CoachView: View {
 
     private var nextEnabled: Bool {
         if coach.status != .ready { return true }
-        if case .ready = coach.callList.state { return true }
-        return false
+        switch coach.callList.state {
+        case .ready, .endOfList: return true // at the end, Next loads more people from the list
+        default: return false
+        }
     }
 
     /// One message above the buttons at a time, the most important first:
@@ -733,7 +735,7 @@ struct CoachView: View {
         switch coach.callList.state {
         case .needsList: return "Open your lead list in Salesforce (in Chrome) so Next knows who's next."
         case .needsChromeSetting: return "Chrome needs one setting: View > Developer > Allow JavaScript from Apple Events."
-        case .endOfList: return "Everyone on this list has been called today."
+        case .endOfList: return "Everyone the app can see has been called. Next loads more from your list."
         case .ready: return nil
         }
     }

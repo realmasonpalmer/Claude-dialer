@@ -100,12 +100,35 @@ final class CallList: ObservableObject {
     func upNext(after index: Int? = nil) -> (record: Record, position: Int)? {
         guard !records.isEmpty else { return nil }
         let from = index ?? currentIndex() ?? lastIndex
+        func callable(_ r: Record) -> Bool {
+            !calledToday.contains(r.id) && !RemovedList.contains(r.id) && !DialHistory.isMaxed(r.id)
+        }
         var i = from + 1
         while i < records.count {
-            if !calledToday.contains(records[i].id) && !RemovedList.contains(records[i].id) && !DialHistory.isMaxed(records[i].id) { return (records[i], i + 1) }
+            if callable(records[i]) { return (records[i], i + 1) }
             i += 1
         }
+        // Nobody below: anyone above who was skipped and not called today?
+        var j = 0
+        while j < min(max(from, 0), records.count) {
+            if callable(records[j]) { return (records[j], j + 1) }
+            j += 1
+        }
         return nil
+    }
+
+    /// Scrolls the Salesforce list so it loads more rows, then reads them. True if new people showed up.
+    func loadMore() async -> Bool {
+        let before = records.count
+        _ = SalesforceChrome.scrollListToBottom()
+        try? await Task.sleep(for: .milliseconds(1500))
+        lastCapture = .distantPast
+        captureIfListView()
+        if records.count > before {
+            refreshUpNext()
+            return true
+        }
+        return false
     }
 
     func refreshUpNext(after index: Int? = nil) {
@@ -373,6 +396,17 @@ enum SalesforceChrome {
         + "if(!el.getClientRects().length||(lr&&inside(el,lr)))continue;"
         + "if(/mobile/i.test(label(el)))return el;}"
         + "return null;}"
+
+    /// Scrolls the list (split view panel or table) to the bottom so Salesforce loads the next rows.
+    @discardableResult
+    static func scrollListToBottom() -> Bool {
+        let js = deepFind + "(function(){var r=listRoot()||document,els=deep(r,'*',[]),best=null,h=0;"
+            + "for(var i=0;i<els.length;i++){var e=els[i];"
+            + "if(e.clientHeight>150&&e.scrollHeight>e.clientHeight+40&&e.scrollHeight>h){best=e;h=e.scrollHeight;}}"
+            + "if(best){best.scrollTop=best.scrollHeight;return 'ok';}"
+            + "window.scrollTo(0,document.body.scrollHeight);return 'page';})()"
+        return javascript(js) != nil
+    }
 
     /// The LinkedIn profile link on the open record (Lead "Linkedin" / Contact "LinkedIn" field), if shown.
     static func linkedInProfile() -> String? {
