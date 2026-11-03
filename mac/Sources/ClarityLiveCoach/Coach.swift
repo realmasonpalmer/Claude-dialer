@@ -736,7 +736,7 @@ final class CoachModel: ObservableObject {
                 let waited = Date().timeIntervalSince(start)
                 // No voicemail for this person and nothing writing one: try again.
                 let haveVoicemail = self.voicemailScript != nil && self.voicemailFor == self.calling
-                if !haveVoicemail, self.voicemailTask == nil, self.calling != nil,
+                if !haveVoicemail, self.voicemailTask == nil, self.calling != nil, self.detailsTried || waited > 4,
                    Date().timeIntervalSince(self.lastVoicemailTry) > 3 { self.prepareVoicemail() }
                 // Claude still hasn't written it: use the ready-made one with their name.
                 if !haveVoicemail, waited > 12, let who = self.calling {
@@ -1030,7 +1030,10 @@ final class CoachModel: ObservableObject {
         detailsTried = false
         personalOpenerFor = nil
         prepareOpener()
-        prepareVoicemail() // right away for this person; again with details below
+        // The voicemail is written once, after their page is read (below), not twice.
+        voicemailTask?.cancel()
+        voicemailTask = nil
+        voicemailScript = nil
         // Their text and LinkedIn card is always up while their record is open.
         startFollowUp()
         // Salesforce fills in the page after the title changes: read the details a moment later.
@@ -1815,7 +1818,9 @@ final class CoachModel: ObservableObject {
                             linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
         if let script = voicemailScript, voicemailFor == calling { fillFollowUp(from: script) }
-        else if voicemailTask == nil || voicemailFor != calling { prepareVoicemail() } // it fills the card when done
+        else if detailsTried || leads.isActive, voicemailTask == nil || voicemailFor != calling {
+            prepareVoicemail() // it fills the card when done (in Chrome mode, only once the page is read)
+        }
     }
 
     private var followUpThisCall = false
