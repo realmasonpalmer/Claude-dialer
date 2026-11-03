@@ -45,8 +45,8 @@ final class ProofModel: ObservableObject {
 
     var secondsOnStep: TimeInterval { now.timeIntervalSince(stepStartedAt) }
 
-    /// Chrome uses the mic and plays sound at the same time only while a call is live.
-    var chromeOnCall: Bool { AudioProcess.chromeOnCall(in: processes) }
+    /// A call is live in the Aircall phone inside the coach, the Aircall app, or Aircall in Chrome.
+    var chromeOnCall: Bool { AudioProcess.anyCallApp(in: processes) }
 
     /// True when the rep's mic also hears the prospect (speakers instead of a headset).
     var micHearsCall: Bool { prospectSpeech > 0 && bothSpeech / prospectSpeech > 0.4 }
@@ -154,12 +154,12 @@ final class ProofModel: ObservableObject {
         refreshProcesses()
         let targets: [AudioObjectID]
         switch source {
-        case .chrome: targets = processes.filter(\.isChrome).map(\.id)
+        case .chrome: targets = AudioProcess.callAudioTargets(in: processes) // the in-app Aircall phone first
         case .process(let pid): targets = processes.filter { $0.pid == pid }.map(\.id)
         }
         guard !targets.isEmpty else {
             error = source == .chrome
-                ? "Chrome isn't playing any sound yet. Start the Aircall call first."
+                ? "Aircall isn't playing any sound yet. Start the call in the Aircall phone first."
                 : "That app isn't playing any sound right now."
             return
         }

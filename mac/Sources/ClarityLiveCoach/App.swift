@@ -116,7 +116,7 @@ struct AudioCheckView: View {
     private var detail: String {
         switch model.step {
         case .mic: return "The coach needs your microphone to hear your side of the call."
-        case .call: return "Call a teammate from Aircall in Salesforce. This screen moves on by itself when the call connects."
+        case .call: return "Call a teammate (or your own cell) from the Aircall phone on the right. This screen moves on by itself when the call connects."
         case .you: return "Say \"Testing, one, two, three.\""
         case .prospect: return "Ask your teammate to say a few words."
         case .done: return "The coach can hear you and the prospect, each on their own. You can hang up."
@@ -172,7 +172,7 @@ struct AudioCheckView: View {
             case .call:
                 Text("Already on the call? Start listening yourself.")
                 Button("I'm on a call. Start listening") { model.startByHand() }
-                Text("Using the Aircall desktop app instead of Chrome? Open Advanced below and pick it.")
+                Text("Calling from somewhere else (the Aircall desktop app)? Open Advanced below and pick it.")
                     .font(.callout).foregroundStyle(.secondary)
             case .you:
                 Text("Check your headset is the input in System Settings > Sound > Input.")

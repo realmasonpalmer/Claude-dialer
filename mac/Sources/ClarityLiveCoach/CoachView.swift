@@ -16,11 +16,16 @@ struct RootView: View {
         Group {
             switch screen ?? firstScreen {
             case .check:
-                AudioCheckView(onFinish: {
-                    audioCheckPassed = true
-                    screen = hasKeys ? .coach : .keys
-                }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil)
-                .onAppear { proof.onAppear() }
+                // The Aircall phone sits on the right here too, so the test call comes from it.
+                HStack(alignment: .top, spacing: 0) {
+                    AudioCheckView(onFinish: {
+                        audioCheckPassed = true
+                        screen = hasKeys ? .coach : .keys
+                    }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil)
+                    .frame(width: 380)
+                    .onAppear { proof.onAppear() }
+                    if appPhone { AircallPhoneSide() }
+                }
             case .keys:
                 KeysView(onSave: { screen = .coach }, onCancel: hasKeys ? { screen = .coach } : nil)
             case .coach:
@@ -36,7 +41,10 @@ struct RootView: View {
         .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
     }
 
-    private var showPhone: Bool { appPhone && phone.shown && (screen ?? firstScreen) == .coach }
+    private var showPhone: Bool {
+        let current = screen ?? firstScreen
+        return appPhone && phone.shown && (current == .coach || current == .check)
+    }
 
     private var hasKeys: Bool { Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil }
     private var firstScreen: Screen { !audioCheckPassed ? .check : (hasKeys ? .coach : .keys) }
