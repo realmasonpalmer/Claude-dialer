@@ -619,7 +619,7 @@ final class CoachModel: ObservableObject {
         cancelAutoNext()
         guard status == .ready, !dialing, gettingReady == nil else { return } // busy, not a missing number
         callMessage = nil
-        gettingReady = "Checking \(Screener.firstName(calling) ?? "their")'s info..."
+        gettingReady = "Getting ready..."
         ActivityLog.add("Call button: \(calling ?? "no record")")
         callWhenReady { [weak self] in self?.callMessage = "No mobile number on this Salesforce page. Click Next." }
     }
@@ -629,7 +629,8 @@ final class CoachModel: ObservableObject {
     private func readyToDial(waited: TimeInterval) -> Bool {
         guard let calling, SalesforceTab.currentRecord() == calling else { return false }
         let detailsOK = detailsTried
-        let voicemailOK = voicemailScript != nil && voicemailFor == calling && (voicemailUsedDetails || recordDetails == nil)
+        let voicemailOK = voicemailScript != nil && voicemailFor == calling
+            && (voicemailUsedDetails || recordDetails == nil || waited > 8)
         // Claude's personal opener; after 10 seconds the instant one (already for them) is enough.
         let openerOK = personalOpenerFor == calling || waited > 10
         return detailsOK && voicemailOK && openerOK
@@ -640,7 +641,7 @@ final class CoachModel: ObservableObject {
         guard let calling else { return "an open Salesforce record" }
         if SalesforceTab.currentRecord() != calling { return "the Salesforce page" }
         if !detailsTried { return "their page details" }
-        if !(voicemailScript != nil && voicemailFor == calling && (voicemailUsedDetails || recordDetails == nil)) { return "their voicemail" }
+        if !(voicemailScript != nil && voicemailFor == calling) { return "their voicemail" }
         return "their opener"
     }
     private var lastWaitingFor = ""
@@ -664,6 +665,7 @@ final class CoachModel: ObservableObject {
                 let waited = Date().timeIntervalSince(start)
                 if self.readyToDial(waited: waited) {
                     self.gettingReady = nil
+                    self.gettingReadyDetail = nil
                     self.lastWaitingFor = ""
                     ActivityLog.add("Gate: ready for \(self.calling ?? "?") after \(Int(waited)) s")
                     // Everything matches: "Calling Burcin Sonmezer in 5", with a Wait button.
@@ -689,14 +691,16 @@ final class CoachModel: ObservableObject {
                 }
                 if waited > 25 {
                     self.gettingReady = nil
+                    self.gettingReadyDetail = nil
                     self.callMessage = "Didn't call: \(self.readinessGap()). Click Call to try again."
                     ActivityLog.add("Gate: gave up after 25 s. \(self.readinessGap())")
                     self.lastWaitingFor = ""
                     return
                 }
-                let name = Screener.firstName(self.calling) ?? "Next call"
+                let name = Screener.firstName(self.calling) ?? "the next person"
                 let missing = self.waitingFor()
-                self.gettingReady = "\(name): waiting for \(missing)..."
+                self.gettingReady = "Getting ready..."
+                self.gettingReadyDetail = "Getting \(name) ready: waiting for \(missing)."
                 if missing != self.lastWaitingFor {
                     self.lastWaitingFor = missing
                     ActivityLog.add("Gate: \(self.calling ?? "nobody") waiting for \(missing) (page shows \(SalesforceTab.currentRecord() ?? "nothing"))")
@@ -704,6 +708,7 @@ final class CoachModel: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(300))
             }
             self?.gettingReady = nil
+            self?.gettingReadyDetail = nil
         }
     }
 
@@ -919,8 +924,10 @@ final class CoachModel: ObservableObject {
         // Just opened someone: ignore the old page until theirs shows, so nothing flips back.
         // (The address changes before the tab title does, so also wait for the title, up to 3 s.)
         if let waitingFor = openingID {
-            guard SalesforceChrome.url().flatMap(CallList.recordID) == waitingFor else { return }
-            if SalesforceTab.currentRecord() != calling, Date().timeIntervalSince(openingSince) < 3 { return }
+            let age = Date().timeIntervalSince(openingSince)
+            // Wait for their page (up to 6 s), then for the title (up to 3 s). Never longer.
+            if age < 6, SalesforceChrome.url().flatMap(CallList.recordID).map({ $0.prefix(15) }) != waitingFor.prefix(15) { return }
+            if age < 3, SalesforceTab.currentRecord() != calling { return }
             openingID = nil
         }
         let record = SalesforceTab.currentRecord()
@@ -1111,6 +1118,7 @@ final class CoachModel: ObservableObject {
         autoNextName = nil
         readyTask?.cancel()
         gettingReady = nil
+        gettingReadyDetail = nil
         autoNextTask?.cancel()
         autoNextTask = nil
         autoNextIn = nil
@@ -1396,6 +1404,8 @@ final class CoachModel: ObservableObject {
     @Published private(set) var autoNextName: String?
     /// "Getting Burcin's script ready..." while the app waits to dial.
     @Published private(set) var gettingReady: String?
+    /// What the Call button is waiting for, in a sentence (shown above the buttons).
+    @Published private(set) var gettingReadyDetail: String?
     private var readyTask: Task<Void, Never>?
     private var detailsPending = false
     /// The record Next just opened, until its page is showing.

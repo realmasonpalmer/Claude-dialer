@@ -700,6 +700,11 @@ struct CoachView: View {
             .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
         } else if let left = coach.autoNextIn {
             autoNextBar(left)
+        } else if let detail = coach.gettingReadyDetail {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(detail).font(.callout).fixedSize(horizontal: false, vertical: true)
+            }
         } else if coach.waitingForText {
             HStack(spacing: 8) {
                 Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
