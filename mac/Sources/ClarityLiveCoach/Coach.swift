@@ -449,7 +449,7 @@ final class CoachModel: ObservableObject {
                 }
                 self.callList.refreshUpNext()
             } catch {
-                ActivityLog.add("Status: save failed: \(error.localizedDescription)")
+                ActivityLog.problem("Status: save failed: \(error.localizedDescription)")
                 guard let self else { return }
                 if self.savingStatusFor == id { self.savingStatusFor = nil }
                 if self.statusRecordID == id { self.statusMessage = error.localizedDescription }
@@ -651,7 +651,9 @@ final class CoachModel: ObservableObject {
         guard let calling else { return "no Salesforce record is open in Chrome" }
         if SalesforceTab.currentRecord() != calling { return "the Salesforce page doesn't match \(Screener.firstName(calling) ?? "this person")" }
         if !detailsTried { return "couldn't read their Salesforce page" }
-        if !(voicemailScript != nil && voicemailFor == calling) { return "their voicemail and follow-ups weren't written (check the Anthropic key)" }
+        if !(voicemailScript != nil && voicemailFor == calling) {
+            return "their voicemail and follow-ups weren't written" + (lastVoicemailError.map { " (Claude said: \($0))" } ?? "")
+        }
         return "their opener wasn't ready"
     }
 
@@ -663,6 +665,20 @@ final class CoachModel: ObservableObject {
             while let self, !Task.isCancelled, self.status == .ready {
                 self.syncRecord()
                 let waited = Date().timeIntervalSince(start)
+                // No voicemail for this person and nothing writing one: try again.
+                let haveVoicemail = self.voicemailScript != nil && self.voicemailFor == self.calling
+                if !haveVoicemail, self.voicemailTask == nil, self.calling != nil,
+                   Date().timeIntervalSince(self.lastVoicemailTry) > 3 { self.prepareVoicemail() }
+                // Claude still hasn't written it: use the ready-made one with their name.
+                if !haveVoicemail, waited > 12, let who = self.calling {
+                    self.voicemailTask?.cancel()
+                    self.voicemailTask = nil
+                    self.voicemailScript = self.instantVoicemail(for: who)
+                    self.voicemailFor = who
+                    self.voicemailKey = self.recordKey()
+                    self.voicemailUsedDetails = true
+                    ActivityLog.problem("Used the ready-made voicemail for \(who). Claude: \(self.lastVoicemailError ?? "no answer in 12 s")")
+                }
                 if self.readyToDial(waited: waited) {
                     self.gettingReady = nil
                     self.gettingReadyDetail = nil
@@ -693,7 +709,7 @@ final class CoachModel: ObservableObject {
                     self.gettingReady = nil
                     self.gettingReadyDetail = nil
                     self.callMessage = "Didn't call: \(self.readinessGap()). Click Call to try again."
-                    ActivityLog.add("Gate: gave up after 25 s. \(self.readinessGap())")
+                    ActivityLog.problem("Gate: gave up after 25 s. \(self.readinessGap())")
                     self.lastWaitingFor = ""
                     return
                 }
@@ -738,7 +754,7 @@ final class CoachModel: ObservableObject {
                 } catch {
                     self?.dialing = false
                     self?.callMessage = "Aircall didn't start the call: \(error.localizedDescription)"
-                    ActivityLog.add("Dial failed: \(error.localizedDescription)")
+                    ActivityLog.problem("Dial failed: \(error.localizedDescription)")
                 }
             }
             return true
@@ -772,7 +788,7 @@ final class CoachModel: ObservableObject {
             guard pageOpened else {
                 // The page never opened: don't skip anyone, just say so.
                 self.callMessage = "Their Salesforce page didn't open. Click Call when it's showing."
-                ActivityLog.add("Next: page for \(id ?? "?") didn't open in 8 s")
+                ActivityLog.problem("Next: page for \(id ?? "?") didn't open in 8 s")
                 return
             }
             // No Mobile number: they're not on the call list. Skip to the next person (up to 20 in a row).
@@ -889,6 +905,7 @@ final class CoachModel: ObservableObject {
     /// Only the visible coach screen reacts to calls (not while the audio check runs).
     func activate(_ on: Bool) {
         active = on
+        BugReporter.context = { [weak self] in self?.debugSummary() ?? "" }
         if on { onAppear() } else if status != .ready { nextCall() }
     }
 
@@ -994,7 +1011,7 @@ final class CoachModel: ObservableObject {
             // Safety net: nobody has said a word for 90 s = the call is over (no real call is that quiet).
             let silentFor = Date().timeIntervalSince(lastWordsAt ?? callStartedAt)
             if silentFor > 90, !startedByHand {
-                ActivityLog.add("Call ended: 90 s with no words")
+                ActivityLog.problem("Call ended: 90 s with no words")
                 endCall(); return
             }
             // Only count quiet after the call's audio has shown up once, so a call that's
@@ -1331,7 +1348,7 @@ final class CoachModel: ObservableObject {
         let chrome = AudioProcess.callAudioTargets(in: AudioProcess.others())
         guard !chrome.isEmpty else {
             callMessage = "Can't hear the call yet. Open the Aircall app (or Aircall in Chrome) and start the call."
-            ActivityLog.add("Listening failed: no Aircall or Chrome audio found")
+            ActivityLog.problem("Listening failed: no Aircall or Chrome audio found")
             return false
         }
         streams.set(rep: openStream(.rep, key: deepgramKey), prospect: openStream(.prospect, key: deepgramKey))
@@ -1346,7 +1363,7 @@ final class CoachModel: ObservableObject {
         } catch {
             streams.closeAll()
             callMessage = "The coach couldn't start listening: \(error.localizedDescription). The call still works; coaching is off for it."
-            ActivityLog.add("Listening failed: \(error.localizedDescription)")
+            ActivityLog.problem("Listening failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -1390,6 +1407,8 @@ final class CoachModel: ObservableObject {
     private var pendingStop: Task<Void, Never>?
     /// The record Id the ready-made voicemail is for (matches the follow-up card's key).
     private var voicemailKey: String?
+    private var lastVoicemailError: String?
+    private var lastVoicemailTry = Date.distantPast
     /// Who the ready-made voicemail was written for, and whether it used their Salesforce page.
     private var voicemailFor: String?
     private var voicemailUsedDetails = false
@@ -1400,6 +1419,14 @@ final class CoachModel: ObservableObject {
     private var instantOpenerID = -1
     /// Why a call didn't start. Shown right above the Call button and never wiped by a new line.
     @Published var callMessage: String?
+    /// One line about what the app is doing, for bug reports.
+    func debugSummary() -> String {
+        "status=\(status) person=\(calling ?? "none") page=\(SalesforceTab.currentRecord() ?? "none") " +
+        "waitingFor=\(gettingReady == nil ? "-" : waitingFor()) voicemailFor=\(voicemailFor ?? "none") " +
+        "followUp=\(followUp?.prospect ?? "none") autoDial=\(autoDial) attempts=\(currentAttempts) " +
+        "salesforce=\(Salesforce.isConnected) aircall=\(Aircall.canPlaceCalls)"
+    }
+
     /// Who the countdown is for.
     @Published private(set) var autoNextName: String?
     /// "Getting Burcin's script ready..." while the app waits to dial.
@@ -1649,7 +1676,7 @@ final class CoachModel: ObservableObject {
                 self?.followUp?.textStatus = "Sent"
                 self?.followUp?.textDone = true
             } catch {
-                ActivityLog.add("Text failed: \(error.localizedDescription)")
+                ActivityLog.problem("Text failed: \(error.localizedDescription)")
                 guard self?.followUp?.key == f.key else { return }
                 self?.followUp?.textStatus = error.localizedDescription
             }
@@ -1716,6 +1743,7 @@ final class CoachModel: ObservableObject {
         voicemailScript = nil
         let forWho = calling
         let usedDetails = detailsTried
+        lastVoicemailTry = Date()
         voicemailFor = forWho
         voicemailKey = recordKey()
         guard let key = Keychain.read(.anthropic) else { return }
@@ -1728,7 +1756,8 @@ final class CoachModel: ObservableObject {
                 try await client.stream(system: system, user: user) { text = $0 }
             } catch {
                 if !(error is CancellationError) {
-                    ActivityLog.add("Voicemail failed for \(forWho ?? "?"): \(error.localizedDescription)")
+                    ActivityLog.problem("Voicemail failed for \(forWho ?? "?"): \(error.localizedDescription)")
+                    self?.lastVoicemailError = error.localizedDescription
                     // Let the next try (or the voicemail card) write it again.
                     if self?.calling == forWho { self?.voicemailTask = nil; self?.voicemailFor = nil }
                 }
@@ -1844,6 +1873,23 @@ final class CoachModel: ObservableObject {
     }
 
     /// The opener template filled in with their first name, your name and your company. No waiting.
+    /// A ready-made voicemail, text and LinkedIn notes with their name, for when Claude
+    /// can't write them in time. Still the right person, just not personalized.
+    private func instantVoicemail(for calling: String?) -> Suggestion {
+        let first = Screener.firstName(calling) ?? "there"
+        let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+        let me = rep.isEmpty ? "[your name]" : rep
+        var s = Suggestion()
+        s.say = "Hi \(first), this is \(me) with \(shortCompany). I help teams cut the time they spend retyping info between systems. I'll send you a quick text so you have my number."
+        s.cue = "Ready-made voicemail (Claude didn't answer in time)."
+        s.stage = "Voicemail"
+        s.sayComplete = true
+        s.textMessage = "Hi \(first), \(me) with \(shortCompany). Just tried you. Does your team lose time retyping the same info across systems? Yes or no is fine."
+        s.linkedin = "Hi \(first), I just tried calling about how teams cut down on retyping info across systems. Would be glad to connect."
+        s.linkedinMessage = "Hi \(first), I just tried calling you about how teams cut down on retyping info between systems. Is that something your team still deals with?"
+        return s
+    }
+
     private func instantOpener(for calling: String?) -> Suggestion {
         var t = openerStyle?.template ?? Opener.all[0].template
         if t.contains("[a ") { t = Opener.all[0].template } // needs Claude to fill in; use the plain one
@@ -1896,7 +1942,7 @@ final class CoachModel: ObservableObject {
             } catch {
                 // Keep the last good line on screen; just flag it.
                 self?.problem = "Coach hiccup: \(error.localizedDescription)"
-                ActivityLog.add("Claude error: \(error.localizedDescription)")
+                ActivityLog.problem("Claude error: \(error.localizedDescription)")
             }
             if self?.seq == id { self?.thinking = false }
         }

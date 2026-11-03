@@ -116,6 +116,9 @@ struct SettingsPane: View {
                             NSPasteboard.general.setString(ActivityLog.recent(), forType: .string)
                             note = "Copied the last 400 lines. Paste it to whoever is helping you."
                         }
+                        Button("Send bug report") {
+                            Task { note = await BugReporter.manual() }
+                        }
                         Button("Copy help info") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(coach.callList.debugReport(), forType: .string)

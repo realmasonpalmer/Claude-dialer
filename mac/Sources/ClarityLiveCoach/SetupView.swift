@@ -14,6 +14,8 @@ struct SetupView: View {
     @State private var showSalesforce = false
     @State private var showCalendar = false
     @State private var askName = false
+    @State private var askWebhook = false
+    @State private var webhookText = Keychain.read(.bugWebhook) ?? ""
     @State private var refresh = 0 // re-checks the steps after a setup screen closes
 
     struct Step: Identifiable {
@@ -92,6 +94,16 @@ struct SetupView: View {
             "8. In the Aircall phone panel (right side of the coach), sign in with your Aircall login and set yourself to Available.",
             "Texting through the app needs Aircall's Professional plan. If the test text fails, the message says why.",
         ], links: [("Aircall Dashboard", "https://dashboard.aircall.io")]),
+        "bugs": Guide(steps: [
+            "Problems (a call that won't start, listening that fails, Claude or Aircall errors) are sent to a private Slack channel with the app's recent log. Phone numbers are hidden except the last 4 digits.",
+            "1. In Slack, make a private channel, for example #live-coach-bugs.",
+            "2. Open the Slack app directory link below and create an app (From scratch). Name it \"Live Coach Bugs\" and pick the Clarity workspace.",
+            "3. Click Incoming Webhooks, turn it On, then Add New Webhook to Workspace. Pick #live-coach-bugs and click Allow.",
+            "4. Copy the Webhook URL (starts with https://hooks.slack.com/services/).",
+            "5. Click Set up here, paste it and click Save.",
+            "6. Test it: gear > Settings and tools > Send bug report. A message shows in the channel.",
+            "Each teammate pastes the same link, so everyone's reports land in one place.",
+        ], links: [("Slack app directory", "https://api.slack.com/apps")]),
         "calendar": Guide(steps: [
             "The app offers real open times on the call, from Oliver's booking page.",
             "1. Click Set up.",
@@ -144,16 +156,20 @@ struct SetupView: View {
             Step(id: "calendar", title: "7. Booking calendar",
                  detail: "The app offers real open times on the call.",
                  done: coach.availability.feedInput != nil, optional: false) { showCalendar = true },
+            Step(id: "bugs", title: "8. Bug reports (optional)",
+                 detail: BugReporter.isOn ? "On: problems are sent to your Slack bug channel." : "Sends problems to a private Slack channel so they get fixed fast.",
+                 done: BugReporter.isOn, optional: true) { askWebhook = true },
         ]
     }
 
     var body: some View {
         let list = steps
-        let done = list.filter(\.done).count
+        let required = list.filter { !$0.optional }
+        let done = required.filter(\.done).count
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Setup").font(.title2.weight(.semibold))
-                Text("\(done) of \(list.count) done. Do these once. Come back here any time to change something.")
+                Text("\(done) of \(required.count) done. Do these once. Come back here any time to change something.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(list) { step in
@@ -212,6 +228,17 @@ struct SetupView: View {
         }
         .sheet(isPresented: $showCalendar, onDismiss: { refresh += 1 }) {
             BookingCalendarView(availability: coach.availability)
+        }
+        .alert("Slack link for bug reports", isPresented: $askWebhook) {
+            TextField("https://hooks.slack.com/services/...", text: $webhookText)
+            Button("Save") {
+                let link = webhookText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if link.isEmpty { Keychain.delete(.bugWebhook) } else { Keychain.save(link, for: .bugWebhook) }
+                refresh += 1
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Paste the Incoming Webhook link for your private bug channel. Leave it empty to turn reports off.")
         }
         .alert("Your first name", isPresented: $askName) {
             TextField("First name", text: $repName)

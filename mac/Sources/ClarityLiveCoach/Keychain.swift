@@ -13,6 +13,7 @@ enum Keychain {
         case calendarFeed // the booking calendar's address (can be a secret link)
         case aircallID, aircallToken // Aircall API keys, for texts and placing calls
         case sfClientID, sfAccess, sfRefresh, sfInstance // Salesforce sign-in
+        case bugWebhook // Slack Incoming Webhook for bug reports
     }
 
     private static var cache: [String: String]?

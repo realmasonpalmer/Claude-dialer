@@ -37,6 +37,12 @@ enum ActivityLog {
         }
     }
 
+    /// Logs a problem and sends a bug report (if bug reports are on).
+    static func problem(_ text: String) {
+        add("PROBLEM: " + text)
+        Task { @MainActor in BugReporter.auto(mask(text)) }
+    }
+
     /// The newest lines, for pasting.
     static func recent(lines: Int = 400) -> String {
         queue.sync {
@@ -46,7 +52,7 @@ enum ActivityLog {
     }
 
     /// "+1 404-900-1040" -> "+1 ***-***-1040".
-    private static func mask(_ text: String) -> String {
+    static func mask(_ text: String) -> String {
         let pattern = #"(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?(\d{4})"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
         let range = NSRange(text.startIndex..., in: text)
