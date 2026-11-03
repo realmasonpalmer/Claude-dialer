@@ -56,7 +56,7 @@ struct SettingsPane: View {
                         }
                         .disabled(coach.status != .ready)
                     }
-                    Text("21-day plan: calls on days 1, 2, 5, 8 and 16 (up to 2 dials each), 2 voicemails, 1 text. People come off the list when the plan ends or they pick up.")
+                    Text("21-day plan: 2 dials on days 1, 2, 5, 8 and 16. Voicemail on day 1. Texts on days 1, 2 and 16. LinkedIn request on day 1. People come off the list when the plan ends or they pick up.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Reset everyone's call counts...") { confirmReset = true }
                         .confirmationDialog("Reset everyone's call counts?", isPresented: $confirmReset) {

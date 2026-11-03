@@ -998,7 +998,7 @@ struct FollowUpCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !f.textDue && !f.textDone && !f.linkedInDue {
-                    Text("Nothing to send today. The plan's text is on call day 2, LinkedIn on days 1 and 16.")
+                    Text("Nothing to send today. Texts go out on days 1, 2 and 16; the LinkedIn request on day 1.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

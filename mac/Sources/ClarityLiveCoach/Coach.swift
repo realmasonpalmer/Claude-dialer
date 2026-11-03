@@ -1811,13 +1811,13 @@ final class CoachModel: ObservableObject {
             // Not a voicemail day in the 21-day plan.
             show(Suggestion(say: currentAttempts < 2 ? "No voicemail today. Hang up. The redial starts by itself."
                                                      : "No voicemail today. Hang up and move on.",
-                            cue: "Voicemails only on call days 1 and 4 (2 total). Today is call day \(step.index + 1).",
+                            cue: "The plan leaves one voicemail, on day 1. Today is day \(Cadence.callDays[step.index]).",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
         } else if var script = voicemailScript, voicemailFor == calling {
             if currentAttempts < 2 {
                 script.cue = "1st try: hang up and click Redial. Leave this message on the 2nd try."
             } else if let step = currentAttemptKey.flatMap(Cadence.step(for:)) {
-                script.cue = "Voicemail #\(step.voicemailNumber) of 2. Wait for the beep."
+                script.cue = "Day \(step.planDay) voicemail (the only one in the plan). Wait for the beep."
             }
             show(script, id: seq, kind: .voicemail)
         } else {

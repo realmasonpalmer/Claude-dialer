@@ -133,7 +133,7 @@ enum DialHistory {
         var lines: [String] = []
         if !p.dials.isEmpty { lines.append("Calls so far: \(p.dials.count) (first \(when(p.dials.first))).") }
         if let s = Cadence.step(for: id) {
-            lines.append("Plan: call day \(s.index + 1) of 5 over 21 days (calls on days 1, 2, 5, 8, 16)."
+            lines.append("Plan: day \(s.planDay) (calls on days 1, 2, 5, 8, 16; texts on days 1, 2, 16)."
                 + (s.isLast ? " This is the last call day: after today the rep stops calling."
                             : " Next call day after today: day \(Cadence.callDays[s.index + 1])."))
         }

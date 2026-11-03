@@ -1,22 +1,23 @@
 import Foundation
 
-/// The 21-day plan for each person (from cold calling research):
-/// - Call days 1, 2, 5, 8 and 16, with up to 2 dials each (call, then auto redial).
-/// - Voicemail on the 1st and 4th call days only (2 total). Other days: hang up.
-/// - One text, on the 2nd call day. Never to Washington numbers (consent law).
-/// - LinkedIn connection note on the 1st call day; LinkedIn message on the last call day.
-/// - Stops when they pick up, when they're marked off the list, or after the 5th call day.
+/// The 21-day plan for each person:
+/// - Day 1: 2 dials, voicemail, text, LinkedIn connection request.
+/// - Day 2: 2 dials, text.
+/// - Day 5: 2 dials. Day 8: 2 dials.
+/// - Day 16: 2 dials, text.
+/// Texts never go to Washington numbers (consent law). Stops when they pick up, when they're
+/// marked off the list, or after day 16.
 enum Cadence {
     static let callDays = [1, 2, 5, 8, 16]
 
     struct Step {
         let index: Int // 0...4
         var planDay: Int { Cadence.callDays[index] }
-        var leaveVoicemail: Bool { index == 0 || index == 3 }
-        var voicemailNumber: Int { index == 0 ? 1 : 2 }
-        var textToday: Bool { index == 1 }
+        var leaveVoicemail: Bool { index == 0 }
+        var voicemailNumber: Int { 1 }
+        var textToday: Bool { index == 0 || index == 1 || index == 4 }
         var linkedInConnect: Bool { index == 0 }
-        var linkedInMessage: Bool { index == Cadence.callDays.count - 1 }
+        var linkedInMessage: Bool { false }
         var isLast: Bool { index == Cadence.callDays.count - 1 }
     }
 
