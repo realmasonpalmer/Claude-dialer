@@ -17,7 +17,10 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
     }
 
     /// The phone is shown big (to sign in) or tucked away (while calling).
-    @Published var shown = false
+    /// Shown by default; remembers if the rep hides it.
+    @Published var shown = UserDefaults.standard.object(forKey: "aircallShown") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(shown, forKey: "aircallShown") }
+    }
 
     let webView: WKWebView
     private var popups: [NSWindow] = []
