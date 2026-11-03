@@ -171,7 +171,11 @@ enum CoachPrompt {
         - No text sent yet: "I'll send you a quick text so you have my number."
         - A text was already sent: don't promise a first text again. Mention it instead, for example
           "I sent you a text the other day, so you have my number" (use the real timing: today, yesterday, a few days ago).
+        - A LinkedIn connection request or message was already sent: you can mention it, for example
+          "I also sent you a connection request on LinkedIn" (pick the one or two most recent touches, not a list).
         - Voicemails were already left: don't repeat them. New angle and new wording, and it can be shorter and lighter.
+        The TEXT, LINKEDIN and LINKEDIN MESSAGE lines below follow the same history: e.g. the text can say
+        "left you a voicemail" or "sent you a note on LinkedIn" when that's true.
         No pitch, no hype, no email.
         CUE: one short delivery tip. STAGE: Voicemail.
         Then add three more lines:
@@ -1996,9 +2000,11 @@ final class CoachModel: ObservableObject {
         let key = recordKey()
         let texted = key.map { !DialHistory.person($0).texts.isEmpty } ?? false
         let leftBefore = key.map { !DialHistory.person($0).voicemails.isEmpty } ?? false
+        let onLinkedIn = key.map { !DialHistory.person($0).linkedIns.isEmpty || !DialHistory.person($0).linkedInMessages.isEmpty } ?? false
+        let linkedInLine = onLinkedIn ? " I also reached out on LinkedIn." : ""
         s.say = leftBefore
-            ? "Hi \(first), \(me) from \(shortCompany) again. Still happy to share how teams like yours cut down on retyping info between systems. \(texted ? "You have my number from my text." : "I'll text you my number.")"
-            : "Hi \(first), this is \(me) with \(shortCompany). I help teams cut the time they spend retyping info between systems. \(texted ? "I sent you a text earlier, so you have my number." : "I'll send you a quick text so you have my number.")"
+            ? "Hi \(first), \(me) from \(shortCompany) again. Still happy to share how teams like yours cut down on retyping info between systems.\(linkedInLine) \(texted ? "You have my number from my text." : "I'll text you my number.")"
+            : "Hi \(first), this is \(me) with \(shortCompany). I help teams cut the time they spend retyping info between systems.\(linkedInLine) \(texted ? "I sent you a text earlier, so you have my number." : "I'll send you a quick text so you have my number.")"
         s.cue = "Ready-made voicemail (Claude didn't answer in time)."
         s.stage = "Voicemail"
         s.sayComplete = true
