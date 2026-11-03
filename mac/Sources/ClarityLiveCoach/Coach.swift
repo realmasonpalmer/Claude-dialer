@@ -484,8 +484,14 @@ final class CoachModel: ObservableObject {
                     RemovedList.add(id)
                     self.statusMessage = "Saved. Taken off your list."
                     // Between calls: move on to the next person right away (without calling yet).
-                    if self.status == .ready, self.openingID == nil, self.gettingReady == nil, self.autoNextIn == nil {
-                        self.nextLead(dial: false)
+                    if self.status == .ready {
+                        if self.autoNextTask != nil, self.currentAttemptKey.map({ $0.prefix(15) == id.prefix(15) }) == true {
+                            // The redial countdown was running for them: stop it and go to the next person.
+                            ActivityLog.add("Redial cancelled: marked \(value)")
+                            self.startNextSequence()
+                        } else if self.openingID == nil, self.gettingReady == nil, self.autoNextIn == nil {
+                            self.nextLead(dial: false)
+                        }
                     }
                 } else {
                     RemovedList.remove(id)
@@ -640,6 +646,7 @@ final class CoachModel: ObservableObject {
     var shouldOfferRedial: Bool {
         status == .ready && currentAttemptKey != nil && !lastCallAnswered && currentAttempts < 2
             && !(currentAttemptKey.map(DialHistory.isMaxed) ?? false) // last try: no redial
+            && !(currentAttemptKey.map(RemovedList.contains) ?? false) // marked Not Quality Prospect / Negative: no redial
     }
 
     /// Who the current lead is, for counting tries.
@@ -650,7 +657,7 @@ final class CoachModel: ObservableObject {
 
     /// Calls the same person again right away.
     func redial() {
-        guard status == .ready, currentAttemptKey != nil else { return }
+        guard status == .ready, let key = currentAttemptKey, !RemovedList.contains(key) else { return }
         cancelAutoNext()
         if leads.isActive {
             dial()
