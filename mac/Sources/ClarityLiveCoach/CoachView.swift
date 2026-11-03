@@ -200,12 +200,16 @@ struct CoachView: View {
                 FollowUpCard(
                     followUp: $coach.followUp,
                     isLastPerson: coach.followUp?.key != nil && coach.followUp?.key != coach.statusRecordID,
+                    steps: coach.todaySteps(for: coach.followUp?.key),
                     canSend: Aircall.isSetUp,
                     onSend: { coach.sendFollowUpText() },
                     onLinkedIn: { coach.openLinkedIn() },
                     onLinkedInMessage: { coach.openLinkedIn(message: true) },
                     onSetupAircall: { showAircall = true }
                 )
+            }
+            if coach.status == .ready {
+                DailyGoalCard(touchpoints: coach.touchpoints, activeCampaigns: campaigns.activeCampaigns)
             }
             if showTouchpoints && coach.status == .ready {
                 TouchpointsCard(touchpoints: coach.touchpoints)
@@ -956,6 +960,8 @@ struct FollowUpCard: View {
     @Binding var followUp: FollowUp?
     /// The card is for someone other than the person on screen now.
     var isLastPerson = false
+    /// Today's steps for this person (from the 21-day plan).
+    var steps: [(title: String, done: Bool)] = []
     /// Show the LinkedIn message instead of the connection note.
     @State private var useMessage = false
     var canSend: Bool
@@ -968,7 +974,7 @@ struct FollowUpCard: View {
         if let f = followUp {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text((isLastPerson ? "Last call: " : "Follow up with ") + (f.prospect ?? "them")).font(.headline)
+                    Text((isLastPerson ? "Last call: " : "Today for ") + (f.prospect ?? "them")).font(.headline)
                     Spacer()
                     Button {
                         followUp = nil
@@ -977,6 +983,14 @@ struct FollowUpCard: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Close")
+                }
+
+                // Today's plan for this person, checked off as it happens.
+                if !steps.isEmpty {
+                    Text(steps.map { ($0.done ? "✓ " : "○ ") + $0.title }.joined(separator: "   "))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(steps.allSatisfy(\.done) ? Color.green : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 // LinkedIn: one row, only on the plan's LinkedIn days. The note (not connected yet)

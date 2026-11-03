@@ -51,6 +51,13 @@ final class Touchpoints: ObservableObject {
         if let data = try? JSONEncoder().encode(events) { try? data.write(to: Self.file, options: .atomic) }
     }
 
+    /// Every contact today, across all campaigns (dials + texts + LinkedIn), for the daily goal.
+    func totalAll(in period: Period) -> Int {
+        let start = Self.start(of: period)
+        let contacts: Set<Kind> = [.dial, .text, .linkedin, .linkedinMessage]
+        return events.filter { contacts.contains($0.kind) && $0.at >= start }.count
+    }
+
     func count(_ kind: Kind, in period: Period) -> Int {
         let start = Self.start(of: period)
         return events.filter { $0.kind == kind && $0.at >= start && (showCampaign == nil || $0.campaign == showCampaign) }.count

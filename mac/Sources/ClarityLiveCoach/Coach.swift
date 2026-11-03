@@ -243,8 +243,8 @@ struct FollowUp: Equatable {
     var linkedinMessage = ""
     var linkedinMessageDone = false
     /// What the 21-day plan says to send today.
-    var textDue = true
-    var linkedInDue = true
+    var textDue = false
+    var linkedInDue = false
     var linkedInMessageFirst = false // the last call day: a message, not a connection note
 
     /// Everything due today is done.
@@ -1874,10 +1874,32 @@ final class CoachModel: ObservableObject {
 
     private var followUpThisCall = false
 
+    /// Today's checklist for this person, from the 21-day plan: each step and whether it's done.
+    func todaySteps(for key: String?) -> [(title: String, done: Bool)] {
+        guard let key else { return [] }
+        let p = DialHistory.person(key)
+        guard let step = Cadence.step(for: key), p.pickups == 0 else { return [] }
+        let dialsToday = p.dials.filter { Calendar.current.isDateInToday($0) }.count
+        var steps: [(String, Bool)] = [("2 dials (\(min(dialsToday, 2)) of 2)", dialsToday >= 2)]
+        if step.leaveVoicemail {
+            steps.append(("Voicemail on the 2nd dial", p.voicemails.contains { Calendar.current.isDateInToday($0) }))
+        }
+        if step.textToday {
+            let wa = followUp.map { Cadence.isWashington($0.phone) } ?? false
+            if !wa { steps.append(("Text", DialHistory.textedToday(key))) }
+        }
+        if step.linkedInConnect { steps.append(("LinkedIn request", DialHistory.linkedInToday(key))) }
+        return steps
+    }
+
     /// Today's 21-day plan step decides which follow-ups show: text only on the 2nd call day
     /// (never to Washington numbers), LinkedIn note on the 1st, LinkedIn message on the last.
     private func applyPlan() {
-        guard var f = followUp, let key = f.key else { return }
+        guard var f = followUp else { return }
+        guard let key = f.key else {
+            // Don't know who this is: show nothing rather than risk over-contacting.
+            f.textDue = false; f.linkedInDue = false; followUp = f; return
+        }
         let step = Cadence.step(for: key)
         let washington = Cadence.isWashington(f.phone)
         f.textDue = (step?.textToday ?? false) && !washington
