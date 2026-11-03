@@ -1385,7 +1385,21 @@ final class CoachModel: ObservableObject {
         if sawVoicemail { touchpoints.log(.voicemail) }
         guard answered else { return }
         touchpoints.log(.pickup)
-        if let key = currentAttemptKey { DialHistory.logPickup(key) }
+        if let key = currentAttemptKey {
+            DialHistory.logPickup(key)
+            // A real person answered: check "Picked Up Cold Call" in Salesforce.
+            if Salesforce.isConnected {
+                let who = calling ?? key
+                Task {
+                    do {
+                        try await Salesforce.markPickedUp(key)
+                        ActivityLog.add("Picked Up Cold Call checked for \(who)")
+                    } catch {
+                        ActivityLog.problem("Couldn't check Picked Up Cold Call: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
         let prospectTurns = turns.filter { $0.speaker == .prospect }.count
         let talked = firstProspectAt.map { Date().timeIntervalSince($0) } ?? 0
         if prospectTurns >= 3 || talked >= 45 { touchpoints.log(.conversation) }

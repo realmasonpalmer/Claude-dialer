@@ -272,6 +272,13 @@ enum Salesforce {
         }
     }
 
+    /// Checks "Picked Up Cold Call" on the Lead or Contact (a real person answered).
+    static func markPickedUp(_ id: String) async throws {
+        guard id.allSatisfy({ $0.isLetter || $0.isNumber }), let object = objectFor(id: id) else { return }
+        _ = try await send("PATCH", "/services/data/\(apiVersion)/sobjects/\(object)/\(id)",
+                           body: ["Picked_Up_Cold_Call__c": true])
+    }
+
     /// Everyone on a list view (up to 2,000), in the list's own order. `key` is the list view Id
     /// or its API name, as in the address bar's filterName.
     static func fullList(object: String, key: String) async throws -> [Row] {
