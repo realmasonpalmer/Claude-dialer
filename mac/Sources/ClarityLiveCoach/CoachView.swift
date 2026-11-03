@@ -528,7 +528,16 @@ struct CoachView: View {
     // MARK: Navigation: always here, always the same two buttons
 
     @ViewBuilder private var navigation: some View {
-        if coach.status == .ready && coach.leads.isActive {
+        if coach.status != .ready {
+            // During a call: no stage buttons, just a way out if the app ever misses the hang-up.
+            Button(role: .destructive) {
+                coach.endCall()
+            } label: {
+                Label("End call", systemImage: "phone.down.fill").frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .help("The call is over but the app didn't notice? Click here. (Command-E)")
+        } else if coach.leads.isActive {
             leadNavigation
         } else {
             stepNavigation

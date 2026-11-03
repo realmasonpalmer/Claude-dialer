@@ -984,6 +984,12 @@ final class CoachModel: ObservableObject {
             waitingForNewCall = false // Chrome let go, so the next time it grabs the mic is a new call
         case .live:
             if onCall { heardCallAudio = true }
+            // Safety net: nobody has said a word for 90 s = the call is over (no real call is that quiet).
+            let silentFor = Date().timeIntervalSince(lastWordsAt ?? callStartedAt)
+            if silentFor > 90, !startedByHand {
+                ActivityLog.add("Call ended: 90 s with no words")
+                endCall(); return
+            }
             // Only count quiet after the call's audio has shown up once, so a call that's
             // still ringing (we start listening right after dialing) isn't ended early.
             if !startedByHand, heardCallAudio || Date().timeIntervalSince(callStartedAt) > 45 {
@@ -1150,9 +1156,11 @@ final class CoachModel: ObservableObject {
             self.aircallCheck = nil
             guard self.status == .live, let onCall else { return }
             if onCall { self.aircallSawCall = true }
-            // Only trust "no call" once Aircall has listed this call: a slow or missing listing
-            // must never cut a live call short.
-            guard self.aircallSawCall else { return }
+            // Trust Aircall's "no call" once it has listed this call, or after 20 s if it never
+            // lists it (some setups don't). But never while people are still talking.
+            let age = Date().timeIntervalSince(self.callStartedAt)
+            let talking = self.lastWordsAt.map { Date().timeIntervalSince($0) < 8 } ?? false
+            guard self.aircallSawCall || age > 20, !talking else { self.aircallSaysOver = 0; return }
             self.aircallSaysOver = onCall ? 0 : self.aircallSaysOver + 1
             if self.aircallSaysOver >= 2 {
                 ActivityLog.add("Aircall says the call is over")
