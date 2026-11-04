@@ -253,42 +253,13 @@ enum Salesforce {
         return try await query("SELECT \(field) FROM \(object) WHERE Id = '\(id)'").first?[field] as? String
     }
 
-    /// Lead.Unqualified_Reason__c picklist values in this org (required when a Lead is Unqualified).
-    static let unqualifiedReasons = ["Non-Responsive", "Selected Another Partner", "Selected Other CRM", "Out of Business", "No Budget"]
-
-    /// Lead.Rating to fill in when it's blank: this org requires a Rating once a Lead moves past New.
-    static func defaultRating(for status: String) -> String {
-        switch status {
-        case "Qualified": return "Hot"
-        case "Interested", "AE Engaged": return "Warm"
-        default: return "Cold"
-        }
-    }
-
-    /// Saves the status. Leads past "New" also get what this org's validation rules require:
-    /// a Rating (only if blank) and, for Unqualified, an Unqualified Reason (only if blank, or the one
-    /// the rep picked). `note` goes in Blocker Details on Unqualified Leads.
-    static func setStatus(of id: String, to value: String, unqualifiedReason: String? = nil, note: String? = nil) async throws {
+    static func setStatus(of id: String, to value: String) async throws {
         guard id.allSatisfy({ $0.isLetter || $0.isNumber }), let object = objectFor(id: id),
               statuses(object).contains(value) else {
             throw SFError(message: "Unexpected record.")
         }
-        var body: [String: Any] = [statusField(object): value]
-        if object == "Lead", value != "New" {
-            let current = try await query("SELECT Rating, Unqualified_Reason__c, Blocker_Details__c FROM Lead WHERE Id = '\(id)'").first
-            if ((current?["Rating"] as? String) ?? "").isEmpty { body["Rating"] = defaultRating(for: value) }
-            if value == "Unqualified" {
-                if let unqualifiedReason, unqualifiedReasons.contains(unqualifiedReason) {
-                    body["Unqualified_Reason__c"] = unqualifiedReason
-                } else if ((current?["Unqualified_Reason__c"] as? String) ?? "").isEmpty {
-                    body["Unqualified_Reason__c"] = "Non-Responsive"
-                }
-                if let note, ((current?["Blocker_Details__c"] as? String) ?? "").isEmpty {
-                    body["Blocker_Details__c"] = String(note.prefix(255))
-                }
-            }
-        }
-        _ = try await send("PATCH", "/services/data/\(apiVersion)/sobjects/\(object)/\(id)", body: body)
+        _ = try await send("PATCH", "/services/data/\(apiVersion)/sobjects/\(object)/\(id)",
+                           body: [statusField(object): value])
     }
 
     /// Sets Relationship Status = "Not Quality Prospect" on Contacts (200 at a time).

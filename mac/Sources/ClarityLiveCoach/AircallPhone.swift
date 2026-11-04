@@ -153,36 +153,6 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
 
     func reload() { webView.load(URLRequest(url: Self.address)) }
 
-    /// Hangs up the call in the phone by clicking Aircall's own hang-up button, like the rep would.
-    /// Never touches the call's audio connection (that left Aircall's screen stuck). True if clicked.
-    func hangUp() async -> Bool {
-        let js = #"""
-        (function () {
-          function deep(root, out) {
-            var l = root.querySelectorAll('button,[role=button]');
-            for (var i = 0; i < l.length; i++) out.push(l[i]);
-            var all = root.querySelectorAll('*');
-            for (var j = 0; j < all.length; j++) if (all[j].shadowRoot) deep(all[j].shadowRoot, out);
-            return out;
-          }
-          var re = /hang[ _-]?up|end[ _-]?call|end the call/i;
-          var buttons = deep(document, []);
-          for (var i = 0; i < buttons.length; i++) {
-            var b = buttons[i];
-            if (!b.getClientRects().length || b.disabled) continue;
-            var own = (b.textContent || '').trim();
-            var words = [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
-                         b.getAttribute('data-testid'), own.length < 20 ? own : ''].join(' ');
-            if (re.test(words)) { b.click(); return 'button'; }
-          }
-          return 'none';
-        })()
-        """#
-        let result = (try? await webView.evaluateJavaScript(js)) as? String ?? "none"
-        ActivityLog.add("Aircall phone hang-up: \(result)")
-        return result != "none"
-    }
-
     // MARK: WKUIDelegate
 
     /// The phone needs the mic for calls. Only Aircall gets it.
