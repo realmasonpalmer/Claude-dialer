@@ -524,14 +524,21 @@ final class CoachModel: ObservableObject {
                 if Salesforce.removedStatuses.contains(value) {
                     RemovedList.add(id)
                     self.statusMessage = "Saved. Taken off your list."
-                    // Between calls: move on to the next person right away (without calling yet).
+                    // Between calls: on to the next person right away (and call them, if auto-dial is on).
+                    // During a call: the app moves on by itself when the call ends (see endCall).
                     if self.status == .ready {
                         if self.autoNextTask != nil, self.currentAttemptKey.map({ $0.prefix(15) == id.prefix(15) }) == true {
                             // The redial countdown was running for them: stop it and go to the next person.
                             ActivityLog.add("Redial cancelled: marked \(value)")
                             self.startNextSequence()
-                        } else if self.openingID == nil, self.gettingReady == nil, self.autoNextIn == nil {
-                            self.nextLead(dial: false)
+                        } else if self.openingID == nil, self.autoNextIn == nil {
+                            // Still getting their call ready: stop that, they're off the list.
+                            self.readyTask?.cancel()
+                            self.gettingReady = nil
+                            self.gettingReadyDetail = nil
+                            ActivityLog.add("Marked \(value): on to the next person")
+                            self.waitingForText = false
+                            self.startNextSequence()
                         }
                     }
                 } else {
@@ -1216,7 +1223,13 @@ final class CoachModel: ObservableObject {
             startFollowUp()
             ActivityLog.add("Follow-up card for \(calling ?? "?") (voicemail heard: \(hadVoicemail))")
         }
-        if shouldOfferRedial, autoDial {
+        if let key = currentAttemptKey, RemovedList.contains(key) {
+            // Marked Unqualified (or Not Quality Prospect / Negative) during the call: no text, no redial.
+            ActivityLog.add("Call ended for someone taken off the list: on to the next person")
+            followUp = nil
+            waitingForText = false
+            afterHangUp { [weak self] in self?.startNextSequence() }
+        } else if shouldOfferRedial, autoDial {
             // 1st try, no answer: "Calling Jane Doe again in 3", then redial the same person.
             startAutoRedial()
         } else if !shouldOfferRedial, !lastCallAnswered, let f = followUp {
