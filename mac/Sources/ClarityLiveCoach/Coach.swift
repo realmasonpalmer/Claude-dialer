@@ -493,7 +493,7 @@ final class CoachModel: ObservableObject {
 
     /// The Save button: writes the status to Salesforce.
     /// "Not Quality Prospect", "Negative" and "Unqualified" also take them off the call list.
-    func saveStatus(_ value: String) {
+    func saveStatus(_ value: String, unqualifiedReason: String? = nil) {
         guard let id = statusRecordID, !savingStatus else { return }
         guard Salesforce.isConnected else {
             statusMessage = "Sign in to Salesforce first: gear menu > Setup > Salesforce."
@@ -506,7 +506,7 @@ final class CoachModel: ObservableObject {
             do {
                 // Never hang: give up after 15 seconds.
                 try await withThrowingTaskGroup(of: Void.self) { group in
-                    group.addTask { try await Salesforce.setStatus(of: id, to: value) }
+                    group.addTask { try await Salesforce.setStatus(of: id, to: value, unqualifiedReason: unqualifiedReason) }
                     group.addTask {
                         try await Task.sleep(for: .seconds(15))
                         throw Salesforce.SFError(message: "Salesforce didn't answer in 15 seconds. Try Save again.")
@@ -1891,7 +1891,7 @@ final class CoachModel: ObservableObject {
         guard Salesforce.isConnected else { return }
         Task { [weak self] in
             do {
-                try await Salesforce.setStatus(of: id, to: value)
+                try await Salesforce.setStatus(of: id, to: value, unqualifiedReason: "Non-Responsive", note: "Bad number (\(reason))")
                 ActivityLog.add("Status: saved \(value) (bad number)")
                 if self?.statusRecordID == id { self?.recordStatus = value }
             } catch {
