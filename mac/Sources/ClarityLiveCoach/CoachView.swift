@@ -669,7 +669,7 @@ struct CoachView: View {
         guard let d = coach.leads.details else { return "Loading..." }
         if d.doNotCall { return "Do Not Call" }
         if !Aircall.canPlaceCalls { return "Set up Aircall calling first" }
-        return d.callNumber != nil ? "Call \(d.name)" : "No mobile number"
+        return d.callNumber != nil ? "Call \(d.name)" : "No phone number"
     }
 
     /// During a call (or without the Salesforce list): Back and Next as before.
@@ -846,7 +846,7 @@ struct HelpView: View {
                     "Open your lead list in Salesforce in Chrome. The app learns it by itself.",
                 ])
                 section("Calling", [
-                    "Click the big Call button. The app checks that the opener, voicemail and follow-ups are for that person, then calls their Mobile.",
+                    "Click the big Call button. The app checks that the opener, voicemail and follow-ups are for that person, then calls their Mobile (or Phone, if there's no Mobile).",
                     "Read the big line. Say it in your own words.",
                     "Tell them the call is transcribed. Some states require it.",
                 ])

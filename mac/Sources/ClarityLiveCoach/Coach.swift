@@ -705,7 +705,7 @@ final class CoachModel: ObservableObject {
         if leads.isActive {
             dial()
         } else if !dialing, !callFromPage() {
-            problem = "No mobile number on this Salesforce page. Click Next."
+            problem = "No phone number on this Salesforce page. Click Next."
         }
     }
 
@@ -716,7 +716,7 @@ final class CoachModel: ObservableObject {
         callMessage = nil
         gettingReady = "Getting ready..."
         ActivityLog.add("Call button: \(calling ?? "no record")")
-        callWhenReady { [weak self] in self?.callMessage = "No mobile number on this Salesforce page. Click Next." }
+        callWhenReady { [weak self] in self?.callMessage = "No phone number on this Salesforce page. Click Next." }
     }
 
     /// Everything on screen is for the person open in Salesforce: name, page details,
@@ -823,17 +823,17 @@ final class CoachModel: ObservableObject {
         }
     }
 
-    /// Calls the Mobile number on the open Salesforce page, right from the app (through the
-    /// Aircall desktop app). Only if Aircall calling isn't set up does it click the number in Salesforce.
-    /// Returns false when the page has no Mobile number.
+    /// Calls the Mobile number on the open Salesforce page (or Phone, if there's no Mobile), right
+    /// from the app (through Aircall). Only if Aircall calling isn't set up does it click the number
+    /// in Salesforce. Returns false when the page has neither.
     @discardableResult
     func callFromPage() -> Bool {
         guard status == .ready, !dialing else { return false }
         syncRecord() // make sure the script and voicemail are for this person
         // The Aircall phone inside the coach (or the desktop app): dial through the API.
         if AircallPhone.isOn || Aircall.canPlaceCalls {
-            guard let mobile = SalesforceChrome.mobileNumber() else {
-                ActivityLog.add("Dial: no Mobile found on the page for \(calling ?? "?")")
+            guard let mobile = SalesforceChrome.dialNumber() else {
+                ActivityLog.add("Dial: no Mobile or Phone found on the page for \(calling ?? "?")")
                 return false
             }
             ActivityLog.add("Dial: \(calling ?? "?") at \(mobile)")
@@ -872,10 +872,10 @@ final class CoachModel: ObservableObject {
                 guard let self, !Task.isCancelled, self.status == .ready else { return }
                 if let id, SalesforceChrome.url().flatMap(CallList.recordID) != id { continue } // not loaded yet
                 pageOpened = true
-                if SalesforceChrome.mobileNumber() != nil {
-                    // Page loaded and has a Mobile: dial once their script and follow-ups are ready.
+                if SalesforceChrome.dialNumber() != nil {
+                    // Page loaded and has a Mobile or Phone: dial once their script and follow-ups are ready.
                     self.noMobileSkips = 0
-                    self.callWhenReady(countdown: countdown) { [weak self] in self?.callMessage = "No mobile number on this Salesforce page. Click Next." }
+                    self.callWhenReady(countdown: countdown) { [weak self] in self?.callMessage = "No phone number on this Salesforce page. Click Next." }
                     return
                 }
             }
@@ -886,15 +886,15 @@ final class CoachModel: ObservableObject {
                 ActivityLog.problem("Next: page for \(id ?? "?") didn't open in 8 s")
                 return
             }
-            // No Mobile number: they're not on the call list. Skip to the next person (up to 20 in a row).
-            ActivityLog.add("Next: no Mobile for \(self.calling ?? "?"), skipping")
+            // No Mobile or Phone: nothing to call. Skip to the next person (up to 20 in a row).
+            ActivityLog.add("Next: no Mobile or Phone for \(self.calling ?? "?"), skipping")
             self.noMobileSkips += 1
             if self.noMobileSkips <= 20 {
-                self.problem = "No mobile number. Skipped to the next person."
+                self.problem = "No phone number. Skipped to the next person."
                 self.nextLead()
             } else {
                 self.noMobileSkips = 0
-                self.problem = "20 people in a row had no mobile number. Check the Mobile field is on the Salesforce page."
+                self.problem = "20 people in a row had no phone number. Check the Mobile and Phone fields are on the Salesforce page."
             }
         }
     }
@@ -1874,7 +1874,7 @@ final class CoachModel: ObservableObject {
                             linkedin: earlier?.linkedin ?? "",
                             textDone: earlier?.textDone ?? key.map(DialHistory.textedToday) ?? false,
                             linkedinDone: earlier?.linkedinDone ?? key.map(DialHistory.linkedInToday) ?? false,
-                            phone: lead?.callNumber ?? Aircall.phone(in: recordDetails) ?? (leads.isActive ? nil : SalesforceChrome.mobileNumber()) ?? "",
+                            phone: lead?.textNumber ?? Aircall.phone(in: recordDetails) ?? (leads.isActive ? nil : SalesforceChrome.mobileNumber()) ?? "",
                             linkedinURL: lead?.linkedIn ?? Self.linkedInProfile(details: recordDetails),
                             linkedinMessage: earlier?.linkedinMessage ?? "",
                             linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)

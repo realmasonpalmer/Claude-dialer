@@ -191,9 +191,9 @@ enum Salesforce {
     }
 
     /// The rows of a list view, in the list view's own order.
-    /// The list view's people who can be called: they have a Mobile number and aren't Do Not Call.
-    /// Everyone else is left off the list. The Phone field is never used.
-    /// Contacts with no Mobile and a blank Relationship Status are marked "Not Quality Prospect".
+    /// The list view's people who can be called: they have a Mobile or Phone number and aren't Do Not Call.
+    /// Everyone else is left off the list.
+    /// Contacts with no Mobile, no Phone and a blank Relationship Status are marked "Not Quality Prospect".
     /// Contacts marked "Not Quality Prospect" or "Negative", and Unqualified Leads, are left off.
     static func rows(of view: ListView) async throws -> [Row] {
         let all = try await allRows(of: view)
@@ -205,11 +205,12 @@ enum Salesforce {
                 .filter { $0.allSatisfy { $0.isLetter || $0.isNumber } }
             guard !ids.isEmpty else { continue }
             let list = ids.map { "'\($0)'" }.joined(separator: ",")
-            let fields = "Id, MobilePhone, DoNotCall" + (isContact ? ", Relationship_Status__c" : ", Status")
+            let fields = "Id, MobilePhone, Phone, DoNotCall" + (isContact ? ", Relationship_Status__c" : ", Status")
             for r in try await query("SELECT \(fields) FROM \(view.object) WHERE Id IN (\(list))") {
                 guard let id = r["Id"] as? String else { continue }
                 let mobile = (r["MobilePhone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
-                if mobile.isEmpty {
+                let phone = (r["Phone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+                if mobile.isEmpty && phone.isEmpty {
                     // Only blank statuses: never overwrite Engaged, Champion, and so on.
                     if isContact, (r["Relationship_Status__c"] as? String ?? "").isEmpty { noMobile.append(id) }
                 } else if removedStatuses.contains(r[isContact ? "Relationship_Status__c" : "Status"] as? String ?? "") {
@@ -322,8 +323,10 @@ enum Salesforce {
         let notes: String?
         let recent: [String]
 
-        /// Only the Mobile field is called. The Phone field (often a main office line) is never dialed.
-        var callNumber: String? { mobile.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
+        /// Calls go to Mobile, or to Phone when there's no Mobile.
+        var callNumber: String? { textNumber ?? phone.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
+        /// Texts only ever go to Mobile (the Phone field is often an office line).
+        var textNumber: String? { mobile.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
         /// Plain text for the coach, like the Salesforce page text it used to read.
         var promptText: String {
             var lines = ["Name: \(name)"]
@@ -410,7 +413,7 @@ struct SalesforceConnectView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Connect Salesforce").font(.title2.weight(.semibold))
-                Text("Signs in through Chrome, where you're already logged in: click Allow there. Your list views and lead details show in the coach. The only thing the app changes is Relationship Status / Lead Status when you click Save, and Not Quality Prospect on Contacts with no Mobile.")
+                Text("Signs in through Chrome, where you're already logged in: click Allow there. Your list views and lead details show in the coach. The only thing the app changes is Relationship Status / Lead Status when you click Save, and Not Quality Prospect on Contacts with no Mobile or Phone.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 

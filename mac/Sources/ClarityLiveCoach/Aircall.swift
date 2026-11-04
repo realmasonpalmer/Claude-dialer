@@ -181,7 +181,7 @@ enum Aircall {
         func phoneIn(_ s: String) -> String? {
             s.range(of: pattern, options: .regularExpression).map { String(s[$0]) }
         }
-        // Mobile only: texts can't go to an office line, and the Phone field is never used.
+        // Mobile only: texts can't go to an office line. (Calls fall back to Phone; texts never do.)
         for (i, line) in lines.enumerated() where line.trimmingCharacters(in: .whitespaces).hasPrefix("Mobile") {
             if let p = phoneIn(line) ?? (i + 1 < lines.count ? phoneIn(lines[i + 1]) : nil) { return p }
         }
