@@ -78,7 +78,6 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       if (Orig) {
         var Hooked = function (a, b) {
           var pc = new Orig(a, b);
-          (window.__clarityPCs = window.__clarityPCs || []).push(pc);
           pc.addEventListener('track', function (ev) {
             if (ev.track && ev.track.kind === 'audio') pump(ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]), 'remote');
           });
@@ -154,8 +153,8 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
 
     func reload() { webView.load(URLRequest(url: Self.address)) }
 
-    /// Hangs up the call in the phone: clicks Aircall's hang-up button. If that button can't be
-    /// found, closes the call's audio connection instead. True if either worked.
+    /// Hangs up the call in the phone by clicking Aircall's own hang-up button, like the rep would.
+    /// Never touches the call's audio connection (that left Aircall's screen stuck). True if clicked.
     func hangUp() async -> Bool {
         let js = #"""
         (function () {
@@ -171,16 +170,12 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
           for (var i = 0; i < buttons.length; i++) {
             var b = buttons[i];
             if (!b.getClientRects().length || b.disabled) continue;
+            var own = (b.textContent || '').trim();
             var words = [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
-                         b.getAttribute('data-testid'), b.getAttribute('name'), b.id, String(b.className || ''),
-                         b.textContent].join(' ');
+                         b.getAttribute('data-testid'), own.length < 20 ? own : ''].join(' ');
             if (re.test(words)) { b.click(); return 'button'; }
           }
-          var n = 0;
-          (window.__clarityPCs || []).forEach(function (p) {
-            if (p.connectionState !== 'closed') { try { p.close(); n++; } catch (e) {} }
-          });
-          return n ? 'closed' : 'none';
+          return 'none';
         })()
         """#
         let result = (try? await webView.evaluateJavaScript(js)) as? String ?? "none"
