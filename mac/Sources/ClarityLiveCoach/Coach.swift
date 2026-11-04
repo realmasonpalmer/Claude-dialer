@@ -2392,11 +2392,17 @@ final class CoachModel: ObservableObject {
                 // same words in the middle of a sentence.
                 let head = line.drop { " \t#*-•–0123456789.)".contains($0) }
                 guard head.lowercased().hasPrefix(label) else { continue }
-                var rest = String(head.dropFirst(label.count))
-                // Skip words like "(day 1)" and the ":" or "-" after the label.
-                if let colon = rest.firstIndex(where: { $0 == ":" || $0 == "-" || $0 == "–" }),
-                   rest.distance(from: rest.startIndex, to: colon) < 25 {
-                    rest = String(rest[rest.index(after: colon)...])
+                // The rest of the label line. "Label: message" or "Label - message" means the message
+                // is on this line. Anything else ("(under 200 characters)", "/connection request")
+                // is part of the heading, and the message is on the lines under it.
+                let after = String(head.dropFirst(label.count)).trimmingCharacters(in: .whitespaces)
+                var rest = ""
+                if let colon = after.firstIndex(of: ":") {
+                    rest = String(after[after.index(after: colon)...])
+                } else if let dash = ["- ", "– ", "— "].first(where: { after.hasPrefix($0) }) {
+                    rest = String(after.dropFirst(dash.count))
+                } else if let q = after.first, "\"“'".contains(q) {
+                    rest = after
                 }
                 var body = rest.trimmingCharacters(in: .whitespaces)
                 if body.isEmpty {
@@ -2405,6 +2411,10 @@ final class CoachModel: ObservableObject {
                         let t = next.trimmingCharacters(in: .whitespaces)
                         if t.isEmpty { if under.isEmpty { continue } else { break } }
                         if t.hasPrefix("#") || (t.hasSuffix(":") && t.count < 40) { break }
+                        // The next label starts: stop.
+                        let next = t.drop { " \t#*-•–0123456789.)".contains($0) }.lowercased()
+                        if ["linkedin", "missed call", "voicemail", "sms", "email", "text message", "follow-up", "follow up"]
+                            .contains(where: { next.hasPrefix($0) }) { break }
                         under.append(t)
                     }
                     body = under.joined(separator: " ")
