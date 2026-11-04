@@ -467,6 +467,17 @@ struct CoachView: View {
 
     private var belowCard: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Phone tree: one click sends the keys Opus picked into the call.
+            if coach.status == .live, coach.suggestion.stage == "Phone tree", !coach.suggestion.keys.isEmpty {
+                HStack(spacing: 8) {
+                    Button("Press \(coach.suggestion.keys)") { coach.pressKeys(coach.suggestion.keys) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    if let m = coach.keysMessage {
+                        Text(m).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
             if !coach.suggestion.cue.isEmpty {
                 Text(coach.suggestion.cue)
                     .font(.callout)

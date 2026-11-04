@@ -19,6 +19,8 @@ struct Suggestion: Equatable {
     var textMessage = ""
     var linkedin = ""
     var linkedinMessage = ""
+    /// Phone tree: the keys to press now (0-9, * and #), for the one-click button.
+    var keys = ""
 
     /// Claude answers in a tiny line format so words can show while they stream:
     ///   SAY: ...
@@ -39,6 +41,9 @@ struct Suggestion: Equatable {
             else if trimmed.hasPrefix("STAGE:") { s.stage = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("SKIP") { s.skip = true }
             else if trimmed.hasPrefix("TEXT:") { s.textMessage = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces) }
+            else if trimmed.hasPrefix("KEYS:") {
+                s.keys = String(trimmed.dropFirst(5).filter { "0123456789*#".contains($0) }.prefix(12))
+            }
             else if trimmed.hasPrefix("LINKEDIN MESSAGE:") { s.linkedinMessage = String(trimmed.dropFirst(17)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("LINKEDIN:") { s.linkedin = String(trimmed.dropFirst(9)).trimmingCharacters(in: .whitespaces) }
             else if trimmed.hasPrefix("OFFERED:") {
@@ -189,6 +194,7 @@ enum CoachPrompt {
         themselves: the script's opener.
         Answer in this format:
         SAY: <the exact keys to press now, or what to say, and why in a few words>
+        KEYS: <only the digits to press now, like 3 or 7467 (0-9, * and #); leave empty if the rep should wait or talk>
         CUE: <the backup plan if that doesn't work>
         """
     }
@@ -1470,6 +1476,7 @@ final class CoachModel: ObservableObject {
         phoneTreeThisCall = false
         phoneTreeActive = false
         phoneTreeTask?.cancel()
+        keysMessage = nil
         guard startAudio() else { return }
         if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
         if let key = recordKey() {
@@ -2019,6 +2026,19 @@ final class CoachModel: ObservableObject {
         }
     }
 
+    /// The rep clicked "Press 3": sends those keys into the call (the in-app Aircall phone only).
+    @Published private(set) var keysMessage: String?
+    func pressKeys(_ keys: String) {
+        guard status == .live, !keys.isEmpty else { return }
+        keysMessage = "Pressing \(keys)..."
+        Task { [weak self] in
+            let ok = await AircallPhone.shared.sendDigits(keys)
+            guard let self else { return }
+            ActivityLog.add("Phone tree: pressed \(keys) (\(ok ? "sent" : "didn't go through"))")
+            self.keysMessage = ok ? "Pressed \(keys)." : "Couldn't press keys from the app. Use the Aircall keypad."
+        }
+    }
+
     /// A phone menu answered: how to get through to the person. Press 0 for an operator, or dial
     /// by name with the first letters of their last name as keypad digits.
     private func showPhoneTreeTips() {
@@ -2036,9 +2056,11 @@ final class CoachModel: ObservableObject {
         let byName = digits.isEmpty ? "" : " Dial by name: \(digits) (\(last.prefix(4)))."
         ActivityLog.add("Phone tree for \(calling ?? "?"): showing how to get through")
         seq += 1
-        show(Suggestion(say: "Phone tree. Press 0 for the operator.\(byName)",
-                        cue: "When a person answers: \"Hi, could you put me through to \(full ?? "them")?\"",
-                        stage: "Phone tree", sayComplete: true), id: seq, kind: .reply)
+        var tips = Suggestion(say: "Phone tree. Press 0 for the operator.\(byName)",
+                              cue: "Listening to the menu for a better route. When a person answers: \"Hi, could you put me through to \(full ?? "them")?\"",
+                              stage: "Phone tree", sayComplete: true)
+        tips.keys = "0"
+        show(tips, id: seq, kind: .reply)
     }
 
     private func markBadNumber() {

@@ -78,6 +78,7 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       if (Orig) {
         var Hooked = function (a, b) {
           var pc = new Orig(a, b);
+          (window.__clarityPCs = window.__clarityPCs || []).push(pc); // only kept to press keys (DTMF)
           pc.addEventListener('track', function (ev) {
             if (ev.track && ev.track.kind === 'audio') pump(ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]), 'remote');
           });
@@ -181,6 +182,33 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
         let result = (try? await webView.evaluateJavaScript(js)) as? String ?? "none"
         ActivityLog.add("Aircall phone hang-up: \(result)")
         return result == "button"
+    }
+
+    /// Presses keys in the live call (phone menus): sends the tones through the call's own audio
+    /// sender, the way a keypad does. Never changes or closes the call. True if a live call took them.
+    func sendDigits(_ digits: String) async -> Bool {
+        let keys = digits.filter { "0123456789*#".contains($0) }
+        guard !keys.isEmpty else { return false }
+        let js = """
+        (function () {
+          var pcs = window.__clarityPCs || [];
+          for (var i = pcs.length - 1; i >= 0; i--) {
+            var pc = pcs[i];
+            if (pc.connectionState === 'closed' || pc.signalingState === 'closed') continue;
+            var senders = pc.getSenders ? pc.getSenders() : [];
+            for (var j = 0; j < senders.length; j++) {
+              var s = senders[j];
+              if (s.track && s.track.kind === 'audio' && s.dtmf && s.dtmf.canInsertDTMF !== false) {
+                s.dtmf.insertDTMF('\(keys)', 150, 80);
+                return 'sent';
+              }
+            }
+          }
+          return 'none';
+        })()
+        """
+        let result = (try? await webView.evaluateJavaScript(js)) as? String ?? "none"
+        return result == "sent"
     }
 
     // MARK: WKUIDelegate
