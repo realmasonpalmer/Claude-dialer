@@ -170,9 +170,17 @@ enum CoachPrompt {
         """
         return """
         \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)If this call goes to voicemail, what should the rep say after the beep?
-        Under 20 seconds, about 40 words. In this order: their first name; the rep's name and company;
-        one reason tied to something specific about them, their role or their company (from the Salesforce facts,
-        or a common pain for their title if there are none); then one closing line that fits the history above:
+        One voice for everything you write here. The voicemail, TEXT, LINKEDIN and LINKEDIN MESSAGE all come from
+        the campaign above: its opening, its angle, its offer, its tone, and any voicemail, text or LinkedIn wording
+        it gives. Follow the campaign over the defaults below whenever they differ. Write the voicemail first, then
+        make every TEXT and LinkedIn line sound like the same person who just left that voicemail: the same way the
+        rep introduces themselves (if the voicemail says something like "a fellow Portland entrepreneur", so do the
+        text and LinkedIn note), the same reason for reaching out, the same warmth and plainness. Never switch to
+        a different pitch or a more formal, salesy tone in the written follow-ups.
+        Voicemail: under 20 seconds, about 40 words. In this order: their first name; the rep's name and how the
+        campaign introduces them; one reason tied to the campaign's angle and to something specific about them,
+        their role or their company (from the Salesforce facts, or a common pain for their title if there are none);
+        then one closing line that fits the history above:
         - No text sent yet: "I'll send you a quick text so you have my number."
         - A text was already sent: don't promise a first text again. Mention it instead, for example
           "I sent you a text the other day, so you have my number" (use the real timing: today, yesterday, a few days ago).
@@ -184,24 +192,27 @@ enum CoachPrompt {
         No pitch, no hype, no email.
         CUE: one short delivery tip. STAGE: Voicemail.
         Then add three more lines:
-        TEXT: <the text message to send right after. Under 40 words. Sounds like a real person texting, not marketing.
-        Rep's first name and company, then one specific problem firms like theirs have (tied to their role or company),
+        TEXT: <the text message to send right after. Under 40 words. Sounds like a real person texting, not marketing,
+        and like the voicemail above. The rep introduces themselves the same way as in the voicemail, then the same
+        reason for reaching out (the campaign's angle, tied to their role or company),
         then one easy yes/no question about THEIR situation (e.g. "Is that still a headache for your team?"),
         then one short line saying what happens next, so they know they'll hear from the rep again. Make it true to
         the history: calls left = "I'll try you again tomorrow if I don't hear back." or "I'll send you a note on
         LinkedIn too."; last call = "I won't keep calling. Reach out anytime." Vary the wording each time.>
-        LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Says the rep just tried calling,
-        gives the same specific reason, no pitch, no links, no emojis.>
+        LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Same voice and intro as the voicemail.
+        Says the rep just tried calling, gives the same reason, no pitch, no links, no emojis.>
         LINKEDIN MESSAGE: <a LinkedIn direct message, for when they're already connected. Under 400 characters.
-        Says the rep just tried calling, gives the same specific reason, one easy question. No links, no emojis.>
+        Same voice and intro as the voicemail. Says the rep just tried calling, gives the same reason, one easy
+        question. No links, no emojis.>
         Rules for the voicemail, TEXT and both LinkedIn lines:
         - Never name anyone they haven't met (no "Oliver", no "my partner", no "our team lead"). They only know the rep.
         - Don't ask for a meeting, a call length or a day in a first touch. Ask about their situation instead.
           Only after earlier texts or voicemails (see the history) can a later one offer a short call, and then as
           a simple question ("Worth a quick chat?"), still without naming anyone else.
         - One idea per message. No jargon, no "quick look at yours", no hype.
-        Good TEXT example: "Hi Eric, Mason with Clarity. Just tried you. A lot of tax firms still retype new client
-        info into 3 or 4 systems. Is that true for your team too?"
+        Example of the shape only (take the words, intro and angle from the campaign, not from this): voicemail
+        "Hi Eric, it's Mason, a fellow Portland business owner. ..." then TEXT "Hi Eric, Mason here, the fellow
+        Portland business owner who just left you a voicemail. ... Is that true for your team too?"
         """
     }
 
@@ -2211,22 +2222,23 @@ final class CoachModel: ObservableObject {
         s.cue = "Ready-made voicemail (Claude didn't answer in time)."
         s.stage = "Voicemail"
         s.sayComplete = true
+        // Plain and neutral on purpose: no pitch of their own, so they never clash with the campaign's tone.
         let texts = [
-            "Hi \(first), \(me) with \(shortCompany). Just tried you. Does your team lose time retyping the same info across systems? I'll try you again tomorrow if I don't hear back.",
-            "Hi \(first), \(me) again from \(shortCompany). Quick one: is getting call notes into your CRM a headache for your team? I'll send you a note on LinkedIn too.",
-            "\(first), \(me) at \(shortCompany). Tried you once more. Is cutting double data entry on your list this year, or not a priority? I'll give you one more try this week.",
-            "Hi \(first), \(me) from \(shortCompany). Still worth a quick chat about saving your team admin time? If now's busy, I'll check back next week.",
-            "\(first), last note from me (\(me), \(shortCompany)). I won't keep calling. If cutting admin time ever comes up, reach out anytime.",
+            "Hi \(first), \(me) with \(shortCompany). Just tried you and left a voicemail. I'll try you again tomorrow if I don't hear back.",
+            "Hi \(first), \(me) again from \(shortCompany). Tried you once more today. Is now a busy season for you?",
+            "\(first), \(me) at \(shortCompany). Still hoping to connect. Is there a better time of day to reach you?",
+            "Hi \(first), \(me) from \(shortCompany). Should I keep trying you, or is now not a good time?",
+            "\(first), last note from me (\(me), \(shortCompany)). I won't keep calling. Reach out anytime.",
         ]
         let sentBefore = recordKey().map { DialHistory.sentTexts($0).count } ?? 0
         s.textMessage = texts[sentBefore % texts.count]
-        s.linkedin = "Hi \(first), I just tried calling about how teams cut down on retyping info across systems. Would be glad to connect."
+        s.linkedin = "Hi \(first), I just tried calling you and left a voicemail. Would be glad to connect."
         let messages = [
-            "Hi \(first), I just tried calling you about how teams cut down on retyping info between systems. Is that something your team still deals with?",
-            "Hi \(first), following up on my call. A lot of firms we work with lose hours a week moving client info by hand. Is that true for your team too?",
-            "\(first), tried you again today. Would a short look at getting call notes into your CRM automatically be useful, or not a focus right now?",
-            "Hi \(first), one more try. Happy to share what's worked for similar firms on cutting admin time. Worth 15 minutes sometime?",
-            "\(first), I'll stop reaching out after this. If saving your team admin time ever becomes a priority, I'm happy to help.",
+            "Hi \(first), I just tried calling you and left a voicemail. Is there a good time to reach you this week?",
+            "Hi \(first), following up on my call. Is there a better time of day to catch you?",
+            "\(first), tried you again today. Happy to keep it short whenever works for you.",
+            "Hi \(first), one more try. Worth a quick chat sometime, or not a fit right now?",
+            "\(first), I'll stop reaching out after this. If timing changes, I'm happy to help.",
         ]
         let messagesBefore = recordKey().map { DialHistory.sentLinkedInMessages($0).count } ?? 0
         s.linkedinMessage = messages[messagesBefore % messages.count]
