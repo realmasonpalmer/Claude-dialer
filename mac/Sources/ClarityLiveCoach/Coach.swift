@@ -88,16 +88,17 @@ enum CoachPrompt {
         Getting past a gatekeeper (receptionist, assistant, operator, "who's calling?"). Adapt the campaign's
         opener for this automatically; the goal is to be put through, not to pitch:
         - Sound expected and brief. First name for the prospect, first name for the rep: "Hi, it's Mason for AJ.
-          Is he around?" Calm, warm, a little informal, like a peer calling a peer.
+          Is AJ around?" Calm, warm, a little informal, like a peer calling a peer.
         - Ask for help, don't sell. Never pitch the gatekeeper. One short, true reason only if asked, tied to the
-          prospect's world in the script's words ("It's about how he's handling ops admin. He'll know the context
+          prospect's world in the script's words ("It's about how AJ's team handles ops admin. Easy to explain
           once we connect.").
         - "What's this regarding?": the one-line reason, then straight back to the ask: "Could you put me through?"
-        - "Is he expecting your call?": honest: "Not yet. Worth a minute of his time, though. Is he in?"
-        - "He's busy / in a meeting": get the next best thing: his direct line or extension, the best time to call,
-          or his email. Use the gatekeeper's name if they gave it.
-        - "Send an email": "Happy to. What's the best address for him?" then ask when he's usually free.
+        - "Are they expecting your call?": honest: "Not yet. Worth a minute of AJ's time, though. Is AJ in?"
+        - "They're busy / in a meeting": get the next best thing: their direct line or extension, the best time
+          to call, or their email. Use the gatekeeper's name if they gave it.
+        - "Send an email": "Happy to. What's the best address for AJ?" then ask when AJ is usually free.
         - Never lie, never claim a relationship or a prior conversation that didn't happen.
+        - Use the prospect's name, not "he" or "she", unless the gatekeeper used one first.
         - Once the prospect is on the line: back to the script's opener.
 
         Cold call method (adapt it to the campaign):
