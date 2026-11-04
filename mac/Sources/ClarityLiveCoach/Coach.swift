@@ -269,7 +269,11 @@ struct FollowUp: Equatable {
     var linkedInMessageFirst = false // the last call day: a message, not a connection note
 
     /// Everything due today is done.
-    var allDone: Bool { (textDone || !textDue) && (!linkedInDue || linkedinDone || linkedinMessageDone) }
+    /// Connect day: both the note and the message. Last call day: the message.
+    var allDone: Bool {
+        (textDone || !textDue)
+            && (!linkedInDue || (linkedInMessageFirst ? linkedinMessageDone : linkedinDone && linkedinMessageDone))
+    }
 }
 
 // MARK: - Call state
@@ -2018,7 +2022,10 @@ final class CoachModel: ObservableObject {
             let wa = followUp.map { Cadence.isWashington($0.phone) } ?? false
             if !wa { steps.append(("Text", DialHistory.textedToday(key))) }
         }
-        if step.linkedInConnect { steps.append(("LinkedIn request", DialHistory.linkedInToday(key))) }
+        if step.linkedInConnect {
+            steps.append(("LinkedIn request", DialHistory.linkedInToday(key)))
+            steps.append(("LinkedIn message", DialHistory.linkedInMessageToday(key)))
+        }
         return steps
     }
 
@@ -2416,7 +2423,8 @@ final class CoachModel: ObservableObject {
         let text = scriptPiece(["missed call text", "missed-call text", "missed call sms", "missed call message",
                                 "text after missed call", "text after voicemail", "voicemail text", "follow-up text",
                                 "follow up text", "text message", "sms", "missed call"])
-        let note = scriptPiece(["linkedin connection request", "linkedin connect", "linkedin connection",
+        let note = scriptPiece(["linkedin connection message", "linkedin connection request", "linkedin connection note",
+                                "linkedin connect message", "linkedin connect", "linkedin connection",
                                 "connection request", "linkedin note", "linkedin request", "connect note"])
         let message = scriptPiece(["linkedin message", "linkedin dm", "linkedin direct message", "linkedin follow"])
         let firstText = recordKey().map { DialHistory.sentTexts($0).isEmpty } ?? true

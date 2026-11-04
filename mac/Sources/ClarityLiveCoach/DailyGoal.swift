@@ -63,6 +63,7 @@ struct DailyGoalCard: View {
                 var left = max(2 - dialsToday, 0)
                 if step.textToday, !DialHistory.textedToday(r.id) { left += 1 }
                 if step.linkedInConnect, !DialHistory.linkedInToday(r.id) { left += 1 }
+                if step.linkedInConnect, !DialHistory.linkedInMessageToday(r.id) { left += 1 }
                 if left > 0 { people += 1; touches += left }
             }
             result[c.id] = (people: people, touches: touches)

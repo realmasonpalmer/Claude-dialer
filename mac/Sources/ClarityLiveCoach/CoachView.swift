@@ -962,8 +962,6 @@ struct FollowUpCard: View {
     var isLastPerson = false
     /// Today's steps for this person (from the 21-day plan).
     var steps: [(title: String, done: Bool)] = []
-    /// Show the LinkedIn message instead of the connection note.
-    @State private var useMessage = false
     var canSend: Bool
     var onSend: () -> Void
     var onLinkedIn: () -> Void
@@ -993,11 +991,26 @@ struct FollowUpCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // LinkedIn: one row, only on the plan's LinkedIn days. The note (not connected yet)
-                // or the message (already connected; the plan's choice on the last call day).
-                if !f.linkedInDue && !f.linkedinDone && !f.linkedinMessageDone {
-                    EmptyView()
-                } else if useMessage || f.linkedInMessageFirst || f.linkedinMessageDone {
+                // LinkedIn, only on the plan's LinkedIn days. First touch (connect day): both the
+                // connection note and the message, so neither waits on whether they're connected.
+                // The plan's last call day: just the message.
+                if f.linkedInDue || f.linkedinDone || f.linkedinMessageDone {
+                    if !f.linkedInMessageFirst || f.linkedinDone {
+                        row(done: f.linkedinDone, title: "LinkedIn connection note", message: f.linkedin) {
+                            if f.linkedinDone {
+                                Button("Open again") { onLinkedIn() }.buttonStyle(.link)
+                            } else {
+                                Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
+                                    .keyboardShortcut("l", modifiers: .command)
+                                    .buttonStyle(.bordered)
+                                    .disabled(f.linkedin.isEmpty)
+                            }
+                        }
+                        if f.linkedinDone && !f.linkedinMessageDone {
+                            Text("On their profile: click Connect, then Add a note. Right-click the box, click Paste, then Send.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                     row(done: f.linkedinMessageDone, title: "LinkedIn message", message: f.linkedinMessage) {
                         if f.linkedinMessageDone {
                             Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
@@ -1010,27 +1023,6 @@ struct FollowUpCard: View {
                     if f.linkedinMessageDone {
                         Text("Copied. On their profile: click Message, paste (Command-V), then Send.")
                             .font(.caption).foregroundStyle(.secondary)
-                    } else if !f.linkedinDone && !f.linkedInMessageFirst {
-                        Button("Not connected yet? Use a connection note") { useMessage = false }
-                            .buttonStyle(.link).font(.caption)
-                    }
-                } else {
-                    row(done: f.linkedinDone, title: "LinkedIn note", message: f.linkedin) {
-                        if f.linkedinDone {
-                            Button("Open again") { onLinkedIn() }.buttonStyle(.link)
-                        } else {
-                            Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
-                                .keyboardShortcut("l", modifiers: .command)
-                                .buttonStyle(.bordered)
-                                .disabled(f.linkedin.isEmpty)
-                        }
-                    }
-                    if f.linkedinDone {
-                        Text("On their profile: click Connect, then Add a note. Right-click the box, click Paste, then Send.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Button("Already connected? Use a message") { useMessage = true }
-                            .buttonStyle(.link).font(.caption)
                     }
                 }
 
