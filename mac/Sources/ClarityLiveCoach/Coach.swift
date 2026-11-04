@@ -1244,14 +1244,51 @@ final class CoachModel: ObservableObject {
         }
     }
 
-    /// Counts down 3 seconds, then calls the same person again. Wait stops it.
+    /// 1st try reached a recording (100% sure: words only a machine says) and auto-dial is on:
+    /// click Aircall's hang-up button, wait until Aircall says the line is free, then redial in 1 s.
+    /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
+    private func autoHangUpForRedial() {
+        guard autoDial, AircallPhone.isOn, currentAttempts < 2, !autoHangingUp, !autoHungUpThisCall,
+              let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return }
+        autoHangingUp = true
+        autoHungUpThisCall = true
+        ActivityLog.add("Recording for sure on the 1st try for \(calling ?? "?"): hanging up to redial")
+        Task { [weak self] in
+            guard let self, self.status == .live else { self?.autoHangingUp = false; return }
+            var done = await AircallPhone.shared.hangUp()
+            if done {
+                // Only end the call on our side once Aircall says the line is free (up to 5 s).
+                done = false
+                for _ in 0..<5 {
+                    try? await Task.sleep(for: .seconds(1))
+                    if await Aircall.lineIsOnCall() == false { done = true; break }
+                }
+            }
+            self.autoHangingUp = false
+            guard self.status == .live else { return }
+            if done {
+                self.redialRightAway = true
+                self.endCall()
+            } else {
+                ActivityLog.problem("Auto hang-up didn't finish: the rep hangs up, redial as usual")
+            }
+        }
+    }
+    private var autoHangingUp = false
+    private var autoHungUpThisCall = false
+    /// The app hung up a 1st-try recording: redial after 1 second instead of 3.
+    private var redialRightAway = false
+
+    /// Counts down 3 seconds (1 after an automatic hang-up), then calls the same person again. Wait stops it.
     private func startAutoRedial() {
         autoNextTask?.cancel()
         autoNextName = calling.flatMap { c in
             c.firstIndex(of: "\"").map { String(c[c.index(after: $0)...]).replacingOccurrences(of: "\"", with: "") }
         }.map { "\($0) again" }
+        let countdown = redialRightAway ? 1 : 3
+        redialRightAway = false
         autoNextTask = Task { [weak self] in
-            for left in stride(from: 3, through: 1, by: -1) {
+            for left in stride(from: countdown, through: 1, by: -1) {
                 self?.autoNextIn = left
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
@@ -1367,6 +1404,8 @@ final class CoachModel: ObservableObject {
 
     private func startCall() {
         problem = nil
+        redialRightAway = false
+        autoHungUpThisCall = false
         guard startAudio() else { return }
         if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
         if let key = recordKey() {
@@ -1702,6 +1741,8 @@ final class CoachModel: ObservableObject {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
                         showVoicemail(mailboxFull: Voicemail.mailboxFull(recent))
                     }
+                    // Surely a recording, and the rep hasn't started talking: hang up and redial.
+                    if Voicemail.certain(recent), repWordsInCall < 3 { autoHangUpForRedial() }
                 } else if !voicemailActive, !screenerActive, !stagesSeen.contains("Screener"), Screener.detects(recent) {
                     showScreenerLine()
                 }

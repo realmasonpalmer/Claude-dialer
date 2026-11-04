@@ -80,6 +80,21 @@ enum Voicemail {
 
     static func mailboxFull(_ text: String) -> Bool { contains(text, fullPhrases) }
 
+    /// Words only a recording says, never a person who picked up. Used to hang up a 1st-try
+    /// voicemail by itself. Kept short on purpose: anything a live person might say is left out.
+    private static let certainPhrases = [
+        "after the tone", "after the beep", "at the tone", "at the beep", "at the sound of the tone",
+        "after the signal", "record your message", "please record", "when you have finished recording",
+        "when you're finished recording", "when you are finished recording", "press pound", "hang up or press",
+        "for more options", "voice mailbox", "forwarded to voicemail", "forwarded to an automated",
+        "your call has been forwarded", "reached the voicemail", "this is the voicemail", "reached the mailbox",
+        "google subscriber", "the subscriber you", "the party you are trying", "the customer you are calling",
+        "send a numeric page", "to page this person",
+    ]
+
+    /// True only when it's surely a recording (see `certainPhrases`), or the mailbox is full.
+    static func certain(_ text: String) -> Bool { contains(text, certainPhrases) || mailboxFull(text) }
+
     /// Real people answer short ("Hello?", "This is Jane"). A recording talks on and on.
     /// 18+ words before the rep says anything, early in the call = a voicemail greeting.
     static func longGreeting(_ text: String, earlyInCall: Bool) -> Bool {
