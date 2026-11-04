@@ -85,12 +85,18 @@ enum Voicemail {
     private static let certainPhrases = [
         "after the tone", "after the beep", "at the tone", "at the beep", "at the sound of the tone",
         "after the signal", "record your message", "please record", "when you have finished recording",
-        "when you're finished recording", "when you are finished recording", "press pound", "hang up or press",
-        "for more options", "voice mailbox", "forwarded to voicemail", "forwarded to an automated",
+        "when you're finished recording", "when you are finished recording", "voice mailbox", "forwarded to voicemail", "forwarded to an automated",
         "your call has been forwarded", "reached the voicemail", "this is the voicemail", "reached the mailbox",
         "google subscriber", "the subscriber you", "the party you are trying", "the customer you are calling",
         "send a numeric page", "to page this person",
     ]
+
+    /// The beep is coming: only a mailbox says these (a phone menu doesn't).
+    private static let recordingPhrases = [
+        "after the tone", "after the beep", "at the tone", "at the beep", "at the sound of the tone",
+        "after the signal", "record your message", "please record", "finished recording",
+    ]
+    static func recordingPrompt(_ text: String) -> Bool { contains(text, recordingPhrases) }
 
     /// True only when it's surely a recording (see `certainPhrases`), or the mailbox is full.
     static func certain(_ text: String) -> Bool { contains(text, certainPhrases) || mailboxFull(text) }

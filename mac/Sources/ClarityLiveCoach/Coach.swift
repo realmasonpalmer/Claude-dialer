@@ -85,6 +85,21 @@ enum CoachPrompt {
         fits what they just said. Then write it in the script's voice and get back to the script as soon as you can.
         The method below fills the gaps; it never overrides the script.
 
+        Getting past a gatekeeper (receptionist, assistant, operator, "who's calling?"). Adapt the campaign's
+        opener for this automatically; the goal is to be put through, not to pitch:
+        - Sound expected and brief. First name for the prospect, first name for the rep: "Hi, it's Mason for AJ.
+          Is he around?" Calm, warm, a little informal, like a peer calling a peer.
+        - Ask for help, don't sell. Never pitch the gatekeeper. One short, true reason only if asked, tied to the
+          prospect's world in the script's words ("It's about how he's handling ops admin. He'll know the context
+          once we connect.").
+        - "What's this regarding?": the one-line reason, then straight back to the ask: "Could you put me through?"
+        - "Is he expecting your call?": honest: "Not yet. Worth a minute of his time, though. Is he in?"
+        - "He's busy / in a meeting": get the next best thing: his direct line or extension, the best time to call,
+          or his email. Use the gatekeeper's name if they gave it.
+        - "Send an email": "Happy to. What's the best address for him?" then ask when he's usually free.
+        - Never lie, never claim a relationship or a prior conversation that didn't happen.
+        - Once the prospect is on the line: back to the script's opener.
+
         Cold call method (adapt it to the campaign):
         - Opener: honest that it's a cold call, ask for a few seconds. Calm and slow beats slick.
         - Reason for the call: lead with a problem their peers have, not the product. Then ask if it's true for them.
@@ -150,6 +165,30 @@ enum CoachPrompt {
         If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
         Opener: \(style.template)
         Put the opener's name in the CUE: "\(style.name) opener".
+        """
+    }
+
+    /// A phone menu is playing. Plan the best route to the owner.
+    static func phoneTree(menu: String, calling: String?, details: String?, repSaid: String) -> String {
+        """
+        \(about(calling, details))The call reached an automated phone menu (phone tree). Everything it has said so far
+        (speech-to-text, so expect small errors):
+        "\(menu)"
+        \(repSaid.isEmpty ? "" : "Keys or words the rep has already used: \(repSaid)\n")
+        Goal: reach the person above, or if they're the owner or a decision maker, the fastest route to a live
+        person who can put the rep through to them. Pick the highest-leverage option from what the menu actually
+        offers. Usually best first: dial by name or the company directory (spell their last name on the keypad:
+        2=ABC 3=DEF 4=GHI 5=JKL 6=MNO 7=PQRS 8=TUV 9=WXYZ), their extension if known, an option for the owner,
+        management or executive office, then sales (sales lines answer fast and can transfer), then the operator
+        (0). Avoid support queues, billing, hours, locations and anything that ends in a voicemail box.
+        If the menu hasn't listed its options yet, say to wait for them, and what to listen for.
+        If the latest words are clearly a live person, not a recording, start your answer with the line HUMAN,
+        then give what the rep should say to them. A receptionist or assistant: the campaign's opener adapted for
+        getting through to the person (see "Getting past a gatekeeper"), in the script's voice. The person
+        themselves: the script's opener.
+        Answer in this format:
+        SAY: <the exact keys to press now, or what to say, and why in a few words>
+        CUE: <the backup plan if that doesn't work>
         """
     }
 
@@ -1269,6 +1308,7 @@ final class CoachModel: ObservableObject {
     /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
     private func autoHangUpForRedial() {
         guard autoDial, AircallPhone.isOn, currentAttempts < 2, !autoHangingUp, !autoHungUpThisCall,
+              !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
               let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return }
         autoHangingUp = true
         autoHungUpThisCall = true
@@ -1427,6 +1467,8 @@ final class CoachModel: ObservableObject {
         redialRightAway = false
         autoHungUpThisCall = false
         phoneTreeThisCall = false
+        phoneTreeActive = false
+        phoneTreeTask?.cancel()
         guard startAudio() else { return }
         if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
         if let key = recordKey() {
@@ -1757,10 +1799,17 @@ final class CoachModel: ObservableObject {
                 let firstWords = turns.contains { $0.speaker == .rep } ? "" : (prospectSoFar + " " + text)
                 if BadNumber.detects(recent) {
                     if !badNumberThisCall { markBadNumber() }
-                } else if !badNumberThisCall, !phoneTreeThisCall, !voicemailActive, repWordsInCall < 5,
-                          !Voicemail.certain(recent), PhoneTree.detects(prospectSoFar + " " + text) {
+                } else if phoneTreeActive {
+                    // In a phone menu: no voicemail card, no auto hang-up. Only a real mailbox ends it.
+                    if Voicemail.recordingPrompt(recent) {
+                        phoneTreeActive = false
+                        phoneTreeTask?.cancel()
+                        showVoicemail(mailboxFull: Voicemail.mailboxFull(recent))
+                    }
+                } else if !badNumberThisCall, !phoneTreeThisCall, repWordsInCall < 5,
+                          !Voicemail.recordingPrompt(recent), PhoneTree.detects(prospectSoFar + " " + text) {
                     // Work through it by default. Old behavior (disqualify + hang up) behind a setting.
-                    if UserDefaults.standard.bool(forKey: "hangUpPhoneTrees") { markPhoneTree() } else { showPhoneTreeTips() }
+                    if UserDefaults.standard.bool(forKey: "hangUpPhoneTrees") { markPhoneTree() } else { enterPhoneTree() }
                 } else if Voicemail.detects(recent, earlyInCall: early)
                     || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
@@ -1911,6 +1960,64 @@ final class CoachModel: ObservableObject {
     }
     private var phoneTreeThisCall = false
 
+    /// In a phone menu right now (until a person answers or a mailbox beep is coming).
+    private var phoneTreeActive = false
+    private var phoneTreeTask: Task<Void, Never>?
+
+    /// A phone menu answered. Show the quick ways through right away, then have Opus listen to the
+    /// whole menu and pick the best route to the owner. No voicemail card while the menu plays.
+    private func enterPhoneTree() {
+        phoneTreeActive = true
+        voicemailActive = false
+        sawVoicemail = false
+        showPhoneTreeTips()
+        askPhoneTree()
+    }
+
+    /// Opus 5.5 reads everything the menu has said so far and names the highest-leverage keys to
+    /// press to reach the owner. Re-asked each time the menu finishes a sentence (after a short pause,
+    /// so a new option isn't missed). If a live person is now talking, it says what to say to them.
+    private func askPhoneTree() {
+        guard let apiKey = Keychain.read(.anthropic) else { return }
+        phoneTreeTask?.cancel()
+        let menu = prospectSoFar
+        let who = calling
+        let user = CoachPrompt.phoneTree(menu: menu, calling: calling, details: recordDetails,
+                                         repSaid: turns.filter { $0.speaker == .rep }.map(\.text).joined(separator: " "))
+        let system = self.system
+        phoneTreeTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1200))
+            guard let self, !Task.isCancelled, self.phoneTreeActive, self.calling == who else { return }
+            self.seq += 1
+            let id = self.seq
+            self.thinking = true
+            var text = ""
+            do {
+                try await CoachSpeed.best.client(apiKey: apiKey).stream(system: system, user: user) { text = $0 }
+            } catch {
+                if !Task.isCancelled { ActivityLog.problem("Phone tree advice failed: \(error.localizedDescription)") }
+                if self.seq == id { self.thinking = false }
+                return
+            }
+            if self.seq == id { self.thinking = false }
+            guard !Task.isCancelled, self.phoneTreeActive, self.calling == who else { return }
+            let human = text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("HUMAN")
+            var s = Suggestion.parse(text)
+            guard !s.say.isEmpty else { return }
+            s.sayComplete = true
+            if human {
+                // A person picked up (receptionist or the owner): back to normal coaching.
+                self.phoneTreeActive = false
+                s.stage = s.stage.isEmpty ? "Gatekeeper" : s.stage
+                ActivityLog.add("Phone tree: a person answered for \(who ?? "?")")
+            } else {
+                s.stage = "Phone tree"
+                ActivityLog.add("Phone tree route for \(who ?? "?"): \(s.say)")
+            }
+            self.show(s, id: id, kind: .reply)
+        }
+    }
+
     /// A phone menu answered: how to get through to the person. Press 0 for an operator, or dial
     /// by name with the first letters of their last name as keypad digits.
     private func showPhoneTreeTips() {
@@ -1930,7 +2037,7 @@ final class CoachModel: ObservableObject {
         seq += 1
         show(Suggestion(say: "Phone tree. Press 0 for the operator.\(byName)",
                         cue: "When a person answers: \"Hi, could you put me through to \(full ?? "them")?\"",
-                        stage: "Gatekeeper", sayComplete: true), id: seq, kind: .reply)
+                        stage: "Phone tree", sayComplete: true), id: seq, kind: .reply)
     }
 
     private func markBadNumber() {
@@ -2305,6 +2412,7 @@ final class CoachModel: ObservableObject {
         specTimer?.cancel()
         let said = uncoached.trimmingCharacters(in: .whitespaces)
         guard !said.isEmpty else { return }
+        if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
         if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
         // Started early on exactly these words? Then the answer is already on its way.
         if let basis = specBasis {
