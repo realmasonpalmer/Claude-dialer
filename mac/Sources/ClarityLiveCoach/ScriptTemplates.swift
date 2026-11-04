@@ -15,6 +15,8 @@ final class ScriptTemplates {
         var linkedinMessage: String?
         /// The rep's first line when the person picks up, word for word ("Is this ___?").
         var opener: String?
+        /// Voicemail scripts in the order they're left (most scripts have one).
+        var voicemails: [String] = []
     }
 
     private var cache: [String: Found]
@@ -22,7 +24,7 @@ final class ScriptTemplates {
     /// Scripts Claude couldn't read, and when: tried again after 10 minutes, not on every card.
     private var failed: [String: Date] = [:]
     private var waiting: [String: [() -> Void]] = [:]
-    private static let storeKey = "scriptTemplates3" // 3: also finds the opener
+    private static let storeKey = "scriptTemplates4" // 4: also finds voicemail scripts
 
     private init() {
         cache = UserDefaults.standard.data(forKey: Self.storeKey)
@@ -47,7 +49,7 @@ final class ScriptTemplates {
             guard let found else { self.waiting[key] = nil; self.failed[key] = Date(); return }
             self.cache[key] = found
             if let data = try? JSONEncoder().encode(self.cache) { UserDefaults.standard.set(data, forKey: Self.storeKey) }
-            ActivityLog.add("Script templates: \(found.texts.count) text(s), LinkedIn note \(found.linkedinNote == nil ? "no" : "yes"), LinkedIn message \(found.linkedinMessage == nil ? "no" : "yes")")
+            ActivityLog.add("Script templates: \(found.voicemails.count) voicemail(s), \(found.texts.count) text(s), LinkedIn note \(found.linkedinNote == nil ? "no" : "yes"), LinkedIn message \(found.linkedinMessage == nil ? "no" : "yes")")
             let calls = self.waiting[key] ?? []
             self.waiting[key] = nil
             calls.forEach { $0() }
@@ -86,7 +88,8 @@ final class ScriptTemplates {
         request", "DM", and so on), or there may be no heading at all. Read for meaning.
 
         Return exactly this JSON and nothing else:
-        {"texts": ["...", "..."], "linkedinNote": "..." or null, "linkedinMessage": "..." or null, "opener": "..." or null}
+        {"texts": ["...", "..."], "linkedinNote": "..." or null, "linkedinMessage": "..." or null, "opener": "..." or null,
+         "voicemails": ["..."]}
 
         - texts: every text message template, in the order they're sent. The first one is the text after a missed
           call or voicemail; then follow-ups ("if no reply", "day 3", and so on). If the script gives two versions
@@ -97,6 +100,8 @@ final class ScriptTemplates {
         - opener: the rep's very first line when the person picks up the phone (the start of the call script), word
           for word, blanks and all ("Is this ___?"). Only the rep's first line, not the rest of the call. null if
           the script has no call script.
+        - voicemails: every voicemail script (what the rep says after the beep), in the order they're left. If the
+          script gives two versions of the same voicemail, keep only the first. Empty list if there are none.
         - Copy each one exactly: same words, same placeholders ([Name], {first name}, [Your Name]). Drop only
           the quote marks around it. Never include the heading, label or notes before or after it, like
           "Connection request (under 200 characters, so it fits any account)". Start at the message's first word.
@@ -127,6 +132,7 @@ final class ScriptTemplates {
         return Found(texts: ((json["texts"] as? [Any]) ?? []).compactMap(clean),
                      linkedinNote: clean(json["linkedinNote"]),
                      linkedinMessage: clean(json["linkedinMessage"]),
-                     opener: (json["opener"] as? String).map(cleanTemplate).flatMap { $0.count >= 3 ? $0 : nil })
+                     opener: (json["opener"] as? String).map(cleanTemplate).flatMap { $0.count >= 3 ? $0 : nil },
+                     voicemails: ((json["voicemails"] as? [Any]) ?? []).compactMap(clean))
     }
 }

@@ -194,7 +194,8 @@ enum CoachPrompt {
         One voice for everything you write here. The voicemail, TEXT, LINKEDIN and LINKEDIN MESSAGE all come from
         the campaign above: its opening, its angle, its offer, its tone, and any voicemail, text or LinkedIn wording
         it gives. Follow the campaign over the defaults below whenever they differ.
-        Templates come first: if the campaign or its script has a text message template (a missed call text, a text
+        Templates come first: if the campaign or its script has a voicemail script, the voicemail is that script
+        word for word, with only the blanks and placeholders filled in. If the campaign or its script has a text message template (a missed call text, a text
         after a voicemail, or any text the rep sends), the TEXT line must be that template word for word, with only
         the name, rep and company placeholders filled in (for a later text, use the script's matching follow-up
         template if it has one). Same for LinkedIn: a connection note or request template goes in LINKEDIN word for
@@ -2231,6 +2232,7 @@ final class CoachModel: ObservableObject {
             var s = Suggestion.parse(text)
             s.sayComplete = true
             s.stage = "Voicemail"
+            self?.applyScriptVoicemail(&s, for: forWho)
             if !Task.isCancelled, !s.say.isEmpty, self?.calling == forWho {
                 ActivityLog.add("Voicemail ready for \(forWho ?? "?") (from page: \(usedDetails))")
                 self?.voicemailUsedDetails = usedDetails
@@ -2378,6 +2380,7 @@ final class CoachModel: ObservableObject {
         let messagesBefore = recordKey().map { DialHistory.sentLinkedInMessages($0).count } ?? 0
         s.linkedinMessage = messages[messagesBefore % messages.count]
         applyScriptMessages(&s, for: calling)
+        applyScriptVoicemail(&s, for: calling)
         return s
     }
 
@@ -2428,6 +2431,10 @@ final class CoachModel: ObservableObject {
     /// The script was just read by Claude: refresh the card's templates and the opener on screen.
     private func scriptRead() {
         refillFromScript()
+        if var v = voicemailScript, voicemailFor == calling {
+            applyScriptVoicemail(&v, for: calling)
+            voicemailScript = v
+        }
         if status == .ready, openerStyle == nil { prepareOpener() }
     }
 
@@ -2523,6 +2530,17 @@ final class CoachModel: ObservableObject {
         let text = found.texts.first
         if let n = found.linkedinNote ?? found.linkedinMessage ?? text { s.linkedin = fillTags(n, for: calling) }
         if let m = found.linkedinMessage ?? found.linkedinNote ?? text { s.linkedinMessage = fillTags(m, for: calling) }
+    }
+
+    /// The campaign script's voicemail, word for word with the blanks filled, in place of a written one.
+    /// 1st voicemail to this person = the script's 1st, and so on. Past the last, Claude's version stays.
+    private func applyScriptVoicemail(_ s: inout Suggestion, for calling: String?) {
+        guard let found = ScriptTemplates.shared.templates(for: campaignText, onReady: { [weak self] in self?.scriptRead() }),
+              !found.voicemails.isEmpty else { return }
+        let left = recordKey().map { DialHistory.person($0).voicemails.count } ?? 0
+        guard left < found.voicemails.count else { return }
+        s.say = fillBlanks(fillTags(found.voicemails[left], for: calling), for: calling)
+        s.cue = "Your script's voicemail. Wait for the beep."
     }
 
     /// The script was just read: put its templates on the open card (anything not sent yet).
