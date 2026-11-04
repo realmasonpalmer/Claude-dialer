@@ -2423,7 +2423,7 @@ final class CoachModel: ObservableObject {
                     }
                     body = under.joined(separator: " ")
                 }
-                body = body.trimmingCharacters(in: CharacterSet(charactersIn: " \"“”'*_"))
+                body = ScriptTemplates.cleanTemplate(body)
                 if body.count >= 15 { return String(body.prefix(1000)) }
             }
         }

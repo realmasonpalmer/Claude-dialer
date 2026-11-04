@@ -20,7 +20,7 @@ final class ScriptTemplates {
     /// Scripts Claude couldn't read, and when: tried again after 10 minutes, not on every card.
     private var failed: [String: Date] = [:]
     private var waiting: [String: [() -> Void]] = [:]
-    private static let storeKey = "scriptTemplates"
+    private static let storeKey = "scriptTemplates2" // 2: re-read scripts after the heading fix
 
     private init() {
         cache = UserDefaults.standard.data(forKey: Self.storeKey)
@@ -53,6 +53,24 @@ final class ScriptTemplates {
         return nil
     }
 
+    /// Drops a heading or note in front of a quoted template, like
+    /// `Connection request (under 200 characters) “Hi [Name], ...”` → `Hi [Name], ...`.
+    /// Only when the words before the quote aren't the message itself (no greeting in them).
+    static func cleanTemplate(_ raw: String) -> String {
+        var t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let q = t.firstIndex(where: { "“\"".contains($0) }), q != t.startIndex {
+            let before = t[..<q].lowercased()
+            let greeting = ["hi ", "hey ", "hello ", "good morning", "good afternoon"].contains { before.contains($0) }
+            if !greeting, before.count < 160 { t = String(t[q...]) }
+        }
+        // The quote marks around it, and a closing quote with nothing after it.
+        t = t.trimmingCharacters(in: CharacterSet(charactersIn: " \n\"“”*_"))
+        if let close = t.firstIndex(of: "”"), t[t.index(after: close)...].trimmingCharacters(in: .whitespaces).count < 3 {
+            t = String(t[..<close])
+        }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func key(_ script: String) -> String {
         SHA256.hash(data: Data(script.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -75,7 +93,8 @@ final class ScriptTemplates {
         - linkedinMessage: the LinkedIn direct message template (for people already connected), or null.
           If one template is labeled as both ("LinkedIn message/connection request"), put it in both.
         - Copy each one exactly: same words, same placeholders ([Name], {first name}, [Your Name]). Drop only
-          the quote marks around it. Don't include headings, notes or instructions like "(under 200 characters)".
+          the quote marks around it. Never include the heading, label or notes before or after it, like
+          "Connection request (under 200 characters, so it fits any account)". Start at the message's first word.
         - Don't use voicemail scripts, call openers or email templates. Don't write anything that isn't in the script.
 
         Campaign and script:
@@ -95,7 +114,9 @@ final class ScriptTemplates {
             return nil
         }
         func clean(_ v: Any?) -> String? {
-            guard let s = (v as? String)?.trimmingCharacters(in: CharacterSet(charactersIn: " \n\"“”")), s.count >= 10 else { return nil }
+            guard let raw = v as? String else { return nil }
+            let s = cleanTemplate(raw)
+            guard s.count >= 10 else { return nil }
             return s
         }
         return Found(texts: ((json["texts"] as? [Any]) ?? []).compactMap(clean),
