@@ -1757,9 +1757,10 @@ final class CoachModel: ObservableObject {
                 let firstWords = turns.contains { $0.speaker == .rep } ? "" : (prospectSoFar + " " + text)
                 if BadNumber.detects(recent) {
                     if !badNumberThisCall { markBadNumber() }
-                } else if !badNumberThisCall, !voicemailActive, repWordsInCall < 5, !Voicemail.certain(recent),
-                          PhoneTree.detects(prospectSoFar + " " + text) {
-                    markPhoneTree()
+                } else if !badNumberThisCall, !phoneTreeThisCall, !voicemailActive, repWordsInCall < 5,
+                          !Voicemail.certain(recent), PhoneTree.detects(prospectSoFar + " " + text) {
+                    // Work through it by default. Old behavior (disqualify + hang up) behind a setting.
+                    if UserDefaults.standard.bool(forKey: "hangUpPhoneTrees") { markPhoneTree() } else { showPhoneTreeTips() }
                 } else if Voicemail.detects(recent, earlyInCall: early)
                     || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
@@ -1909,6 +1910,28 @@ final class CoachModel: ObservableObject {
         }
     }
     private var phoneTreeThisCall = false
+
+    /// A phone menu answered: how to get through to the person. Press 0 for an operator, or dial
+    /// by name with the first letters of their last name as keypad digits.
+    private func showPhoneTreeTips() {
+        phoneTreeThisCall = true
+        coachTask?.cancel()
+        thinking = false
+        let full = calling.flatMap { c -> String? in
+            guard let open = c.firstIndex(of: "\""), let close = c.lastIndex(of: "\""), open < close else { return nil }
+            return String(c[c.index(after: open)..<close])
+        }
+        let last = full?.split(separator: " ").last.map(String.init) ?? ""
+        let keys: [Character: Character] = Dictionary(uniqueKeysWithValues: Array(zip("abcdefghijklmnopqrstuvwxyz",
+                                                                                        "22233344455566677778889999")))
+        let digits = String(last.lowercased().compactMap { keys[$0] }.prefix(4))
+        let byName = digits.isEmpty ? "" : " Dial by name: \(digits) (\(last.prefix(4)))."
+        ActivityLog.add("Phone tree for \(calling ?? "?"): showing how to get through")
+        seq += 1
+        show(Suggestion(say: "Phone tree. Press 0 for the operator.\(byName)",
+                        cue: "When a person answers: \"Hi, could you put me through to \(full ?? "them")?\"",
+                        stage: "Gatekeeper", sayComplete: true), id: seq, kind: .reply)
+    }
 
     private func markBadNumber() {
         badNumberThisCall = true
