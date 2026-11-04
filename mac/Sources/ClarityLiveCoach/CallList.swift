@@ -85,14 +85,46 @@ final class CallList: ObservableObject {
                 Task { await loadFullList() }
                 return
             }
-            // Same list, scrolled: add anyone new, never drop the people already learned.
+            // Same list. If the screen shows people the saved list doesn't have, or in a different
+            // order, the list changed in Salesforce (new filters or sort): reload it.
             let known = Set(records.map(\.id))
             let added = found.filter { !known.contains($0.id) }
+            if !added.isEmpty || !Self.sameOrder(found, records) {
+                if Salesforce.isConnected, listKey != nil { Task { await refreshFromSalesforce() } }
+            } else if Date().timeIntervalSince(lastFullLoad) > 120, listKey != nil {
+                // Pick up filter changes that don't show on screen yet (every 2 minutes).
+                Task { await refreshFromSalesforce() }
+            }
+            // Meanwhile (or with no Salesforce connection), add who's on screen.
             guard !added.isEmpty || records.isEmpty else { return }
             records += added
             message = nil
             save()
         }
+    }
+
+    /// True if the rows on screen appear in the saved list in the same order.
+    static func sameOrder(_ screen: [Record], _ saved: [Record]) -> Bool {
+        var last = -1
+        for r in screen {
+            guard let i = saved.firstIndex(where: { $0.id.prefix(15) == r.id.prefix(15) }) else { return false }
+            if i < last { return false }
+            last = i
+        }
+        return true
+    }
+
+    private var lastFullLoad = Date.distantPast
+    private var lastRefreshTry = Date.distantPast
+
+    /// Reloads the whole list from Salesforce so it matches the list's current filters and sort.
+    /// At most every 30 seconds. Returns true if it learned new people.
+    @discardableResult
+    func refreshFromSalesforce(force: Bool = false) async -> Bool {
+        guard Salesforce.isConnected, force || Date().timeIntervalSince(lastRefreshTry) > 30 else { return false }
+        lastRefreshTry = Date()
+        fullListKey = nil
+        return await loadFullList()
     }
 
     /// The list on screen (object + list view), from an address like /lightning/o/Contact/list?filterName=00B...
@@ -124,13 +156,32 @@ final class CallList: ObservableObject {
             let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } } ?? ""
             let currentID = lastIndex >= 0 && lastIndex < records.count ? records[lastIndex].id : nil
             let before = Set(records.map { String($0.id.prefix(15)) })
-            records = rows.map { Record(id: $0.id, name: $0.name, url: "\(origin)/lightning/r/\(key.object)/\($0.id)/view") }
-            if let currentID, let i = records.firstIndex(where: { $0.id.prefix(15) == currentID.prefix(15) }) { lastIndex = i }
+            let beforeCount = records.count
+            var fresh = rows.map { Record(id: $0.id, name: $0.name, url: "\(origin)/lightning/r/\(key.object)/\($0.id)/view") }
+            // The screen is the truth for order (a sort picked in Salesforce may not reach the API):
+            // people on screen go first, in screen order; everyone else follows in Salesforce's order.
+            if case .list(let screen) = SalesforceChrome.readList(), !Self.sameOrder(screen, fresh) {
+                let onScreen = screen.map { String($0.id.prefix(15)) }
+                let byID = Dictionary(fresh.map { (String($0.id.prefix(15)), $0) }, uniquingKeysWith: { a, _ in a })
+                let top = onScreen.compactMap { byID[$0] }
+                let topIDs = Set(top.map { String($0.id.prefix(15)) })
+                fresh = top + fresh.filter { !topIDs.contains(String($0.id.prefix(15))) }
+            }
+            records = fresh
+            lastFullLoad = Date()
+            if let currentID, let i = records.firstIndex(where: { $0.id.prefix(15) == currentID.prefix(15) }) {
+                lastIndex = i
+            } else if currentID != nil {
+                lastIndex = -1 // the person we were on was filtered off: start from the top
+            }
             fullListKey = key
             save()
             refreshUpNext()
             let newCount = records.filter { !before.contains(String($0.id.prefix(15))) }.count
-            ActivityLog.add("List: loaded \(records.count) people from Salesforce (\(newCount) new)")
+            let dropped = before.subtracting(records.map { String($0.id.prefix(15)) }).count
+            if records.count != beforeCount || newCount > 0 || dropped > 0 {
+                ActivityLog.add("List: loaded \(records.count) people from Salesforce (\(newCount) new, \(dropped) filtered off)")
+            }
             return newCount > 0
         } catch {
             ActivityLog.problem("List: couldn't load the full list from Salesforce: \(error.localizedDescription)")
