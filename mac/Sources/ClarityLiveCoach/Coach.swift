@@ -1243,7 +1243,9 @@ final class CoachModel: ObservableObject {
     /// 1st try went to voicemail and the redial is on: hang up in the in-app phone right away,
     /// then the redial starts by itself. True if the app took care of it.
     private func autoHangUpForRedial() -> Bool {
-        guard autoDial, AircallPhone.isOn, currentAttempts < 2, !autoHangingUp,
+        // Off for now (it got Aircall stuck once). Turn on with: defaults write <app id> autoHangUpVoicemail -bool true
+        guard UserDefaults.standard.bool(forKey: "autoHangUpVoicemail"),
+              autoDial, AircallPhone.isOn, currentAttempts < 2, !autoHangingUp,
               let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return false }
         autoHangingUp = true
         ActivityLog.add("Voicemail on the 1st try for \(calling ?? "?"): hanging up to redial")
