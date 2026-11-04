@@ -79,6 +79,12 @@ enum CoachPrompt {
         "This is [rep's first name] calling for [prospect's first name]." Then waits. Stage: Screener.
         11. If talk is flowing well or the rep is mid-thought, answer SKIP.
 
+        When the campaign has its own call script, the script leads. Follow its lines and its order, in its words.
+        Go off-script only when you're highly confident a different line moves the call toward the campaign objective
+        better, for example the prospect said something the script doesn't cover, or the script's next line no longer
+        fits what they just said. Then write it in the script's voice and get back to the script as soon as you can.
+        The method below fills the gaps; it never overrides the script.
+
         Cold call method (adapt it to the campaign):
         - Opener: honest that it's a cold call, ask for a few seconds. Calm and slow beats slick.
         - Reason for the call: lead with a problem their peers have, not the product. Then ask if it's true for them.
@@ -119,17 +125,22 @@ enum CoachPrompt {
         """
     }
 
-    static func opener(calling: String?, details: String?, style: Opener?) -> String {
+    static func opener(calling: String?, details: String?, style: Opener?, scriptOpener: String? = nil) -> String {
         guard let style else {
+            let given = scriptOpener.map { "The script's opener, exactly as written: \"\($0)\"\n" } ?? ""
             return """
-            \(about(calling, details))The call has not connected yet. Give the opener the rep should say when they pick up.
-            Start from the campaign's own opener (its Opening section, or the opener in the original script) and keep
-            its words, its order and its tone. Fill in their first name, the rep's name and anything in brackets.
+            \(about(calling, details))\(given)The call has not connected yet. Give the opener the rep should say when they pick up.
+            Use the script's own opener (above, or the campaign's Opening section, or the first line of the original
+            script). Say it the way the script says it: same words, same order, same tone, and nothing in front of it
+            (if the script starts "Is this ___?", the line starts "Is this", not "Hi ___, this is ___").
+            Fill in the blanks (___, [Name], {first name}) with their first name, the rep's name or the company.
             Then check it against what you know about this person. If a part of the script doesn't fit them, change
             only that part, as little as possible, in the script's voice. For example: the script says "a fellow
             Portland entrepreneur" but they're not in Portland or don't run a business; the script names an industry,
             role or tool that isn't theirs; the script assumes something their Salesforce page contradicts. Never
-            invent facts about them. If nothing needs changing, use the script as is. Don't add a pitch.
+            invent facts about them. If nothing needs changing, use the script as is. Don't add a pitch or a greeting
+            the script doesn't have. Only write a different opener if you're highly confident it serves the script's
+            goal better for this person, and keep it as short as the script's.
             CUE: one short delivery tip from the script's tone, plus "(adjusted: <what changed>)" if you changed anything.
             """
         }
@@ -2286,7 +2297,8 @@ final class CoachModel: ObservableObject {
         seq += 1
         instantOpenerID = seq
         show(instantOpener(for: calling), id: seq, kind: .opener)
-        ask(.opener, user: CoachPrompt.opener(calling: calling, details: recordDetails, style: openerStyle))
+        ask(.opener, user: CoachPrompt.opener(calling: calling, details: recordDetails, style: openerStyle,
+                                              scriptOpener: openerStyle == nil ? scriptOpenerLine() : nil))
     }
 
     /// The opener template filled in with their first name, your name and your company. No waiting.
@@ -2333,9 +2345,14 @@ final class CoachModel: ObservableObject {
     }
 
     private func instantOpener(for calling: String?) -> Suggestion {
-        // Rotation off: the campaign script's own opener (Claude's version, fitted to them, replaces it).
-        if openerStyle == nil, let t = campaignOpener(for: calling) {
-            return Suggestion(say: t, cue: "Your script's opener", stage: "Opener", sayComplete: true)
+        // Rotation off: the campaign script's own opener, never a built-in one.
+        // (Claude's version, fitted to them, replaces it a moment later.)
+        if openerStyle == nil {
+            if let line = scriptOpenerLine() {
+                return Suggestion(say: fillBlanks(fillTags(line, for: calling), for: calling),
+                                  cue: "Your script's opener", stage: "Opener", sayComplete: true)
+            }
+            return Suggestion(say: "Reading your script's opener...", cue: "Your script's opener", stage: "Opener", sayComplete: false)
         }
         var t = openerStyle?.template ?? Opener.all[0].template
         if t.contains("[a ") { t = Opener.all[0].template } // needs Claude to fill in; use the plain one
@@ -2346,18 +2363,35 @@ final class CoachModel: ObservableObject {
         return Suggestion(say: t, cue: openerStyle?.name ?? "Opener", stage: "Opener", sayComplete: true)
     }
 
-    /// The first quoted line of the campaign's Opening (or the whole thing, if nothing is quoted),
-    /// with their first name, the rep's name and the company filled in. nil if the campaign has none.
-    private func campaignOpener(for calling: String?) -> String? {
+    /// The script's first line for when they pick up: what Claude found reading the whole script,
+    /// else the first quoted line of the campaign's Opening. Raw (blanks and placeholders as written).
+    private func scriptOpenerLine() -> String? {
+        let found = ScriptTemplates.shared.templates(for: campaignText) { [weak self] in self?.scriptRead() }
+        if let line = found?.opener { return line }
         let opening = campaign.opening.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !opening.isEmpty else { return nil }
-        var t = opening
         for (open, close) in [("\"", "\""), ("“", "”")] {
             if let a = opening.range(of: open), let b = opening.range(of: close, range: a.upperBound..<opening.endIndex) {
-                t = String(opening[a.upperBound..<b.lowerBound]); break
+                return String(opening[a.upperBound..<b.lowerBound])
             }
         }
-        return fillTags(t, for: calling)
+        return opening
+    }
+
+    /// "Is this ___?" → "Is this Adam?": a blank right after words that ask for the person.
+    private func fillBlanks(_ text: String, for calling: String?) -> String {
+        guard let first = Screener.firstName(calling) else { return text }
+        var t = text
+        for lead in ["is this", "am i speaking with", "speaking with", "is that", "calling for", "looking for", "hi", "hey", "hello"] {
+            t = t.replacingOccurrences(of: #"(?i)\b(\#(lead))\s+_{2,}"#, with: "$1 \(first)", options: .regularExpression)
+        }
+        return t
+    }
+
+    /// The script was just read by Claude: refresh the card's templates and the opener on screen.
+    private func scriptRead() {
+        refillFromScript()
+        if status == .ready, openerStyle == nil { prepareOpener() }
     }
 
     /// Fills {first name}, {rep}, {company} and their [bracket] versions (any capitalization).
@@ -2444,7 +2478,7 @@ final class CoachModel: ObservableObject {
     private func applyScriptMessages(_ s: inout Suggestion, for calling: String?) {
         // Best: Claude read the whole script and found the templates (any headings, any layout).
         // Until that's done (a few seconds, once per script), a simple label match fills in.
-        let found = ScriptTemplates.shared.templates(for: campaignText) { [weak self] in self?.refillFromScript() }
+        let found = ScriptTemplates.shared.templates(for: campaignText) { [weak self] in self?.scriptRead() }
             ?? labeledTemplates()
         // Text 1 is the missed call text, text 2 the next template, and so on. Past the last one, Claude writes them.
         let sent = recordKey().map { DialHistory.sentTexts($0).count } ?? 0

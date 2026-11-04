@@ -13,6 +13,8 @@ final class ScriptTemplates {
         var texts: [String] = []
         var linkedinNote: String?
         var linkedinMessage: String?
+        /// The rep's first line when the person picks up, word for word ("Is this ___?").
+        var opener: String?
     }
 
     private var cache: [String: Found]
@@ -20,7 +22,7 @@ final class ScriptTemplates {
     /// Scripts Claude couldn't read, and when: tried again after 10 minutes, not on every card.
     private var failed: [String: Date] = [:]
     private var waiting: [String: [() -> Void]] = [:]
-    private static let storeKey = "scriptTemplates2" // 2: re-read scripts after the heading fix
+    private static let storeKey = "scriptTemplates3" // 3: also finds the opener
 
     private init() {
         cache = UserDefaults.standard.data(forKey: Self.storeKey)
@@ -84,7 +86,7 @@ final class ScriptTemplates {
         request", "DM", and so on), or there may be no heading at all. Read for meaning.
 
         Return exactly this JSON and nothing else:
-        {"texts": ["...", "..."], "linkedinNote": "..." or null, "linkedinMessage": "..." or null}
+        {"texts": ["...", "..."], "linkedinNote": "..." or null, "linkedinMessage": "..." or null, "opener": "..." or null}
 
         - texts: every text message template, in the order they're sent. The first one is the text after a missed
           call or voicemail; then follow-ups ("if no reply", "day 3", and so on). If the script gives two versions
@@ -92,10 +94,13 @@ final class ScriptTemplates {
         - linkedinNote: the LinkedIn connection request / connection note template, or null.
         - linkedinMessage: the LinkedIn direct message template (for people already connected), or null.
           If one template is labeled as both ("LinkedIn message/connection request"), put it in both.
+        - opener: the rep's very first line when the person picks up the phone (the start of the call script), word
+          for word, blanks and all ("Is this ___?"). Only the rep's first line, not the rest of the call. null if
+          the script has no call script.
         - Copy each one exactly: same words, same placeholders ([Name], {first name}, [Your Name]). Drop only
           the quote marks around it. Never include the heading, label or notes before or after it, like
           "Connection request (under 200 characters, so it fits any account)". Start at the message's first word.
-        - Don't use voicemail scripts, call openers or email templates. Don't write anything that isn't in the script.
+        - For texts and LinkedIn, don't use voicemail scripts, call lines or email templates. Don't write anything that isn't in the script.
 
         Campaign and script:
         \(script)
@@ -121,6 +126,7 @@ final class ScriptTemplates {
         }
         return Found(texts: ((json["texts"] as? [Any]) ?? []).compactMap(clean),
                      linkedinNote: clean(json["linkedinNote"]),
-                     linkedinMessage: clean(json["linkedinMessage"]))
+                     linkedinMessage: clean(json["linkedinMessage"]),
+                     opener: (json["opener"] as? String).map(cleanTemplate).flatMap { $0.count >= 3 ? $0 : nil })
     }
 }
