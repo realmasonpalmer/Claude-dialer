@@ -1295,21 +1295,7 @@ final class CoachModel: ObservableObject {
                 guard let self, !Task.isCancelled else { return }
                 if self.status != .ready { self.cancelAutoNext(); return }
             }
-            // Aircall can take a moment to let go of the last call. Wait up to 6 s for the line;
-            // never dial on top of a call that's still up.
-            var free = false
-            for _ in 0..<6 {
-                guard let self, !Task.isCancelled else { return }
-                if await Aircall.lineIsOnCall() != true { free = true; break }
-                try? await Task.sleep(for: .seconds(1))
-            }
             guard let self, !Task.isCancelled, self.shouldOfferRedial else { return }
-            guard free else {
-                self.autoNextIn = nil
-                self.callMessage = "Aircall still shows a call. Hang up there, then click Redial."
-                ActivityLog.problem("Redial skipped: Aircall line still busy")
-                return
-            }
             self.autoNextIn = nil
             self.redial()
         }
