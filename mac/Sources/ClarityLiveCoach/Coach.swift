@@ -121,7 +121,17 @@ enum CoachPrompt {
 
     static func opener(calling: String?, details: String?, style: Opener?) -> String {
         guard let style else {
-            return "\(about(calling, details))The call has not connected yet. Give the opener the rep should say when they pick up."
+            return """
+            \(about(calling, details))The call has not connected yet. Give the opener the rep should say when they pick up.
+            Start from the campaign's own opener (its Opening section, or the opener in the original script) and keep
+            its words, its order and its tone. Fill in their first name, the rep's name and anything in brackets.
+            Then check it against what you know about this person. If a part of the script doesn't fit them, change
+            only that part, as little as possible, in the script's voice. For example: the script says "a fellow
+            Portland entrepreneur" but they're not in Portland or don't run a business; the script names an industry,
+            role or tool that isn't theirs; the script assumes something their Salesforce page contradicts. Never
+            invent facts about them. If nothing needs changing, use the script as is. Don't add a pitch.
+            CUE: one short delivery tip from the script's tone, plus "(adjusted: <what changed>)" if you changed anything.
+            """
         }
         return """
         \(about(calling, details))The call has not connected yet. Write the opener using this proven structure. \
@@ -487,7 +497,7 @@ final class CoachModel: ObservableObject {
 
     /// The Save button: writes the status to Salesforce.
     /// "Not Quality Prospect", "Negative" and "Unqualified" also take them off the call list.
-    func saveStatus(_ value: String) {
+    func saveStatus(_ value: String, unqualifiedReason: String? = nil) {
         guard let id = statusRecordID, !savingStatus else { return }
         guard Salesforce.isConnected else {
             statusMessage = "Sign in to Salesforce first: gear menu > Setup > Salesforce."
@@ -500,7 +510,7 @@ final class CoachModel: ObservableObject {
             do {
                 // Never hang: give up after 15 seconds.
                 try await withThrowingTaskGroup(of: Void.self) { group in
-                    group.addTask { try await Salesforce.setStatus(of: id, to: value) }
+                    group.addTask { try await Salesforce.setStatus(of: id, to: value, unqualifiedReason: unqualifiedReason) }
                     group.addTask {
                         try await Task.sleep(for: .seconds(15))
                         throw Salesforce.SFError(message: "Salesforce didn't answer in 15 seconds. Try Save again.")
@@ -518,14 +528,21 @@ final class CoachModel: ObservableObject {
                 if Salesforce.removedStatuses.contains(value) {
                     RemovedList.add(id)
                     self.statusMessage = "Saved. Taken off your list."
-                    // Between calls: move on to the next person right away (without calling yet).
+                    // Between calls: on to the next person right away (and call them, if auto-dial is on).
+                    // During a call: the app moves on by itself when the call ends (see endCall).
                     if self.status == .ready {
                         if self.autoNextTask != nil, self.currentAttemptKey.map({ $0.prefix(15) == id.prefix(15) }) == true {
                             // The redial countdown was running for them: stop it and go to the next person.
                             ActivityLog.add("Redial cancelled: marked \(value)")
                             self.startNextSequence()
-                        } else if self.openingID == nil, self.gettingReady == nil, self.autoNextIn == nil {
-                            self.nextLead(dial: false)
+                        } else if self.openingID == nil, self.autoNextIn == nil {
+                            // Still getting their call ready: stop that, they're off the list.
+                            self.readyTask?.cancel()
+                            self.gettingReady = nil
+                            self.gettingReadyDetail = nil
+                            ActivityLog.add("Marked \(value): on to the next person")
+                            self.waitingForText = false
+                            self.startNextSequence()
                         }
                     }
                 } else {
@@ -1210,7 +1227,13 @@ final class CoachModel: ObservableObject {
             startFollowUp()
             ActivityLog.add("Follow-up card for \(calling ?? "?") (voicemail heard: \(hadVoicemail))")
         }
-        if shouldOfferRedial, autoDial {
+        if let key = currentAttemptKey, RemovedList.contains(key) {
+            // Marked Unqualified (or Not Quality Prospect / Negative) during the call: no text, no redial.
+            ActivityLog.add("Call ended for someone taken off the list: on to the next person")
+            followUp = nil
+            waitingForText = false
+            afterHangUp { [weak self] in self?.startNextSequence() }
+        } else if shouldOfferRedial, autoDial {
             // 1st try, no answer: "Calling Jane Doe again in 3", then redial the same person.
             startAutoRedial()
         } else if !shouldOfferRedial, !lastCallAnswered, let f = followUp {
@@ -1815,7 +1838,7 @@ final class CoachModel: ObservableObject {
         guard Salesforce.isConnected else { return }
         Task { [weak self] in
             do {
-                try await Salesforce.setStatus(of: id, to: value)
+                try await Salesforce.setStatus(of: id, to: value, unqualifiedReason: "Non-Responsive", note: "Bad number (\(reason))")
                 ActivityLog.add("Status: saved \(value) (bad number)")
                 if self?.statusRecordID == id { self?.recordStatus = value }
             } catch {
@@ -2246,6 +2269,10 @@ final class CoachModel: ObservableObject {
     }
 
     private func instantOpener(for calling: String?) -> Suggestion {
+        // Rotation off: the campaign script's own opener (Claude's version, fitted to them, replaces it).
+        if openerStyle == nil, let t = campaignOpener(for: calling) {
+            return Suggestion(say: t, cue: "Your script's opener", stage: "Opener", sayComplete: true)
+        }
         var t = openerStyle?.template ?? Opener.all[0].template
         if t.contains("[a ") { t = Opener.all[0].template } // needs Claude to fill in; use the plain one
         let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
@@ -2253,6 +2280,29 @@ final class CoachModel: ObservableObject {
             .replacingOccurrences(of: "[rep]", with: rep.isEmpty ? "[your name]" : rep)
             .replacingOccurrences(of: "[company]", with: shortCompany)
         return Suggestion(say: t, cue: openerStyle?.name ?? "Opener", stage: "Opener", sayComplete: true)
+    }
+
+    /// The first quoted line of the campaign's Opening (or the whole thing, if nothing is quoted),
+    /// with their first name, the rep's name and the company filled in. nil if the campaign has none.
+    private func campaignOpener(for calling: String?) -> String? {
+        let opening = campaign.opening.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !opening.isEmpty else { return nil }
+        var t = opening
+        for (open, close) in [("\"", "\""), ("“", "”")] {
+            if let a = opening.range(of: open), let b = opening.range(of: close, range: a.upperBound..<opening.endIndex) {
+                t = String(opening[a.upperBound..<b.lowerBound]); break
+            }
+        }
+        let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+        let first = Screener.firstName(calling) ?? "there"
+        for tag in ["{first name}", "[first name]", "{first}", "[first]", "{name}", "[name]", "{First Name}", "[First Name]"] {
+            t = t.replacingOccurrences(of: tag, with: first)
+        }
+        for tag in ["{rep}", "[rep]", "{your name}", "[your name]", "{rep name}", "[rep name]"] {
+            t = t.replacingOccurrences(of: tag, with: rep.isEmpty ? "[your name]" : rep)
+        }
+        for tag in ["{company}", "[company]"] { t = t.replacingOccurrences(of: tag, with: shortCompany) }
+        return t
     }
 
     /// "Clarity" from the campaign's company description.

@@ -1117,6 +1117,8 @@ struct RelationshipCard: View {
     @ObservedObject var coach: CoachModel
     @State private var picked: String?
     @State private var pickedFor: String?
+    /// Lead + Unqualified: Salesforce requires a reason.
+    @State private var reason: String?
 
     private let columns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
 
@@ -1156,15 +1158,23 @@ struct RelationshipCard: View {
                     .buttonStyle(.plain)
                 }
             }
+            if object == "Lead", picked == "Unqualified", picked != coach.recordStatus {
+                Picker("Reason", selection: $reason) {
+                    Text("Pick a reason").tag(String?.none)
+                    ForEach(Salesforce.unqualifiedReasons, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                .font(.callout)
+            }
             if let picked, Salesforce.removedStatuses.contains(picked), picked != coach.recordStatus {
                 Text("Saving this takes them off your list.").font(.caption).foregroundStyle(.secondary)
             }
             HStack(spacing: 8) {
                 Button(coach.savingStatus ? "Saving..." : "Save") {
-                    if let picked { coach.saveStatus(picked) }
+                    if let picked { coach.saveStatus(picked, unqualifiedReason: picked == "Unqualified" ? reason : nil) }
                 }
                 .buttonStyle(.bordered)
-                .disabled(picked == nil || picked == coach.recordStatus || coach.savingStatus || !Salesforce.isConnected)
+                .disabled(picked == nil || picked == coach.recordStatus || coach.savingStatus || !Salesforce.isConnected
+                          || (object == "Lead" && picked == "Unqualified" && reason == nil))
                 if !Salesforce.isConnected {
                     Text("Sign in to Salesforce to save: gear > Setup > Salesforce.").font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1179,7 +1189,7 @@ struct RelationshipCard: View {
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         .onChange(of: coach.statusRecordID) {
             // New person on screen: start fresh.
-            if pickedFor != coach.statusRecordID { picked = nil; pickedFor = nil }
+            if pickedFor != coach.statusRecordID { picked = nil; pickedFor = nil; reason = nil }
         }
     }
 }
