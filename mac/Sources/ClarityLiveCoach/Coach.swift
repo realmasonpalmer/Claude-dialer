@@ -1955,6 +1955,15 @@ final class CoachModel: ObservableObject {
                             linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
         applyPlan()
+        // The script's own messages show right away, no waiting on Claude.
+        if var f = followUp {
+            var s = Suggestion()
+            applyScriptMessages(&s, for: calling)
+            if f.text.isEmpty { f.text = s.textMessage }
+            if f.linkedin.isEmpty { f.linkedin = s.linkedin }
+            if f.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
+            followUp = f
+        }
         if let script = voicemailScript, voicemailFor == calling { fillFollowUp(from: script) }
         else if detailsTried || leads.isActive, voicemailTask == nil || voicemailFor != calling {
             prepareVoicemail() // it fills the card when done (in Chrome mode, only once the page is read)
@@ -2033,9 +2042,11 @@ final class CoachModel: ObservableObject {
     /// Fills in the text and LinkedIn note. The rep sends each one with a button.
     /// - Parameter replace: a better version (written from their Salesforce page) replaces
     ///   anything not sent yet.
-    private func fillFollowUp(from s: Suggestion, replace: Bool = false) {
+    private func fillFollowUp(from written: Suggestion, replace: Bool = false) {
         // Only into the card of the person this voicemail was written for.
         guard var f = followUp, f.key == nil || voicemailKey == nil || f.key == voicemailKey else { return }
+        var s = written
+        applyScriptMessages(&s, for: calling)
         if (f.text.isEmpty || (replace && !f.textDone)), !s.textMessage.isEmpty { f.text = s.textMessage }
         if (f.linkedin.isEmpty || (replace && !f.linkedinDone)), !s.linkedin.isEmpty { f.linkedin = s.linkedin }
         if (f.linkedinMessage.isEmpty || (replace && !f.linkedinMessageDone)), !s.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
@@ -2306,6 +2317,7 @@ final class CoachModel: ObservableObject {
         ]
         let messagesBefore = recordKey().map { DialHistory.sentLinkedInMessages($0).count } ?? 0
         s.linkedinMessage = messages[messagesBefore % messages.count]
+        applyScriptMessages(&s, for: calling)
         return s
     }
 
@@ -2334,16 +2346,83 @@ final class CoachModel: ObservableObject {
                 t = String(opening[a.upperBound..<b.lowerBound]); break
             }
         }
+        return fillTags(t, for: calling)
+    }
+
+    /// Fills {first name}, {rep}, {company} and their [bracket] versions (any capitalization).
+    private func fillTags(_ text: String, for calling: String?) -> String {
+        var t = text
         let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
         let first = Screener.firstName(calling) ?? "there"
-        for tag in ["{first name}", "[first name]", "{first}", "[first]", "{name}", "[name]", "{First Name}", "[First Name]"] {
-            t = t.replacingOccurrences(of: tag, with: first)
+        let tags: [(names: [String], value: String)] = [
+            (["first name", "firstname", "first", "name", "prospect", "prospect name"], first),
+            (["rep", "rep name", "your name", "my name", "rep first name"], rep.isEmpty ? "[your name]" : rep),
+            (["company", "your company", "rep company"], shortCompany),
+        ]
+        for (names, value) in tags {
+            for n in names {
+                for (o, c) in [("{", "}"), ("[", "]")] {
+                    t = t.replacingOccurrences(of: o + n + c, with: value, options: .caseInsensitive)
+                }
+            }
         }
-        for tag in ["{rep}", "[rep]", "{your name}", "[your name]", "{rep name}", "[rep name]"] {
-            t = t.replacingOccurrences(of: tag, with: rep.isEmpty ? "[your name]" : rep)
-        }
-        for tag in ["{company}", "[company]"] { t = t.replacingOccurrences(of: tag, with: shortCompany) }
         return t
+    }
+
+    /// Everything the rep wrote in the campaign: each section, then the pasted script.
+    private var campaignText: String {
+        (Campaign.sections.map { campaign[keyPath: $0.key] } + [campaign.pastedScript]).joined(separator: "\n\n")
+    }
+
+    /// A message the campaign script spells out, found by its label (like "Missed call text:").
+    /// The label must start the line (after any bullet). Takes the words after it on the same line, or the lines under it up to the next
+    /// blank line or heading. Quotes around it are dropped. nil if the script has no such label.
+    private func scriptPiece(_ labels: [String]) -> String? {
+        let lines = campaignText.components(separatedBy: "\n")
+        for label in labels {
+            for (i, line) in lines.enumerated() {
+                // Only a label at the start of a line (after bullets, numbers or "#"), not the
+                // same words in the middle of a sentence.
+                let head = line.drop { " \t#*-•–0123456789.)".contains($0) }
+                guard head.lowercased().hasPrefix(label) else { continue }
+                var rest = String(head.dropFirst(label.count))
+                // Skip words like "(day 1)" and the ":" or "-" after the label.
+                if let colon = rest.firstIndex(where: { $0 == ":" || $0 == "-" || $0 == "–" }),
+                   rest.distance(from: rest.startIndex, to: colon) < 25 {
+                    rest = String(rest[rest.index(after: colon)...])
+                }
+                var body = rest.trimmingCharacters(in: .whitespaces)
+                if body.isEmpty {
+                    var under: [String] = []
+                    for next in lines[(i + 1)...] {
+                        let t = next.trimmingCharacters(in: .whitespaces)
+                        if t.isEmpty { if under.isEmpty { continue } else { break } }
+                        if t.hasPrefix("#") || (t.hasSuffix(":") && t.count < 40) { break }
+                        under.append(t)
+                    }
+                    body = under.joined(separator: " ")
+                }
+                body = body.trimmingCharacters(in: CharacterSet(charactersIn: " \"“”'*_"))
+                if body.count >= 15 { return String(body.prefix(1000)) }
+            }
+        }
+        return nil
+    }
+
+    /// The campaign's own missed call text and LinkedIn notes win over anything written for them.
+    /// The script's text is used for the first text to this person; later texts are written fresh
+    /// in the same voice. The LinkedIn note and message fall back to the missed call text.
+    private func applyScriptMessages(_ s: inout Suggestion, for calling: String?) {
+        let text = scriptPiece(["missed call text", "missed-call text", "missed call sms", "missed call message",
+                                "text after missed call", "text after voicemail", "voicemail text", "follow-up text",
+                                "follow up text", "text message", "sms", "missed call"])
+        let note = scriptPiece(["linkedin connection request", "linkedin connect", "linkedin connection",
+                                "connection request", "linkedin note", "linkedin request", "connect note"])
+        let message = scriptPiece(["linkedin message", "linkedin dm", "linkedin direct message", "linkedin follow"])
+        let firstText = recordKey().map { DialHistory.sentTexts($0).isEmpty } ?? true
+        if let text, firstText { s.textMessage = fillTags(text, for: calling) }
+        if let n = note ?? text { s.linkedin = fillTags(n, for: calling) }
+        if let m = message ?? note ?? text { s.linkedinMessage = fillTags(m, for: calling) }
     }
 
     /// "Clarity" from the campaign's company description.
