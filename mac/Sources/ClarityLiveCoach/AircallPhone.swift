@@ -78,6 +78,7 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       if (Orig) {
         var Hooked = function (a, b) {
           var pc = new Orig(a, b);
+          (window.__clarityPCs = window.__clarityPCs || []).push(pc);
           pc.addEventListener('track', function (ev) {
             if (ev.track && ev.track.kind === 'audio') pump(ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]), 'remote');
           });
@@ -152,6 +153,40 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
     }
 
     func reload() { webView.load(URLRequest(url: Self.address)) }
+
+    /// Hangs up the call in the phone: clicks Aircall's hang-up button. If that button can't be
+    /// found, closes the call's audio connection instead. True if either worked.
+    func hangUp() async -> Bool {
+        let js = #"""
+        (function () {
+          function deep(root, out) {
+            var l = root.querySelectorAll('button,[role=button]');
+            for (var i = 0; i < l.length; i++) out.push(l[i]);
+            var all = root.querySelectorAll('*');
+            for (var j = 0; j < all.length; j++) if (all[j].shadowRoot) deep(all[j].shadowRoot, out);
+            return out;
+          }
+          var re = /hang[ _-]?up|end[ _-]?call|end the call/i;
+          var buttons = deep(document, []);
+          for (var i = 0; i < buttons.length; i++) {
+            var b = buttons[i];
+            if (!b.getClientRects().length || b.disabled) continue;
+            var words = [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
+                         b.getAttribute('data-testid'), b.getAttribute('name'), b.id, String(b.className || ''),
+                         b.textContent].join(' ');
+            if (re.test(words)) { b.click(); return 'button'; }
+          }
+          var n = 0;
+          (window.__clarityPCs || []).forEach(function (p) {
+            if (p.connectionState !== 'closed') { try { p.close(); n++; } catch (e) {} }
+          });
+          return n ? 'closed' : 'none';
+        })()
+        """#
+        let result = (try? await webView.evaluateJavaScript(js)) as? String ?? "none"
+        ActivityLog.add("Aircall phone hang-up: \(result)")
+        return result != "none"
+    }
 
     // MARK: WKUIDelegate
 

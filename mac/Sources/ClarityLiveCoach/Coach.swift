@@ -121,7 +121,13 @@ enum CoachPrompt {
 
     static func opener(calling: String?, details: String?, style: Opener?) -> String {
         guard let style else {
-            return "\(about(calling, details))The call has not connected yet. Give the opener the rep should say when they pick up."
+            return """
+            \(about(calling, details))The call has not connected yet. Give the opener the rep should say when they pick up.
+            Use the campaign's own opener (its Opening section, or the opener in the original script): keep its words,
+            its order and its tone. Only fill in their first name, the rep's name and anything in brackets. If you
+            can't fit something specific about them in without changing the script, leave it out. Don't add a pitch.
+            CUE: one short delivery tip from the script's tone.
+            """
         }
         return """
         \(about(calling, details))The call has not connected yet. Write the opener using this proven structure. \
@@ -1221,18 +1227,56 @@ final class CoachModel: ObservableObject {
         }
     }
 
-    /// Counts down 3 seconds, then calls the same person again. Wait stops it.
+    /// 1st try went to voicemail and the redial is on: hang up in the in-app phone right away,
+    /// then the redial starts by itself. True if the app took care of it.
+    private func autoHangUpForRedial() -> Bool {
+        guard autoDial, AircallPhone.isOn, currentAttempts < 2, !autoHangingUp,
+              let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return false }
+        autoHangingUp = true
+        ActivityLog.add("Voicemail on the 1st try for \(calling ?? "?"): hanging up to redial")
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let self, self.status == .live else { self?.autoHangingUp = false; return }
+            let done = await AircallPhone.shared.hangUp()
+            self.autoHangingUp = false
+            guard self.status == .live else { return }
+            if done {
+                self.redialRightAway = true
+                self.endCall()
+            } else {
+                // Couldn't find Aircall's hang-up button: the rep hangs up, the redial still starts by itself.
+                self.show(Suggestion(say: "Voicemail. Hang up now. The redial starts by itself.",
+                                     cue: "Leave the message on the 2nd try.", stage: "Voicemail", sayComplete: true),
+                          id: self.seq, kind: .voicemail)
+            }
+        }
+        return true
+    }
+    private var autoHangingUp = false
+    /// The app hung up a 1st-try voicemail: redial with no countdown.
+    private var redialRightAway = false
+
+    /// Counts down 3 seconds (none after an automatic voicemail hang-up), waits for Aircall to
+    /// free the line, then calls the same person again. Wait stops it.
     private func startAutoRedial() {
         autoNextTask?.cancel()
         autoNextName = calling.flatMap { c in
             c.firstIndex(of: "\"").map { String(c[c.index(after: $0)...]).replacingOccurrences(of: "\"", with: "") }
         }.map { "\($0) again" }
+        let countdown = redialRightAway ? 1 : 3
+        redialRightAway = false
         autoNextTask = Task { [weak self] in
-            for left in stride(from: 3, through: 1, by: -1) {
+            for left in stride(from: countdown, through: 1, by: -1) {
                 self?.autoNextIn = left
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
                 if self.status != .ready { self.cancelAutoNext(); return }
+            }
+            // Aircall can take a moment to let go of the last call. Wait up to 6 s for the line.
+            for _ in 0..<6 {
+                guard let self, !Task.isCancelled else { return }
+                if await Aircall.lineIsOnCall() != true { break }
+                try? await Task.sleep(for: .seconds(1))
             }
             guard let self, !Task.isCancelled, self.shouldOfferRedial else { return }
             self.autoNextIn = nil
@@ -1344,6 +1388,7 @@ final class CoachModel: ObservableObject {
 
     private func startCall() {
         problem = nil
+        redialRightAway = false
         guard startAudio() else { return }
         if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
         if let key = recordKey() {
@@ -1838,6 +1883,12 @@ final class CoachModel: ObservableObject {
         uncoached = ""
         seq += 1
         startFollowUp()
+        if autoHangUpForRedial() {
+            show(Suggestion(say: "Voicemail on the 1st try. Hanging up and calling right back.",
+                            cue: "Leave the message on the 2nd try.", stage: "Voicemail", sayComplete: true),
+                 id: seq, kind: .voicemail)
+            return
+        }
         if mailboxFull {
             mailboxFullShown = true
             show(Suggestion(say: currentAttempts < 2 ? "Mailbox is full. Hang up and click Redial." : "Mailbox is full. Hang up. The next call starts by itself.",
@@ -2246,6 +2297,10 @@ final class CoachModel: ObservableObject {
     }
 
     private func instantOpener(for calling: String?) -> Suggestion {
+        // Rotation off: the campaign script's own opener.
+        if openerStyle == nil, let t = campaignOpener(for: calling) {
+            return Suggestion(say: t, cue: "Your script's opener", stage: "Opener", sayComplete: true)
+        }
         var t = openerStyle?.template ?? Opener.all[0].template
         if t.contains("[a ") { t = Opener.all[0].template } // needs Claude to fill in; use the plain one
         let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
@@ -2253,6 +2308,29 @@ final class CoachModel: ObservableObject {
             .replacingOccurrences(of: "[rep]", with: rep.isEmpty ? "[your name]" : rep)
             .replacingOccurrences(of: "[company]", with: shortCompany)
         return Suggestion(say: t, cue: openerStyle?.name ?? "Opener", stage: "Opener", sayComplete: true)
+    }
+
+    /// The first quoted line of the campaign's Opening (or the whole thing, if nothing is quoted),
+    /// with their first name, the rep's name and the company filled in. nil if the campaign has none.
+    private func campaignOpener(for calling: String?) -> String? {
+        let opening = campaign.opening.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !opening.isEmpty else { return nil }
+        var t = opening
+        for (open, close) in [("\"", "\""), ("“", "”")] {
+            if let a = opening.range(of: open), let b = opening.range(of: close, range: a.upperBound..<opening.endIndex) {
+                t = String(opening[a.upperBound..<b.lowerBound]); break
+            }
+        }
+        let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+        let first = Screener.firstName(calling) ?? "there"
+        for tag in ["{first name}", "[first name]", "{first}", "[first]", "{name}", "[name]", "{First Name}", "[First Name]"] {
+            t = t.replacingOccurrences(of: tag, with: first)
+        }
+        for tag in ["{rep}", "[rep]", "{your name}", "[your name]", "{rep name}", "[rep name]"] {
+            t = t.replacingOccurrences(of: tag, with: rep.isEmpty ? "[your name]" : rep)
+        }
+        for tag in ["{company}", "[company]"] { t = t.replacingOccurrences(of: tag, with: shortCompany) }
+        return t
     }
 
     /// "Clarity" from the campaign's company description.
