@@ -182,7 +182,13 @@ enum CoachPrompt {
         \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)If this call goes to voicemail, what should the rep say after the beep?
         One voice for everything you write here. The voicemail, TEXT, LINKEDIN and LINKEDIN MESSAGE all come from
         the campaign above: its opening, its angle, its offer, its tone, and any voicemail, text or LinkedIn wording
-        it gives. Follow the campaign over the defaults below whenever they differ. Write the voicemail first, then
+        it gives. Follow the campaign over the defaults below whenever they differ.
+        Templates come first: if the campaign or its script has a text message template (a missed call text, a text
+        after a voicemail, or any text the rep sends), the TEXT line must be that template word for word, with only
+        the name, rep and company placeholders filled in (for a later text, use the script's matching follow-up
+        template if it has one). Same for LinkedIn: a connection note or request template goes in LINKEDIN word for
+        word, a LinkedIn message template goes in LINKEDIN MESSAGE, and with no LinkedIn template, use the text
+        template there too. Only write your own when the campaign has no template. Write the voicemail first, then
         make every TEXT and LinkedIn line sound like the same person who just left that voicemail: the same way the
         rep introduces themselves (if the voicemail says something like "a fellow Portland entrepreneur", so do the
         text and LinkedIn note), the same reason for reaching out, the same warmth and plainness. Never switch to
@@ -220,9 +226,7 @@ enum CoachPrompt {
           Only after earlier texts or voicemails (see the history) can a later one offer a short call, and then as
           a simple question ("Worth a quick chat?"), still without naming anyone else.
         - One idea per message. No jargon, no "quick look at yours", no hype.
-        Example of the shape only (take the words, intro and angle from the campaign, not from this): voicemail
-        "Hi Eric, it's Mason, a fellow Portland business owner. ..." then TEXT "Hi Eric, Mason here, the fellow
-        Portland business owner who just left you a voicemail. ... Is that true for your team too?"
+        Never copy wording from these instructions; the words come from the campaign.
         """
     }
 
@@ -2390,19 +2394,19 @@ final class CoachModel: ObservableObject {
             for (i, line) in lines.enumerated() {
                 // Only a label at the start of a line (after bullets, numbers or "#"), not the
                 // same words in the middle of a sentence.
-                let head = line.drop { " \t#*-•–0123456789.)".contains($0) }
-                guard head.lowercased().hasPrefix(label) else { continue }
-                // The rest of the label line. "Label: message" or "Label - message" means the message
-                // is on this line. Anything else ("(under 200 characters)", "/connection request")
-                // is part of the heading, and the message is on the lines under it.
-                let after = String(head.dropFirst(label.count)).trimmingCharacters(in: .whitespaces)
+                let head = String(line.drop { " \t#*-•–0123456789.)".contains($0) })
+                // Little words don't matter: "Text after a missed call" matches "text after missed call".
+                guard Self.plain(head).hasPrefix(Self.plain(label)) else { continue }
+                // "Label: message" or "Label - message" or "Label “message”" = the message is on this line.
+                // Anything else after the label ("(under 200 characters)", "/connection request") is
+                // part of the heading, and the message is on the lines under it.
                 var rest = ""
-                if let colon = after.firstIndex(of: ":") {
-                    rest = String(after[after.index(after: colon)...])
-                } else if let dash = ["- ", "– ", "— "].first(where: { after.hasPrefix($0) }) {
-                    rest = String(after.dropFirst(dash.count))
-                } else if let q = after.first, "\"“'".contains(q) {
-                    rest = after
+                if let colon = head.firstIndex(of: ":") {
+                    rest = String(head[head.index(after: colon)...])
+                } else if let q = head.firstIndex(where: { "\"“".contains($0) }) {
+                    rest = String(head[q...])
+                } else if let dash = head.range(of: " - ") ?? head.range(of: " – ") ?? head.range(of: " — ") {
+                    rest = String(head[dash.upperBound...])
                 }
                 var body = rest.trimmingCharacters(in: .whitespaces)
                 if body.isEmpty {
@@ -2426,21 +2430,54 @@ final class CoachModel: ObservableObject {
         return nil
     }
 
+    /// Lowercase, no "a", "an" or "the", single spaces, straight apostrophes: for matching labels.
+    static func plain(_ text: String) -> String {
+        text.lowercased().replacingOccurrences(of: "’", with: "'")
+            .split(whereSeparator: { $0 == " " || $0 == "\t" })
+            .filter { !["a", "an", "the"].contains($0) }
+            .joined(separator: " ")
+    }
+
     /// The campaign's own missed call text and LinkedIn notes win over anything written for them.
     /// The script's text is used for the first text to this person; later texts are written fresh
     /// in the same voice. The LinkedIn note and message fall back to the missed call text.
     private func applyScriptMessages(_ s: inout Suggestion, for calling: String?) {
+        // Best: Claude read the whole script and found the templates (any headings, any layout).
+        // Until that's done (a few seconds, once per script), a simple label match fills in.
+        let found = ScriptTemplates.shared.templates(for: campaignText) { [weak self] in self?.refillFromScript() }
+            ?? labeledTemplates()
+        // Text 1 is the missed call text, text 2 the next template, and so on. Past the last one, Claude writes them.
+        let sent = recordKey().map { DialHistory.sentTexts($0).count } ?? 0
+        if sent < found.texts.count { s.textMessage = fillTags(found.texts[sent], for: calling) }
+        let text = found.texts.first
+        if let n = found.linkedinNote ?? found.linkedinMessage ?? text { s.linkedin = fillTags(n, for: calling) }
+        if let m = found.linkedinMessage ?? found.linkedinNote ?? text { s.linkedinMessage = fillTags(m, for: calling) }
+    }
+
+    /// The script was just read: put its templates on the open card (anything not sent yet).
+    private func refillFromScript() {
+        guard var f = followUp else { return }
+        var s = Suggestion()
+        applyScriptMessages(&s, for: calling)
+        if !f.textDone, !s.textMessage.isEmpty { f.text = s.textMessage }
+        if !f.linkedinDone, !s.linkedin.isEmpty { f.linkedin = s.linkedin }
+        if !f.linkedinMessageDone, !s.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
+        followUp = f
+    }
+
+    /// The quick fallback: templates found by their headings.
+    private func labeledTemplates() -> ScriptTemplates.Found {
         let text = scriptPiece(["missed call text", "missed-call text", "missed call sms", "missed call message",
-                                "text after missed call", "text after voicemail", "voicemail text", "follow-up text",
-                                "follow up text", "text message", "sms", "missed call"])
+                                "text after missed call", "text after voicemail", "text after call", "voicemail text",
+                                "text message", "sms", "missed call"])
+        let second = scriptPiece(["if no reply", "if they don't reply", "if no response", "no reply", "second text",
+                                  "2nd text", "text 2", "follow-up text", "follow up text"])
         let note = scriptPiece(["linkedin connection message", "linkedin connection request", "linkedin connection note",
                                 "linkedin connect message", "linkedin connect", "linkedin connection",
                                 "connection request", "linkedin note", "linkedin request", "connect note"])
         let message = scriptPiece(["linkedin message", "linkedin dm", "linkedin direct message", "linkedin follow"])
-        let firstText = recordKey().map { DialHistory.sentTexts($0).isEmpty } ?? true
-        if let text, firstText { s.textMessage = fillTags(text, for: calling) }
-        if let n = note ?? text { s.linkedin = fillTags(n, for: calling) }
-        if let m = message ?? note ?? text { s.linkedinMessage = fillTags(m, for: calling) }
+        let texts = text.map { [$0] + (second.map { [$0] } ?? []) } ?? []
+        return ScriptTemplates.Found(texts: texts, linkedinNote: note, linkedinMessage: message)
     }
 
     /// "Clarity" from the campaign's company description.
