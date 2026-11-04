@@ -1231,7 +1231,7 @@ final class CoachModel: ObservableObject {
             endedAt = Date()
             followUp = nil
             lastCallAnswered = true
-            problem = "Bad number. Taken off your list."
+            problem = phoneTreeThisCall ? "Phone tree. Disqualified and taken off your list." : "Bad number. Taken off your list."
             afterHangUp { [weak self] in self?.startNextSequence() }
             return
         }
@@ -1425,6 +1425,7 @@ final class CoachModel: ObservableObject {
         problem = nil
         redialRightAway = false
         autoHungUpThisCall = false
+        phoneTreeThisCall = false
         guard startAudio() else { return }
         if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
         if let key = recordKey() {
@@ -1755,6 +1756,9 @@ final class CoachModel: ObservableObject {
                 let firstWords = turns.contains { $0.speaker == .rep } ? "" : (prospectSoFar + " " + text)
                 if BadNumber.detects(recent) {
                     if !badNumberThisCall { markBadNumber() }
+                } else if !badNumberThisCall, !voicemailActive, repWordsInCall < 5, !Voicemail.certain(recent),
+                          PhoneTree.detects(prospectSoFar + " " + text) {
+                    markPhoneTree()
                 } else if Voicemail.detects(recent, earlyInCall: early)
                     || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
@@ -1873,6 +1877,38 @@ final class CoachModel: ObservableObject {
 
     /// The carrier says the number doesn't work: show it, and skip voicemail and follow-ups.
     private var badNumberThisCall = false
+    /// A phone menu answered: disqualify (Not Quality Prospect / Unqualified), hang up in the
+    /// in-app phone, and move on. No voicemail, text or redial. If the hang-up button can't be
+    /// found, the rep hangs up and the next call still starts by itself.
+    private func markPhoneTree() {
+        badNumberThisCall = true
+        phoneTreeThisCall = true
+        coachTask?.cancel()
+        thinking = false
+        voicemailActive = false
+        sawVoicemail = false
+        followUp = nil
+        if let key = currentAttemptKey { markNotQualityProspect(key, reason: "phone tree") }
+        seq += 1
+        show(Suggestion(say: "Phone tree. Hanging up. The next call starts by itself.", cue: "Disqualified: phone menus aren't worth working.",
+                        stage: "Exit", sayComplete: true), id: seq, kind: .reply)
+        guard AircallPhone.isOn else { return }
+        Task { [weak self] in
+            guard let self, self.status == .live else { return }
+            guard await AircallPhone.shared.hangUp() else {
+                self.show(Suggestion(say: "Phone tree. Hang up. The next call starts by itself.", cue: "Disqualified.",
+                                     stage: "Exit", sayComplete: true), id: self.seq, kind: .reply)
+                return
+            }
+            // End on our side once Aircall says the line is free (up to 5 s); otherwise Aircall's own end does it.
+            for _ in 0..<5 {
+                try? await Task.sleep(for: .seconds(1))
+                if await Aircall.lineIsOnCall() == false, self.status == .live { self.endCall(); return }
+            }
+        }
+    }
+    private var phoneTreeThisCall = false
+
     private func markBadNumber() {
         badNumberThisCall = true
         coachTask?.cancel()
@@ -1894,11 +1930,12 @@ final class CoachModel: ObservableObject {
         callList.refreshUpNext()
         guard let object = Salesforce.objectFor(id: id) else { return }
         let value = object == "Lead" ? "Unqualified" : "Not Quality Prospect"
-        ActivityLog.add("Bad number (\(reason)): \(calling ?? id) taken off the list, marking \(value)")
+        ActivityLog.add("Off the list (\(reason)): \(calling ?? id), marking \(value)")
         guard Salesforce.isConnected else { return }
         Task { [weak self] in
             do {
-                try await Salesforce.setStatus(of: id, to: value, unqualifiedReason: "Non-Responsive", note: "Bad number (\(reason))")
+                try await Salesforce.setStatus(of: id, to: value, unqualifiedReason: "Non-Responsive",
+                                               note: reason == "phone tree" ? "Phone tree" : "Bad number (\(reason))")
                 ActivityLog.add("Status: saved \(value) (bad number)")
                 if self?.statusRecordID == id { self?.recordStatus = value }
             } catch {

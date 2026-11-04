@@ -134,3 +134,31 @@ enum BadNumber {
         return phrases.contains { t.contains($0) }
     }
 }
+
+
+/// Spots an automated phone menu ("press 1 for sales", "dial by name"). The rep doesn't work
+/// those: the app hangs up and takes the person off the list.
+enum PhoneTree {
+    /// One of these is enough: only a phone menu says them.
+    private static let strong = [
+        "menu options have changed", "listen carefully as our", "dial by name", "company directory",
+        "your party's extension", "party's extension", "if you know the extension", "if you know your party",
+        "para español", "para espanol", "main menu", "make a selection", "please select from the following",
+        "say or press", "press or say", "to repeat these options", "for all other inquiries", "for all other calls",
+    ]
+    /// Two of these together, one of them "press ...": "press 1 for sales, press 2 for billing".
+    private static let weak = [
+        "press 1", "press one", "press 2", "press two", "press 3", "press three", "press 4", "press four",
+        "press 9", "press nine", "press 0", "press zero", "for sales", "for billing", "for customer service",
+        "for support", "for accounts", "to speak with an operator", "to speak to an operator", "operator",
+        "extension", "our hours are", "business hours",
+    ]
+
+    static func detects(_ text: String) -> Bool {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        if strong.contains(where: { t.contains($0) }) { return true }
+        // Two menu phrases, and at least one is "press ..." (a live receptionist never says that).
+        let hits = weak.filter { t.contains($0) }
+        return hits.count >= 2 && hits.contains { $0.hasPrefix("press") }
+    }
+}
