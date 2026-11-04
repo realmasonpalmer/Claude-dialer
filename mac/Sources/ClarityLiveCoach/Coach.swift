@@ -1884,9 +1884,41 @@ final class CoachModel: ObservableObject {
         else if detailsTried || leads.isActive, voicemailTask == nil || voicemailFor != calling {
             prepareVoicemail() // it fills the card when done (in Chrome mode, only once the page is read)
         }
+        watchFollowUp()
     }
 
     private var followUpThisCall = false
+    private var followUpWatchdog: Task<Void, Never>?
+
+    /// The card must never sit on "Writing..." forever (Claude failed, timed out, or answered for
+    /// someone else). After 12 s with nothing: ask Claude again. After 20 s: fill the empty boxes
+    /// with the ready-made text and notes (with their name). Claude's version replaces them if it
+    /// comes in later, as long as nothing was sent yet.
+    private func watchFollowUp() {
+        followUpWatchdog?.cancel()
+        let who = calling
+        let key = followUp?.key
+        func stillEmpty(_ m: CoachModel) -> Bool {
+            guard m.calling == who, let f = m.followUp, f.key == key else { return false }
+            return f.text.isEmpty || f.linkedin.isEmpty || f.linkedinMessage.isEmpty
+        }
+        followUpWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard let self, !Task.isCancelled, stillEmpty(self) else { return }
+            if self.voicemailTask == nil, self.voicemailScript == nil, self.status == .ready {
+                ActivityLog.problem("Follow-ups still writing for \(who ?? "?") after 12 s: asking Claude again")
+                self.prepareVoicemail()
+            }
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, stillEmpty(self), var f = self.followUp else { return }
+            let s = self.instantVoicemail(for: who)
+            if f.text.isEmpty { f.text = s.textMessage }
+            if f.linkedin.isEmpty { f.linkedin = s.linkedin }
+            if f.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
+            self.followUp = f
+            ActivityLog.problem("Used the ready-made text and LinkedIn notes for \(who ?? "?"). Claude: \(self.lastVoicemailError ?? "no answer in 20 s")")
+        }
+    }
 
     /// Today's checklist for this person, from the 21-day plan: each step and whether it's done.
     func todaySteps(for key: String?) -> [(title: String, done: Bool)] {
