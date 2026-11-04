@@ -1,34 +1,38 @@
 import SwiftUI
 
-/// "Today: 32 of 50 contacts · On track", plus how many people are due today on each active
-/// campaign. Contacts = dials, texts and LinkedIn notes. The goal is 50 a day, or more if the
-/// active campaigns need more to stay on plan.
+/// "This hour: 12 of 50 · 23:14 left", with a countdown to the top of the hour.
+/// Contacts = dials, texts and LinkedIn notes. The goal is 50 every hour.
+/// Below: today's total and how many people are due on each active campaign.
 struct DailyGoalCard: View {
     @ObservedObject var touchpoints: Touchpoints
     let activeCampaigns: [Campaign]
     @State private var due: [UUID: (people: Int, touches: Int)] = [:]
 
-    static let minimum = 50
-    /// The workday the pace is measured against (8am to 5pm).
-    static let startHour = 8, endHour = 17
+    static let perHour = 50
 
     var body: some View {
-        let done = touchpoints.totalAll(in: .today)
-        let needed = due.values.reduce(0) { $0 + $1.touches }
-        let target = max(Self.minimum, done + needed)
-        let expected = expectedByNow(target)
-        let onTrack = done >= expected
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Today: \(done) of \(target) contacts").font(.callout.weight(.semibold))
-                Spacer()
-                Text(onTrack ? "On track" : "Behind by \(expected - done)")
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let now = context.date
+            let hour = Calendar.current.dateInterval(of: .hour, for: now)
+            let done = touchpoints.contacts(since: hour?.start ?? now)
+            let left = max(Int((hour?.end ?? now).timeIntervalSince(now)), 0)
+            let hit = done >= Self.perHour
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("This hour: \(done) of \(Self.perHour)").font(.callout.weight(.semibold))
+                    Spacer()
+                    Text(String(format: "%d:%02d left", left / 60, left % 60))
+                        .font(.callout.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(hit ? Color.green : left < 600 ? Color.orange : Color.primary)
+                }
+                ProgressView(value: Double(min(done, Self.perHour)), total: Double(Self.perHour))
+                    .tint(hit ? .green : .accentColor)
+                Text(hit ? "Goal hit for this hour" : "\(Self.perHour - done) to go")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(onTrack ? Color.green : Color.orange)
-            }
-            ProgressView(value: Double(min(done, target)), total: Double(max(target, 1)))
-            if !due.isEmpty {
-                Text(activeCampaigns.compactMap { c in due[c.id].map { "\(c.name): \($0.people) due" } }.joined(separator: " · "))
+                    .foregroundStyle(hit ? Color.green : Color.secondary)
+                Text(([ "Today: \(touchpoints.totalAll(in: .today)) contacts" ]
+                      + activeCampaigns.compactMap { c in due[c.id].map { "\(c.name): \($0.people) due" } })
+                    .joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -43,16 +47,6 @@ struct DailyGoalCard: View {
                 try? await Task.sleep(for: .seconds(600))
             }
         }
-    }
-
-    /// Where you should be by now, spread evenly over the workday.
-    private func expectedByNow(_ target: Int) -> Int {
-        let cal = Calendar.current
-        let now = Date()
-        guard let start = cal.date(bySettingHour: Self.startHour, minute: 0, second: 0, of: now),
-              let end = cal.date(bySettingHour: Self.endHour, minute: 0, second: 0, of: now) else { return 0 }
-        let fraction = min(max(now.timeIntervalSince(start) / end.timeIntervalSince(start), 0), 1)
-        return Int(Double(target) * fraction)
     }
 
     /// For each active campaign: people still due today, and the contacts their plan step still needs.
