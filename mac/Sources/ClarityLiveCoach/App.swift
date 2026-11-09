@@ -34,6 +34,13 @@ struct ClarityLiveCoachApp: App {
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 600, height: 760)
+
+        // Opened from the coach when the list open in Chrome has no campaign yet.
+        Window("New Campaign", id: "new-campaign") {
+            NewCampaignView(useNow: true)
+                .environmentObject(campaigns)
+        }
+        .windowResizability(.contentSize)
     }
 }
 

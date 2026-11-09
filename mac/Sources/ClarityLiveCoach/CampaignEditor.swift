@@ -37,7 +37,23 @@ struct CampaignEditorView: View {
         draft = store.editing ?? Campaign()
         message = nil
         showSections = !draft.opening.isEmpty || !draft.objections.isEmpty
+        // No list yet: start with the list that's open, so the script is saved with it
+        // (only if no other campaign has that list).
+        if draft.listViewID.isEmpty, let open = store.workingList, store.campaign(for: open) == nil {
+            draft.listObject = open.object
+            draft.listViewID = open.view
+            draft.listName = open.label
+        }
+        matchListViews()
         keepWindowsOnTop()
+    }
+
+    /// Swaps a list saved the way Chrome shows it (a short Id or API name) for the real list view,
+    /// so the picker shows it and the name is right.
+    private func matchListViews() {
+        guard !draft.listViewID.isEmpty else { return }
+        let list = WorkingList(object: draft.listObject, view: draft.listViewID)
+        if let view = listViews.first(where: { list.matches($0) }) { draft.link(view) }
     }
 
     // MARK: 1. Basics
@@ -57,6 +73,12 @@ struct CampaignEditorView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Salesforce list to call").font(.headline)
             if !Salesforce.isConnected {
+                if !draft.listViewID.isEmpty {
+                    HStack {
+                        Text(draft.listName.isEmpty ? "The list open in Chrome" : draft.listName).font(.callout)
+                        Button("Remove") { draft.unlink() }.buttonStyle(.link)
+                    }
+                }
                 Text("Sign in to Salesforce first (gear > Setup > Salesforce), then pick the list here.")
                     .font(.callout).foregroundStyle(.secondary)
             } else if loadingLists && listViews.isEmpty {
@@ -65,26 +87,23 @@ struct CampaignEditorView: View {
                 Picker("", selection: Binding(
                     get: { draft.listViewID },
                     set: { id in
-                        if let v = listViews.first(where: { $0.id == id }) {
-                            draft.listViewID = v.id; draft.listObject = v.object; draft.listName = v.label
-                        } else {
-                            draft.listViewID = ""; draft.listObject = ""; draft.listName = ""
-                        }
+                        if let v = listViews.first(where: { $0.id == id }) { draft.link(v) } else { draft.unlink() }
                     }
                 )) {
                     Text("None (use whatever list is open in Chrome)").tag("")
                     ForEach(listViews) { Text($0.title).tag($0.id) }
                 }
                 .labelsHidden()
-                Text("Picking this campaign opens this list in Chrome and calls everyone on it who's due today.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
+            Text("This script is saved with this list. Open the list (in Chrome or here) and the coach loads this script. Pick this campaign and its list opens.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .task {
             guard Salesforce.isConnected, listViews.isEmpty else { return }
             loadingLists = true
             listViews = (try? await Salesforce.listViews()) ?? []
             loadingLists = false
+            matchListViews()
         }
     }
 

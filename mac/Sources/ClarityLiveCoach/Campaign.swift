@@ -25,6 +25,8 @@ struct Campaign: Codable, Identifiable, Equatable {
     var listObject = ""
     var listViewID = ""
     var listName = ""
+    /// The list view's API name (like "My_Leads"). Chrome's address bar shows either this or the Id.
+    var listDeveloperName = ""
     /// Active campaigns (up to 3) are the ones being called. Paused ones wait.
     var active = false
     /// People on the Salesforce list, last time it was counted.
@@ -54,8 +56,30 @@ struct Campaign: Codable, Identifiable, Equatable {
         success = text(.success); exit = text(.exit)
         version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1
         listObject = text(.listObject); listViewID = text(.listViewID); listName = text(.listName)
+        listDeveloperName = text(.listDeveloperName)
         active = (try? c.decodeIfPresent(Bool.self, forKey: .active)) ?? false
         listSize = (try? c.decodeIfPresent(Int.self, forKey: .listSize)) ?? 0
+    }
+
+    /// True if this campaign calls that Salesforce list. `view` is the list view's Id (15 or 18 characters)
+    /// or its API name, the way Chrome's address bar shows it (filterName=...).
+    func calls(object: String, view: String) -> Bool {
+        guard !listViewID.isEmpty, !view.isEmpty, listObject.isEmpty || listObject == object else { return false }
+        if listViewID == view { return true }
+        if listViewID.count >= 15, view.count >= 15, listViewID.prefix(15) == view.prefix(15) { return true }
+        return !listDeveloperName.isEmpty && listDeveloperName == view
+    }
+
+    /// Saves a Salesforce list with this campaign. Opening that list loads this campaign's script.
+    mutating func link(_ view: Salesforce.ListView) {
+        listObject = view.object
+        listViewID = view.id
+        listName = view.label
+        listDeveloperName = view.developerName
+    }
+
+    mutating func unlink() {
+        listObject = ""; listViewID = ""; listName = ""; listDeveloperName = ""; listSize = 0
     }
 
     /// The sections, in the order the editor and the prompt show them.
@@ -105,6 +129,28 @@ struct Campaign: Codable, Identifiable, Equatable {
     )
 }
 
+/// The Salesforce list view the rep is working right now: open in Chrome, or picked in the app.
+struct WorkingList: Equatable, Identifiable {
+    let object: String  // "Lead" or "Contact"
+    let view: String    // the list view's Id or API name (Chrome's filterName=...)
+    var label = ""      // the list's name, when known
+    var id: String { "\(object)/\(view)" }
+
+    /// True if that Salesforce list view is this list (by Id, 15 or 18 characters, or API name).
+    func matches(_ v: Salesforce.ListView) -> Bool {
+        v.object == object && (v.id == view || (view.count >= 15 && v.id.prefix(15) == view.prefix(15)) || v.developerName == view)
+    }
+
+    /// With its name from the Chrome tab ("My Leads | Leads | Salesforce") when it isn't known yet.
+    func named() -> WorkingList {
+        guard label.isEmpty, let parts = SalesforceChrome.title()?.components(separatedBy: " | "),
+              parts.count >= 2, parts[1] == "\(object)s" else { return self }
+        var copy = self
+        copy.label = parts[0]
+        return copy
+    }
+}
+
 /// Saves campaigns as small files on this Mac:
 /// ~/Library/Application Support/Clarity Live Coach/Campaigns
 @MainActor
@@ -115,6 +161,8 @@ final class CampaignStore: ObservableObject {
     }
     /// The campaign open in the editor window.
     @Published var editing: Campaign?
+    /// The list being worked now (kept up to date by the coach). New campaigns start with it picked.
+    var workingList: WorkingList?
 
     private let folder: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -151,6 +199,43 @@ final class CampaignStore: ObservableObject {
         c.active = on
         save(c)
         return true
+    }
+
+    // MARK: Campaign <-> list
+
+    /// The campaign saved with this list. The one in use wins if two share it.
+    func campaign(for list: WorkingList) -> Campaign? {
+        if selected.calls(object: list.object, view: list.view) { return selected }
+        return campaigns.first { $0.calls(object: list.object, view: list.view) }
+    }
+
+    /// Same, but also asks Salesforce when the address bar shows the list's API name and the campaign
+    /// only knows its Id (campaigns saved by older versions). Remembers the API name for next time.
+    func findCampaign(for list: WorkingList) async -> Campaign? {
+        if let c = campaign(for: list) { return c }
+        guard let view = await Self.listView(for: list),
+              var c = campaigns.first(where: { $0.calls(object: view.object, view: view.id) }) else { return nil }
+        let before = c
+        c.link(view)
+        if c != before { save(c) }
+        return c
+    }
+
+    /// Saves this list with the campaign, so opening the list loads its script.
+    func link(_ id: UUID, to list: WorkingList) async {
+        let view = await Self.listView(for: list)
+            ?? Salesforce.ListView(id: list.view, label: list.label, object: list.object)
+        guard var c = campaigns.first(where: { $0.id == id }) else { return }
+        c.link(view)
+        if c.listName.isEmpty { c.listName = "\(list.object) list" }
+        save(c)
+        ActivityLog.add("Campaign \(c.name) saved with list \(c.listName)")
+    }
+
+    /// The Salesforce list view (Id, name, API name) for a list, when signed in to Salesforce.
+    static func listView(for list: WorkingList) async -> Salesforce.ListView? {
+        guard Salesforce.isConnected, let views = try? await Salesforce.listViews() else { return nil }
+        return views.first { list.matches($0) }
     }
 
     func save(_ campaign: Campaign) {

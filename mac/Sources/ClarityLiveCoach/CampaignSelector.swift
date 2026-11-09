@@ -100,6 +100,8 @@ struct CampaignSelectorView: View {
 /// New Campaign: segment name, a Salesforce list, and a script (paste one, or let Claude write it
 /// from the people on the list).
 struct NewCampaignView: View {
+    /// Start using it right away (opened from the coach for the list that's open).
+    var useNow = false
     @EnvironmentObject var store: CampaignStore
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -110,6 +112,12 @@ struct NewCampaignView: View {
     @State private var message: String?
 
     private var view: Salesforce.ListView? { views.first { $0.id == listID } }
+
+    /// The list it starts with: the one open now, if no campaign has it yet.
+    private var startList: WorkingList? {
+        guard let open = store.workingList, store.campaign(for: open) == nil else { return nil }
+        return open
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -122,7 +130,9 @@ struct NewCampaignView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("2. Salesforce list").font(.headline)
-                if !Salesforce.isConnected {
+                if !Salesforce.isConnected, let list = startList {
+                    Text(list.label.isEmpty ? "The list open in Chrome" : list.label).font(.callout)
+                } else if !Salesforce.isConnected {
                     Text("Sign in to Salesforce first (gear > Setup > Salesforce).").font(.callout).foregroundStyle(.secondary)
                 } else if views.isEmpty {
                     ProgressView().controlSize(.small)
@@ -173,18 +183,30 @@ struct NewCampaignView: View {
         }
         .padding(20)
         .frame(width: 560, height: 620)
+        .onAppear { keepWindowsOnTop() }
         .task {
             guard Salesforce.isConnected, views.isEmpty else { return }
             views = (try? await Salesforce.listViews()) ?? []
+            // Start with the list that's open, so the script is saved with it.
+            if listID.isEmpty, let list = startList, let match = views.first(where: { list.matches($0) }) {
+                listID = match.id
+            }
         }
     }
 
     private func save() {
         var c = Campaign(name: name.trimmed, objective: "Book a 20 minute meeting", pastedScript: script.trimmed,
                          company: "Clarity Consulting: a boutique Salesforce partner and Anthropic Claude partner.")
-        if let v = view { c.listObject = v.object; c.listViewID = v.id; c.listName = v.label }
+        if let v = view {
+            c.link(v)
+        } else if !Salesforce.isConnected, let list = startList {
+            // Not signed in to Salesforce: save it with the list as Chrome shows it.
+            c.link(Salesforce.ListView(id: list.view, label: list.label.isEmpty ? "\(list.object) list" : list.label,
+                                       object: list.object))
+        }
         c.active = store.activeCampaigns.count < CampaignStore.maxActive
         store.save(c)
+        if useNow { store.selectedID = c.id }
         dismiss()
     }
 

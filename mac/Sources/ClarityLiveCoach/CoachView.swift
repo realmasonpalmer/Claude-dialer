@@ -158,6 +158,11 @@ struct CoachView: View {
     @State private var showAircall = false
     @State private var showSetup = false
     @State private var showSettings = false
+    /// A list opened during a call: its campaign loads when the call ends.
+    @State private var listToFollow: WorkingList?
+    /// The open list has no campaign saved with it (checked with Salesforce).
+    @State private var unlinkedList: WorkingList?
+    @State private var hideUnlinked: WorkingList?
     @StateObject private var updater = Updater()
     @AppStorage("repName") private var repName = ""
     @AppStorage("showTouchpoints") private var showTouchpoints = true
@@ -185,6 +190,7 @@ struct CoachView: View {
             // The middle scrolls if it's ever taller than the screen; the top bar and the buttons stay put.
             ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: gap) {
+            unlinkedNotice
             // The Chrome list is the default. This header only shows if a Salesforce list was picked in Settings and tools.
             if Salesforce.isConnected && coach.leads.selected != nil { leadHeader }
             if coach.status != .ready {
@@ -235,6 +241,7 @@ struct CoachView: View {
         .onAppear {
             coach.use(campaigns.selected)
             coach.activate(true)
+            campaigns.workingList = coach.workingList
         }
         .task {
             // Look for a new version now and every 2 minutes, so the Update button shows up on its own.
@@ -253,6 +260,16 @@ struct CoachView: View {
             // A different campaign, or its list changed in the editor: open that list in Chrome.
             if old.id != new.id || old.listViewID != new.listViewID { openList(of: new) }
             if old.id != new.id { coach.listDone = false }
+        }
+        // The rep opened a different list (in Chrome or in Settings): load the campaign saved with it.
+        .onChange(of: coach.workingList) { old, new in
+            campaigns.workingList = new
+            // Skip the list remembered from last time showing up at launch; only real switches count.
+            guard old != nil, let new else { return }
+            follow(new)
+        }
+        .onChange(of: coach.status) { _, status in
+            if status == .ready, let list = listToFollow { follow(list) }
         }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
@@ -352,11 +369,70 @@ struct CoachView: View {
 
     private func openList(of campaign: Campaign) {
         guard !campaign.listViewID.isEmpty, !campaign.listObject.isEmpty else { return }
+        // Already on it (the rep opened this list and the campaign followed): nothing to open.
+        if let list = coach.workingList, campaign.calls(object: list.object, view: list.view) { return }
+        ActivityLog.add("Campaign: \(campaign.name), list \(campaign.listName)")
+        // Calling from a list picked in the app: switch that list, not Chrome.
+        if coach.leads.selected != nil {
+            if let view = coach.leads.views.first(where: { campaign.calls(object: $0.object, view: $0.id) }) {
+                Task { await coach.leads.open(view) }
+            }
+            return
+        }
         let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } }
             ?? Keychain.read(.sfInstance) ?? ""
         guard !origin.isEmpty else { return }
         _ = SalesforceChrome.open("\(origin)/lightning/o/\(campaign.listObject)/list?filterName=\(campaign.listViewID)")
-        ActivityLog.add("Campaign: \(campaign.name), list \(campaign.listName)")
+    }
+
+    /// Loads the campaign (and its script) saved with this list. Waits for the call to end if one is on.
+    private func follow(_ list: WorkingList) {
+        guard coach.status == .ready else { listToFollow = list; return }
+        listToFollow = nil
+        Task {
+            let match = await campaigns.findCampaign(for: list)
+            guard coach.workingList == list else { return } // the rep already moved to another list
+            unlinkedList = match == nil ? list : nil
+            guard let match, match.id != campaigns.selected.id else { return }
+            guard coach.status == .ready else { listToFollow = list; return } // a call started meanwhile
+            campaigns.selectedID = match.id // switches the script (onChange above)
+            coach.listDone = false
+            ActivityLog.add("List changed: using campaign \(match.name) and its script")
+        }
+    }
+
+    /// The list open now has no campaign: make one for it, or save the current script with it.
+    @ViewBuilder private var unlinkedNotice: some View {
+        if coach.status == .ready, let list = coach.workingList, unlinkedList == list, hideUnlinked != list,
+           campaigns.campaign(for: list) == nil {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This list has no campaign yet. Using the \"\(campaigns.selected.name)\" script.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button("New campaign") {
+                        campaigns.workingList = list.named()
+                        openWindow(id: "new-campaign") // starts with this list picked
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .help("Save a script with this list. Opening this list loads it.")
+                    // Only offered when it won't take the script off another list.
+                    if campaigns.selected.listViewID.isEmpty {
+                        Button("Use this script here") {
+                            let id = campaigns.selected.id
+                            Task { await campaigns.link(id, to: list.named()) }
+                        }
+                        .help("Save \"\(campaigns.selected.name)\" with this list")
+                    }
+                    Spacer(minLength: 0)
+                    Button("Not now") { hideUnlinked = list }.buttonStyle(.link)
+                }
+                .controlSize(.small)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+        }
     }
 
     /// The campaign after this one that has a list (the next list to work today).
@@ -855,6 +931,7 @@ struct HelpView: View {
                     "Gear > Setup: do each step once (name, keys, audio, Chrome, Salesforce, Aircall, calendar).",
                     "Aircall phone (bottom of the coach): click Show, sign in once, set yourself Available, click Hide.",
                     "Open your lead list in Salesforce in Chrome. The app learns it by itself.",
+                    "Each campaign saves its script with its list. Open a list and its script loads. Pick a campaign and its list opens.",
                 ])
                 section("Calling", [
                     "Click the big Call button. The app checks that the opener, voicemail and follow-ups are for that person, then calls their Mobile (or Phone, if there's no Mobile).",

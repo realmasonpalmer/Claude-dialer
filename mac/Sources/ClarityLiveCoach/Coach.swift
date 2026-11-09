@@ -481,6 +481,10 @@ final class CoachModel: ObservableObject {
     private var listWatcher: AnyCancellable?
     private var leadsWatcher: AnyCancellable?
     private var leadDetailsWatcher: AnyCancellable?
+    private var workingListWatcher: AnyCancellable?
+    /// The Salesforce list being worked: the one picked in the app, else the one last open in Chrome.
+    /// When it changes, the coach view loads the campaign (and script) saved with that list.
+    @Published private(set) var workingList: WorkingList?
 
     // MARK: Lead list (Salesforce) and dialing (Aircall)
 
@@ -1106,6 +1110,14 @@ final class CoachModel: ObservableObject {
         if listWatcher == nil {
             listWatcher = callList.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
             leadsWatcher = leads.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+            // Which list is being worked (the in-app list wins over Chrome's).
+            workingListWatcher = callList.$listKey.combineLatest(leads.$selected)
+                .map { key, view -> WorkingList? in
+                    if let view { return WorkingList(object: view.object, view: view.id, label: view.label) }
+                    return key.map { WorkingList(object: $0.object, view: $0.view) }
+                }
+                .removeDuplicates()
+                .sink { [weak self] list in self?.workingList = list }
             // A new lead loaded between calls: write its opener and voicemail.
             leadDetailsWatcher = leads.$details.sink { [weak self] details in
                 guard let details else { return }
