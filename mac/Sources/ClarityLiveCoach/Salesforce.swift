@@ -358,10 +358,15 @@ enum Salesforce {
                     values[field] = value
                 }
             }
-            guard let id = values["Id"], let name = values["Name"] ?? values["FirstName"].map({ "\($0) \(values["LastName"] ?? "")" }) else {
+            let company = values["Company"] ?? values["Account.Name"]
+            let personName = values["Name"]
+                ?? values["FirstName"].map({ "\($0) \(values["LastName"] ?? "")" })
+                ?? values["LastName"]
+            // No usable person name: show the company, so the row is never dropped.
+            guard let id = values["Id"], let name = [personName, company].compactMap({ $0 }).first(where: { !isPlaceholderName($0) }) ?? personName ?? company else {
                 return nil
             }
-            let subtitle = [values["Title"], values["Company"] ?? values["Account.Name"]].compactMap { $0 }.joined(separator: " · ")
+            let subtitle = [values["Title"], company].compactMap { $0 }.joined(separator: " · ")
             return Row(id: id, name: name, subtitle: subtitle)
         }
     }
