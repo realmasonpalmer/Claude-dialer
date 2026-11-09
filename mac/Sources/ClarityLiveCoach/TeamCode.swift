@@ -33,7 +33,28 @@ enum TeamCode {
     /// The Terminal command that installs the app with these keys in it.
     static func installCommand(code: String) -> String {
         let script = "https://raw.githubusercontent.com/\(Updater.repo)/\(Updater.branch)/mac/scripts/get.sh"
-        return "CLARITY_TEAM_CODE='\(code)' bash -c \"$(curl -fsSL \(script))\""
+        // No quote marks anywhere: Slack, Notes and Messages turn them into curly quotes, and then the command fails.
+        return "CLARITY_TEAM_CODE=\(code) bash <(curl -fsSL \(script))"
+    }
+
+    /// Pulls the code out of whatever was pasted: just the code, or the whole setup command.
+    /// Reads base64 letters and stops at the first space, quote or other character, or after the "=" padding.
+    private static func extractCode(_ text: String) -> String? {
+        guard let start = text.range(of: prefix) else { return nil }
+        let letters = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+        var body = ""
+        var padding = 0
+        for ch in text[start.upperBound...] {
+            if ch == "=" {
+                body.append(ch); padding += 1
+                if padding == 2 { break }
+            } else if padding == 0, letters.contains(ch) {
+                body.append(ch)
+            } else {
+                break
+            }
+        }
+        return body.isEmpty ? nil : body
     }
 
     /// What's inside the code, in plain words (for the message after copying).
@@ -51,10 +72,8 @@ enum TeamCode {
     /// Returns what was added, in plain words, or nil if the text isn't a team code.
     @discardableResult
     static func apply(_ text: String) -> [String]? {
-        let squeezed = text.filter { !$0.isWhitespace }
-        guard let start = squeezed.range(of: prefix) else { return nil }
-        let body = String(squeezed[start.upperBound...].prefix(while: { $0 != "'" && $0 != "\"" }))
-        guard let data = Data(base64Encoded: body),
+        guard let body = extractCode(text),
+              let data = Data(base64Encoded: body),
               let all = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
 
         var added: [String] = []

@@ -8,13 +8,14 @@ for the full picture (files, setup state, next tasks).
 - **Fastest install (new teammates):** open Terminal, paste this and press Enter. It installs Apple's free tools if needed, downloads, builds and opens the app:
 
   ```bash
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/confident-gates-ji8r2l/mac/scripts/get.sh)"
+  bash <(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/confident-gates-ji8r2l/mac/scripts/get.sh)
   ```
 
   Then click the gear, then Setup, and follow the 7 steps.
+  (The command has no quote marks on purpose. Slack and Notes turn quotes into curly ones, and then it fails with "#!/bin/bash: No such file or directory".)
 - **Teammate with the keys filled in:** someone who already has the app clicks the gear, then Settings and tools,
   then "Copy setup command for a teammate" and sends it in a private DM. It's the same command with
-  `CLARITY_TEAM_CODE='...'` in front; `get.sh` leaves the code in the app's settings and the app moves it
+  `CLARITY_TEAM_CODE=...` in front; `get.sh` leaves the code in the app's settings and the app moves it
   into the Keychain on launch (`TeamCode.swift`). The code can also be pasted in Setup or on the first-run keys screen.
 - Needs macOS 14.4+ and Apple's free command line tools (`xcode-select --install`).
 - From this folder: `bash scripts/install.sh`. It builds into `~/Library/Caches/ClarityLiveCoach-build`,
