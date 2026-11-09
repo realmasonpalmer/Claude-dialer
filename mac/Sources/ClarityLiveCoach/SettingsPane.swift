@@ -95,6 +95,24 @@ struct SettingsPane: View {
                     }
                 }
 
+                section("Updates") {
+                    HStack {
+                        if updater.updating {
+                            Button("Updating...") {}.disabled(true)
+                        } else if updater.updateAvailable {
+                            Button("Update now") { updater.update() }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(coach.status != .ready)
+                        }
+                        Button("Check for updates") { Task { await updater.check(byHand: true) } }
+                            .disabled(updater.updating)
+                    }
+                    if let message = updater.message {
+                        Text(message).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 section("Tools") {
                     HStack {
                         Button(coach.lab.hasNewSuggestions ? "Script Lab (new)" : "Script Lab") {
