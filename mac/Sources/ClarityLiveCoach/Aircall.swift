@@ -121,6 +121,8 @@ enum Aircall {
         let calls = (json["calls"] as? [[String: Any]]) ?? []
         let mine = calls.filter { call in
             if let numberID, ((call["number"] as? [String: Any])?["id"] as? Int) != numberID { return false }
+            // Shared number: only count calls on MY Aircall user, never another rep's.
+            if let userID, ((call["user"] as? [String: Any])?["id"] as? Int) != userID { return false }
             if let since, let started = call["started_at"] as? Double, started < since.timeIntervalSince1970 { return false }
             return true
         }
