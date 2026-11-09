@@ -245,9 +245,30 @@ final class CallList: ObservableObject {
         return false
     }
 
+    private var companyNames: [String: String] = [:]
+    private var lookingUp: Set<String> = []
+
+    /// The name to show. "Unknown Unknown" placeholders show the company instead (looked up once).
+    private func displayName(for record: Record) -> String {
+        guard Salesforce.isPlaceholderName(record.name) else { return record.name }
+        if let company = companyNames[record.id] { return company }
+        let object = record.id.hasPrefix("00Q") ? "Lead" : "Contact"
+        if Salesforce.isConnected, !lookingUp.contains(record.id) {
+            lookingUp.insert(record.id)
+            Task {
+                if let d = try? await Salesforce.details(id: record.id, object: object),
+                   let company = d.company, !company.isEmpty {
+                    companyNames[record.id] = company
+                    refreshUpNext()
+                }
+            }
+        }
+        return record.name
+    }
+
     func refreshUpNext(after index: Int? = nil) {
         resetCalledIfNewDay()
-        let info = upNext(after: index).map { (name: $0.record.name, position: $0.position) }
+        let info = upNext(after: index).map { (name: displayName(for: $0.record), position: $0.position) }
         if info?.name != upNextInfo?.name || info?.position != upNextInfo?.position { upNextInfo = info }
     }
 
