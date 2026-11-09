@@ -15,6 +15,11 @@ enum Salesforce {
 
     static var isConnected: Bool { Keychain.read(.sfRefresh) != nil && Keychain.read(.sfInstance) != nil }
 
+    /// Consumer Key of Clarity's "Clarity Power Dialer" External Client App, built in so nobody has to find it.
+    /// Not a secret: it's a public app ID (it shows in the sign-in address). Sign-in uses PKCE, never the
+    /// Consumer Secret, so the secret must never be put in this public code.
+    static let defaultClientID = "3MVG9H_KVs6V9LiMSEeTtNlAX6yxdGsEh9dByPQpKsdJupilxQcn_3L3AdkHcxS4kPAFBIqwODpwrHnRI1DZK"
+
     static var loginHost: String {
         get { UserDefaults.standard.string(forKey: "sfLoginHost") ?? "clarityconsultingllc.my.salesforce.com" }
         set { UserDefaults.standard.set(newValue, forKey: "sfLoginHost") }
@@ -101,9 +106,10 @@ enum Salesforce {
     }
 
     private static func refresh() async throws {
-        guard let refresh = Keychain.read(.sfRefresh), let clientID = Keychain.read(.sfClientID) else {
+        guard let refresh = Keychain.read(.sfRefresh) else {
             throw SFError(message: "Connect Salesforce first (gear menu > Setup > Salesforce).")
         }
+        let clientID = Keychain.read(.sfClientID) ?? defaultClientID
         save(try await tokenRequest(["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientID]))
     }
 
@@ -432,10 +438,10 @@ extension Data {
 struct SalesforceConnectView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var host = Salesforce.loginHost
-    @State private var clientID = Keychain.read(.sfClientID) ?? ""
+    @State private var clientID = Keychain.read(.sfClientID) ?? Salesforce.defaultClientID
     @State private var status: String?
     @State private var working = false
-    @State private var showSteps = !Salesforce.isConnected
+    @State private var showSteps = false
     var onConnected: () -> Void
 
     var body: some View {
@@ -446,8 +452,12 @@ struct SalesforceConnectView: View {
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                DisclosureGroup("One-time setup in Salesforce (admin, 5 minutes)", isExpanded: $showSteps) {
+                DisclosureGroup("Admins only: if sign-in fails", isExpanded: $showSteps) {
                     VStack(alignment: .leading, spacing: 4) {
+                        Text("Clarity's Consumer Key is built in. Only change these if an admin tells you to.")
+                        TextField("Salesforce address", text: $host).textFieldStyle(.roundedBorder)
+                        SecureField("Consumer Key", text: $clientID).textFieldStyle(.roundedBorder)
+                        Text("To make a new Salesforce app instead:").fontWeight(.semibold).padding(.top, 4)
                         Text("1. Setup > External Client App Manager > New External Client App.")
                         Text("2. Name: Clarity Live Coach. Contact email: yours.")
                         Text("3. Check Enable OAuth. Callback URL: \(ChromeLogin.redirectURI)")
@@ -463,8 +473,6 @@ struct SalesforceConnectView: View {
                 }
                 .font(.callout)
 
-                TextField("Salesforce address", text: $host).textFieldStyle(.roundedBorder)
-                SecureField("Consumer Key", text: $clientID).textFieldStyle(.roundedBorder)
                 HStack {
                     Button(Salesforce.isConnected ? "Sign in again" : "Sign in to Salesforce") {
                         Task { await signIn() }
