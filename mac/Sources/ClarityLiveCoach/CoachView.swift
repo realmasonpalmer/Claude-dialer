@@ -27,7 +27,8 @@ struct RootView: View {
                     if appPhone { AircallPhoneSide() }
                 }
             case .keys:
-                KeysView(onSave: { screen = .coach }, onCancel: hasKeys ? { screen = .coach } : nil)
+                KeysView(onSave: { screen = .coach }, onCancel: hasKeys ? { screen = .coach } : nil,
+                         availability: coach.availability)
             case .coach:
                 CoachView(
                     onAudioCheck: { proof.testAgain(); screen = .check },
@@ -56,9 +57,13 @@ struct KeysView: View {
     var onSave: () -> Void
     /// Set when the keys are already saved: a way back without changing them.
     var onCancel: (() -> Void)? = nil
+    /// So a team code's booking calendar loads right away.
+    var availability: Availability? = nil
     @State private var deepgram = Keychain.read(.deepgram) ?? ""
     @State private var anthropic = Keychain.read(.anthropic) ?? ""
     @State private var error: String?
+    @State private var askTeamCode = false
+    @State private var teamCodeText = ""
 
     var body: some View {
         VStack(spacing: 18) {
@@ -70,6 +75,8 @@ struct KeysView: View {
                 Text("Paste two keys, one time. They're stored safely in your Mac's Keychain.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                Button("Got a team code from a teammate? Paste it") { teamCodeText = ""; askTeamCode = true }
+                    .buttonStyle(.link)
             }
             keyField(
                 title: "Deepgram key",
@@ -111,6 +118,28 @@ struct KeysView: View {
                 .disabled(deepgram.trimmed.isEmpty || anthropic.trimmed.isEmpty)
         }
         .padding(24)
+        .alert("Team code", isPresented: $askTeamCode) {
+            TextField("Paste the code or the whole setup command", text: $teamCodeText)
+            Button("Add") { addTeamCode() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A teammate sends this in a private message. It fills in the team's keys.")
+        }
+    }
+
+    private func addTeamCode() {
+        guard let added = TeamCode.apply(teamCodeText) else {
+            error = "That doesn't look like a team code. Ask for it again and paste all of it."
+            return
+        }
+        if let availability { TeamCode.loadCalendar(added, into: availability) }
+        deepgram = Keychain.read(.deepgram) ?? deepgram
+        anthropic = Keychain.read(.anthropic) ?? anthropic
+        if Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil {
+            onSave()
+        } else {
+            error = "The code had no AI keys. Paste them here."
+        }
     }
 
     private func keyField(title: String, hint: String, link: String, text: Binding<String>) -> some View {

@@ -26,10 +26,17 @@ curl -fsSL -o code.zip "https://github.com/$REPO/archive/refs/heads/$BRANCH.zip"
 ditto -x -k code.zip .
 cd "$(find . -maxdepth 2 -type d -name mac | head -1)"
 
-# 3. Build, put it in Applications and open it.
+# 3. A teammate's setup command carries the team's keys (they're never on GitHub).
+#    Leave them for the app: it saves them in the Keychain when it opens, then deletes this copy.
+if [ -n "${CLARITY_TEAM_CODE:-}" ]; then
+    defaults write io.clarityconsulting.livecoach pendingTeamCode -string "$CLARITY_TEAM_CODE"
+    echo "Your team's keys will be added when the app opens."
+fi
+
+# 4. Build, put it in Applications and open it.
 bash scripts/install.sh
 
-# 4. Tell the in-app updater which version this is, so it doesn't offer the same one again.
+# 5. Tell the in-app updater which version this is, so it doesn't offer the same one again.
 SHA="$(curl -fsSL "https://api.github.com/repos/$REPO/commits/$BRANCH" | sed -n 's/^  "sha": "\(.*\)",$/\1/p' | head -1)"
 [ -n "$SHA" ] && defaults write io.clarityconsulting.livecoach installedSHA "$SHA"
 

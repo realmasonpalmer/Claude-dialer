@@ -118,6 +118,9 @@ struct SettingsPane: View {
                             note = "Copied. Paste it to whoever is helping you."
                         }
                     }
+                    Button("Copy setup command for a teammate") {
+                        note = TeamCode.copyInstallCommand()
+                    }
                     if let note {
                         Text(note).font(.caption).foregroundStyle(.secondary)
                     }

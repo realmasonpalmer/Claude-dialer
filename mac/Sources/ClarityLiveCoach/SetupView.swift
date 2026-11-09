@@ -17,6 +17,9 @@ struct SetupView: View {
     @State private var askWebhook = false
     @State private var webhookText = Keychain.read(.bugWebhook) ?? ""
     @State private var refresh = 0 // re-checks the steps after a setup screen closes
+    @State private var askTeamCode = false
+    @State private var teamCodeText = ""
+    @State private var teamCodeNote: String?
 
     struct Step: Identifiable {
         let id: String
@@ -79,8 +82,10 @@ struct SetupView: View {
             "7. Click Set up here, paste the Consumer Key and click Sign in to Salesforce.",
             "8. Chrome opens Salesforce. You're already logged in, so just click Allow. Chrome says \"Signed in.\" Close that tab.",
             "No admin access? Ask Oliver or Ian to do steps 1 to 6 and send you the Consumer Key.",
+            "Got a team code? It already has the Consumer Key. Just click Set up, then Sign in to Salesforce.",
         ], links: [("Salesforce Setup", "https://clarityconsultingllc.my.salesforce.com/lightning/setup/SetupOneHome/home")]),
         "aircall": Guide(steps: [
+            "Got a team code? It already has the API keys and number. Just do steps 6 to 8.",
             "API keys (needs an Aircall admin):",
             "1. Open the Aircall Dashboard (link below) and sign in.",
             "2. Click Integrations & API, then API Keys, then Generate an API key.",
@@ -162,6 +167,18 @@ struct SetupView: View {
         ]
     }
 
+    private func addTeamCode() {
+        guard let added = TeamCode.apply(teamCodeText) else {
+            teamCodeNote = "That doesn't look like a team code. Ask for it again and paste all of it."
+            return
+        }
+        TeamCode.loadCalendar(added, into: coach.availability)
+        teamCodeNote = added.isEmpty
+            ? "That code was empty. Ask your teammate to finish their own Setup first."
+            : "Added: \(added.joined(separator: ", ")). Now do the steps without a check mark."
+        refresh += 1
+    }
+
     var body: some View {
         let list = steps
         let required = list.filter { !$0.optional }
@@ -172,6 +189,14 @@ struct SetupView: View {
                 Text("\(done) of \(required.count) done. Do these once. Come back here any time to change something.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Button("Got a team code from a teammate? Paste it") { teamCodeText = ""; askTeamCode = true }
+                    .buttonStyle(.link)
+                    .font(.callout)
+                if let teamCodeNote {
+                    Text(teamCodeNote).font(.caption)
+                        .foregroundStyle(teamCodeNote.hasPrefix("Added") ? Color.green : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 ForEach(list) { step in
                     VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top, spacing: 10) {
@@ -239,6 +264,13 @@ struct SetupView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Paste the Incoming Webhook link for your private bug channel. Leave it empty to turn reports off.")
+        }
+        .alert("Team code", isPresented: $askTeamCode) {
+            TextField("Paste the code or the whole setup command", text: $teamCodeText)
+            Button("Add") { addTeamCode() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A teammate sends this in a private message. It fills in the team's keys.")
         }
         .alert("Your first name", isPresented: $askName) {
             TextField("First name", text: $repName)

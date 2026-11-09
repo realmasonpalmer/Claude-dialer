@@ -7,6 +7,11 @@ struct ClarityLiveCoachApp: App {
     @StateObject private var coach = CoachModel()
     @StateObject private var campaigns = CampaignStore()
 
+    init() {
+        // A teammate's setup command leaves the team's keys for the app to save. Do it before anything reads them.
+        TeamCode.applyPending()
+    }
+
     var body: some Scene {
         WindowGroup("Clarity Live Coach") {
             RootView()

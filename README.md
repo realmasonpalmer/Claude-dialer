@@ -41,6 +41,10 @@ Two ways it finds the lead you're calling:
 - **After that:** click the blue **Update** button in the app (shows between calls when
   there's a new version). No Terminal.
 - Opening the app: Applications, Spotlight ("Clarity"), or the Dock. Never Terminal.
+- **New teammate:** in your app, click the gear, then Settings and tools, then
+  **Copy setup command for a teammate**. Send it to them in a private Slack DM (never a channel).
+  They paste it in Terminal. The app installs with the team's keys already in it.
+  Keys are never put in this repo: it's public.
 
 ## Out of scope (removed)
 
