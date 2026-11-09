@@ -51,6 +51,13 @@ final class Touchpoints: ObservableObject {
         if let data = try? JSONEncoder().encode(events) { try? data.write(to: Self.file, options: .atomic) }
     }
 
+    /// Wipes today's counts (all campaigns). Older days stay.
+    func resetToday() {
+        let start = Self.start(of: .today)
+        events.removeAll { $0.at >= start }
+        if let data = try? JSONEncoder().encode(events) { try? data.write(to: Self.file, options: .atomic) }
+    }
+
     /// Every contact today, across all campaigns (dials + texts + LinkedIn), for the daily goal.
     func totalAll(in period: Period) -> Int {
         let start = Self.start(of: period)
@@ -91,6 +98,7 @@ struct TouchpointsCard: View {
     @ObservedObject var touchpoints: Touchpoints
     @AppStorage("touchpointsPeriod") private var periodRaw = Touchpoints.Period.today.rawValue
     @AppStorage("touchpointsOpen") private var open = false
+    @State private var confirmReset = false
 
     private var period: Touchpoints.Period { Touchpoints.Period(rawValue: periodRaw) ?? .today }
 
@@ -143,6 +151,12 @@ struct TouchpointsCard: View {
             if meetings > 0 {
                 Text("\(dials / max(meetings, 1)) calls per meeting").font(.caption).foregroundStyle(.secondary)
             }
+            Button("Reset today") { confirmReset = true }
+                .buttonStyle(.link).font(.caption)
+                .confirmationDialog("Reset today's touchpoints to zero?", isPresented: $confirmReset) {
+                    Button("Reset today", role: .destructive) { touchpoints.resetToday() }
+                    Button("Cancel", role: .cancel) {}
+                }
             }
         }
         .padding(10)
