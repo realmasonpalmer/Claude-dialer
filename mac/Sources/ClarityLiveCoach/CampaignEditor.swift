@@ -14,6 +14,7 @@ struct CampaignEditorView: View {
     @State private var loadingLists = false
 
     @State private var listSearch = ""
+    @State private var showListMenu = false
 
     private var isNew: Bool { !store.campaigns.contains { $0.id == draft.id } }
 
@@ -80,41 +81,20 @@ struct CampaignEditorView: View {
             } else if loadingLists && listViews.isEmpty {
                 ProgressView().controlSize(.small)
             } else {
-                if !draft.listViewID.isEmpty {
+                Button { showListMenu.toggle() } label: {
                     HStack {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(draft.listName).fontWeight(.medium)
+                        Text(draft.listViewID.isEmpty ? "None (use whatever list is open in Chrome)" : draft.listName)
+                            .lineLimit(1)
                         Spacer()
-                        Button("Clear") { pickList(nil) }.buttonStyle(.link)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption)
                     }
+                    .padding(.vertical, 5).padding(.horizontal, 8)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.4)))
+                    .contentShape(Rectangle())
                 }
-                TextField("Search your lists (typos are ok)", text: $listSearch)
-                    .textFieldStyle(.roundedBorder)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(filteredLists) { v in
-                            Button { pickList(v) } label: {
-                                HStack {
-                                    Text(v.title)
-                                    Spacer()
-                                    if v.id == draft.listViewID { Image(systemName: "checkmark") }
-                                }
-                                .padding(.vertical, 5).padding(.horizontal, 8)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .background(v.id == draft.listViewID ? Color.accentColor.opacity(0.15) : .clear)
-                        }
-                        if filteredLists.isEmpty {
-                            Text("No lists match \"\(listSearch)\"")
-                                .font(.callout).foregroundStyle(.secondary).padding(8)
-                        }
-                    }
-                }
-                .frame(height: 160)
-                .background(Color(nsColor: .textBackgroundColor))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .buttonStyle(.plain)
+                .popover(isPresented: $showListMenu, arrowEdge: .bottom) { listMenu }
                 Text("Picking this campaign opens this list in Chrome and calls everyone on it who's due today.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -125,6 +105,46 @@ struct CampaignEditorView: View {
             listViews = (try? await Salesforce.listViews()) ?? []
             loadingLists = false
         }
+    }
+
+
+    /// The dropdown: a search box on top, matching lists below.
+    private var listMenu: some View {
+        VStack(spacing: 8) {
+            TextField("Search lists (typos are ok)", text: $listSearch)
+                .textFieldStyle(.roundedBorder)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    listRow(title: "None (use whatever list is open in Chrome)", id: "", view: nil)
+                    ForEach(filteredLists) { v in listRow(title: v.title, id: v.id, view: v) }
+                    if filteredLists.isEmpty {
+                        Text("No lists match \"\(listSearch)\"")
+                            .font(.callout).foregroundStyle(.secondary).padding(8)
+                    }
+                }
+            }
+            .frame(height: 220)
+        }
+        .padding(10)
+        .frame(width: 380)
+    }
+
+    private func listRow(title: String, id: String, view: Salesforce.ListView?) -> some View {
+        Button {
+            pickList(view)
+            showListMenu = false
+            listSearch = ""
+        } label: {
+            HStack {
+                Text(title).lineLimit(1)
+                Spacer()
+                if id == draft.listViewID { Image(systemName: "checkmark") }
+            }
+            .padding(.vertical, 5).padding(.horizontal, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(id == draft.listViewID ? Color.accentColor.opacity(0.15) : .clear)
     }
 
     // MARK: 2. Script
