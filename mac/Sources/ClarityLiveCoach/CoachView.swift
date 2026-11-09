@@ -425,6 +425,14 @@ struct CoachView: View {
 
     private var scriptCard: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let d = coach.leads.details {
+                let who = Salesforce.isPlaceholderName(d.name) ? (d.company ?? d.name) : d.name
+                Label("Calling \(who)", systemImage: "phone.fill")
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Color.accentColor.opacity(0.25), in: Capsule())
+            }
             HStack {
                 Text(cardLabel)
                     .font(.caption2.weight(.semibold))
