@@ -468,7 +468,7 @@ enum SalesforceChrome {
     /// can't place calls itself. Skips the split view list.
     static func clickToDial() -> Bool {
         for which in [mobileLabel, phoneLabel] {
-            if javascript(mobileFinder + "(function(){var el=numberEl(\(which));if(!el)return 'no';"
+            if javascript(numberFinder + "(function(){var el=numberEl(\(which));if(!el)return 'no';"
                 + "var t=(el.shadowRoot||el).querySelector('a,button');if(t){t.click();return 'ok';}return 'no';})()") == "ok" {
                 return true
             }
@@ -477,53 +477,97 @@ enum SalesforceChrome {
     }
 
     /// The number to call: Mobile, or the Phone field when there's no Mobile.
-    static func dialNumber() -> String? { mobileNumber() ?? number(labeled: phoneLabel) }
+    static func dialNumber() -> String? { let n = numbers(); return n.mobile ?? n.phone }
 
     /// The Mobile number on the open record (texts only ever go here).
-    static func mobileNumber() -> String? { number(labeled: mobileLabel) }
+    static func mobileNumber() -> String? { numbers().mobile }
+
+    /// Why the last look found nothing (or had to use the page text). nil when the number field was found.
+    static private(set) var lastNumberNote: String?
 
     /// Field labels, as JavaScript regexes. "Phone" means exactly the Phone field, not Home/Other Phone.
     private static let mobileLabel = "/mobile/i"
     private static let phoneLabel = "/^[ *]*phone[ *]*$/i" // no backslashes: the script can't carry them
+    private static let numberPattern = #"(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}"#
 
-    /// A number field on the open record, found by its label. Works when click-to-dial is on, and
-    /// when it's off (the crossed-out phone icon), since Salesforce draws the number differently then.
-    /// Last resort: the field's own text.
-    private static func number(labeled which: String) -> String? {
-        let raw = javascript(mobileFinder
+    /// Mobile and Phone on the open record, in one read. First the number fields (by their label),
+    /// then, if that misses, the page's visible text: a "Phone" or "Mobile" line with the number under it.
+    private static func numbers() -> (mobile: String?, phone: String?) {
+        let raw = javascript(numberFinder
             + "function allText(n){if(!n)return '';var s=n.textContent||'';"
             + "var all=n.querySelectorAll?n.querySelectorAll('*'):[];"
             + "for(var i=0;i<all.length;i++){if(all[i].shadowRoot)s+=' '+allText(all[i].shadowRoot);}"
             + "if(n.shadowRoot)s+=' '+allText(n.shadowRoot);return s;}"
-            + "(function(){var el=numberEl(\(which));if(el){"
+            + "function read(re){var el=numberEl(re);if(el){"
             + "var v=el.value||el.getAttribute('value');if(v)return String(v);"
             + "var t=allText(el).trim();if(t)return t;}"
             + "var lr=listRoot(),items=deep(document,'[field-label]',[]);"
             + "for(var i=0;i<items.length;i++){var it=items[i];"
             + "if(!it.getClientRects().length||(lr&&inside(it,lr)))continue;"
-            + "if(\(which).test(it.getAttribute('field-label')))return allText(it);}"
-            + "return '';})()")
-        guard let raw else { return nil }
-        // Pull just the phone number out of the text.
-        let pattern = #"(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}"#
-        guard let r = raw.range(of: pattern, options: .regularExpression) else { return nil }
-        return String(raw[r])
+            + "if(re.test(it.getAttribute('field-label')))return allText(it);}"
+            + "return '';}"
+            + "function pageText(){var t=document.body.innerText||'',lr=listRoot();"
+            + "if(lr){var l=lr.innerText||'';if(l.length<20||t.indexOf(l)<0)return '';t=t.split(l).join(String.fromCharCode(10));}"
+            + "return t.slice(0,30000);}"
+            + "function seen(){var lr=listRoot(),els=deep(document,NUMS,[]),out=[];"
+            + "for(var i=0;i<els.length&&out.length<6;i++){var el=els[i];if(!shown(el)||(lr&&inside(el,lr)))continue;"
+            + "out.push(label(el)||'no label');}return out.join(', ')||'none';}"
+            + "(function(){return JSON.stringify({m:read(\(mobileLabel)),p:read(\(phoneLabel)),t:pageText(),f:seen()});})()")
+        struct Found: Decodable { let m: String; let p: String; let t: String; let f: String }
+        guard let raw, let data = raw.data(using: .utf8), let found = try? JSONDecoder().decode(Found.self, from: data) else {
+            lastNumberNote = "couldn't read the page"
+            return (nil, nil)
+        }
+        let isMobile: (String) -> Bool = { $0.hasPrefix("mobile") && $0.count <= 15 }
+        let isPhone: (String) -> Bool = { $0 == "phone" }
+        let mField = firstNumber(in: found.m), pField = firstNumber(in: found.p)
+        let mobile = mField ?? numberUnder(isMobile, in: found.t)
+        let phone = pField ?? numberUnder(isPhone, in: found.t)
+        if (mobile ?? phone) == nil {
+            lastNumberNote = "no Mobile or Phone line on the page. Number fields seen: \(found.f)"
+        } else if (mField ?? pField) == nil {
+            lastNumberNote = "used the page text (number field label not matched). Number fields seen: \(found.f)"
+        } else {
+            lastNumberNote = nil
+        }
+        return (mobile, phone)
+    }
+
+    private static func firstNumber(in text: String) -> String? {
+        text.range(of: numberPattern, options: .regularExpression).map { String(text[$0]) }
+    }
+
+    /// The number on the line right under a label line ("Phone" / "Mobile"), as the page shows it.
+    private static func numberUnder(_ isLabel: (String) -> Bool, in text: String) -> String? {
+        let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        for (i, line) in lines.enumerated() where i + 1 < lines.count {
+            let label = line.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespaces).lowercased()
+            if isLabel(label), let n = firstNumber(in: lines[i + 1]) { return n }
+        }
+        return nil
     }
 
     /// JavaScript: numberEl(re) finds the click-to-dial number whose field label matches re.
-    /// label() walks up from a number to the nearest field label ("Mobile", "Phone", ...).
-    private static let mobileFinder = deepFind
+    /// label() walks up from a number until it finds exactly one field label (more than one means
+    /// it walked past this field). Goes up to 40 steps, since some layouts nest the number deep.
+    private static let numberFinder = deepFind
         + "function inside(n,r){while(n){if(n===r)return true;n=n.parentNode||n.host;}return false;}"
         + "function txt(e){return e?((e.getAttribute&&e.getAttribute('title'))||e.innerText||e.textContent||'').trim():'';}"
-        + "function label(n){for(var k=0;n&&k<12;k++){"
+        + "function shown(e){if(e.getClientRects().length)return true;var c=(e.shadowRoot||e).children||[];"
+        + "for(var i=0;i<c.length;i++){if(c[i].getClientRects().length)return true;}return false;}"
+        + "function within(n,sel){var o=[];if(n.querySelectorAll)deep(n,sel,o);if(n.shadowRoot)deep(n.shadowRoot,sel,o);"
+        + "return o.filter(function(e){return e.getClientRects().length;});}"
+        + "var LABELS=['.test-id__field-label','p.slds-text-title','.slds-form-element__label'];"
+        + "var NUMS='lightning-click-to-dial,lightning-formatted-phone';"
+        + "function label(n){for(var k=0;n&&k<40;k++){"
         + "var f=n.getAttribute&&n.getAttribute('field-label');if(f)return f;"
-        + "var rs=[n,n.shadowRoot];for(var r=0;r<2;r++){var x=rs[r];if(!x||!x.querySelector)continue;"
-        + "var l=x.querySelector('.test-id__field-label,.slds-form-element__label,p.slds-text-title');"
-        + "if(l&&txt(l))return txt(l);}"
+        + "for(var s=0;s<LABELS.length;s++){var ls=within(n,LABELS[s]);"
+        + "if(ls.length>1)return '';if(ls.length==1&&txt(ls[0]))return txt(ls[0]);}"
         + "n=n.parentNode||n.host;}return '';}"
-        + "function numberEl(re){var lr=listRoot(),els=deep(document,'lightning-click-to-dial,lightning-formatted-phone',[]);"
+        + "function numberEl(re){var lr=listRoot(),els=deep(document,NUMS,[]);"
         + "for(var i=0;i<els.length;i++){var el=els[i];"
-        + "if(!el.getClientRects().length||(lr&&inside(el,lr)))continue;"
+        + "if(!shown(el)||(lr&&inside(el,lr)))continue;"
         + "if(re.test(label(el)))return el;}"
         + "return null;}"
 

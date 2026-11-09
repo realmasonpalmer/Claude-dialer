@@ -891,7 +891,7 @@ final class CoachModel: ObservableObject {
                             return
                         }
                     }
-                    if !self.callFromPage() { onFail() }
+                    if !self.dialing, !self.callFromPage() { onFail() } // busy dialing isn't a missing number
                     return
                 }
                 if waited > 25 {
@@ -927,9 +927,10 @@ final class CoachModel: ObservableObject {
         // The Aircall phone inside the coach (or the desktop app): dial through the API.
         if AircallPhone.isOn || Aircall.canPlaceCalls {
             guard let mobile = SalesforceChrome.dialNumber() else {
-                ActivityLog.add("Dial: no Mobile or Phone found on the page for \(calling ?? "?")")
+                ActivityLog.problem("Dial: no Mobile or Phone found on the page for \(calling ?? "?"): \(SalesforceChrome.lastNumberNote ?? "?")")
                 return false
             }
+            if let note = SalesforceChrome.lastNumberNote { ActivityLog.add("Dial: \(note)") }
             ActivityLog.add("Dial: \(calling ?? "?") at \(mobile)")
             dialing = true
             dialError = nil
