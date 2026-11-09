@@ -316,7 +316,37 @@ enum Salesforce {
         guard let view = views.first(where: {
             $0.object == object && ($0.id.prefix(15) == key.prefix(15) || $0.developerName == key)
         }) else { throw SFError(message: "Couldn't find that list view in Salesforce.") }
-        return try await allRows(of: view)
+        let rows = try await allRows(of: view)
+        return await withCompanyNames(rows, object: object)
+    }
+
+    /// "Unknown Unknown" (or blank) is a placeholder, not a real name.
+    static func isPlaceholderName(_ name: String) -> Bool {
+        let words = name.lowercased().split(separator: " ").map(String.init)
+        return words.isEmpty || words.allSatisfy { $0 == "unknown" || $0 == "[not provided]" }
+    }
+
+    /// Swaps placeholder names for the company (Lead.Company or Contact's Account.Name).
+    private static func withCompanyNames(_ rows: [Row], object: String) async -> [Row] {
+        let bad = rows.filter { isPlaceholderName($0.name) }.map(\.id)
+        guard !bad.isEmpty, ["Lead", "Contact"].contains(object) else { return rows }
+        let field = object == "Lead" ? "Company" : "Account.Name"
+        var companies: [String: String] = [:]
+        for start in stride(from: 0, to: bad.count, by: 200) {
+            let ids = bad[start..<min(start + 200, bad.count)]
+                .filter { $0.allSatisfy { $0.isLetter || $0.isNumber } }
+                .map { "'\($0)'" }.joined(separator: ",")
+            guard !ids.isEmpty,
+                  let found = try? await query("SELECT Id, \(field) FROM \(object) WHERE Id IN (\(ids))") else { continue }
+            for r in found {
+                let company = object == "Lead" ? r["Company"] as? String : (r["Account"] as? [String: Any])?["Name"] as? String
+                if let id = r["Id"] as? String, let company, !company.isEmpty { companies[String(id.prefix(15))] = company }
+            }
+        }
+        return rows.map { row in
+            guard isPlaceholderName(row.name), let company = companies[String(row.id.prefix(15))] else { return row }
+            return Row(id: row.id, name: company, subtitle: row.subtitle)
+        }
     }
 
     private static func allRows(of view: ListView) async throws -> [Row] {
@@ -393,8 +423,12 @@ enum Salesforce {
         if let l = link, l.hasPrefix("http://") { link = "https://" + l.dropFirst(7) }
         return Details(
             id: id, object: object,
-            name: (r["Name"] as? String) ?? "",
-            firstName: r["FirstName"] as? String,
+            name: {
+                let n = (r["Name"] as? String) ?? ""
+                let c = (r["Company"] as? String) ?? ((r["Account"] as? [String: Any])?["Name"] as? String)
+                return isPlaceholderName(n) ? (c ?? n) : n
+            }(),
+            firstName: (r["FirstName"] as? String).flatMap { isPlaceholderName($0) ? nil : $0 },
             company: (r["Company"] as? String) ?? ((r["Account"] as? [String: Any])?["Name"] as? String),
             title: r["Title"] as? String,
             phone: r["Phone"] as? String,
