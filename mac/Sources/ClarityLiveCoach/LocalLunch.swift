@@ -10,10 +10,10 @@ enum LocalLunch {
     /// We write for the 200 limit so every rep's note goes through whole.
     static let noteLimit = 200
 
-    /// LinkedIn connection note, under 200 characters with the link. Sent from the rep's own
+    /// LinkedIn connection note, under 200 characters, no link. Sent from the rep's own
     /// profile, so no name needed. A very long first name is dropped to stay under the limit.
     static func linkedinNote(first: String) -> String {
-        let body = "inviting you to a lunch for Portland business leaders. We're comparing notes on what's working with AI. No pitches. Open to connecting? \(link)"
+        let body = "inviting you to a lunch for Portland business leaders. We're comparing notes on what's working with AI. No pitches. Open to connecting?"
         let named = "Hey \(first), " + body
         return named.count <= noteLimit ? named : "Hey, " + body
     }
@@ -36,9 +36,9 @@ enum LocalLunch {
     "Hey Eric, inviting you to a lunch for Portland business leaders. A lot of us are figuring out AI on our own,
     and I think we'd get further comparing notes. No pitches, just what's working and what isn't. Open to connecting?
     \(link)"
-    Length limits: LINKEDIN (connection note) must be under 200 characters counting the link. LINKEDIN MESSAGE
+    Length limits: LINKEDIN (connection note) must be under 200 characters and has no link. LINKEDIN MESSAGE
     can be up to 400. TEXT under 300 so it doesn't split into many pieces.
-    Warm, plain, peer to peer. No pitch, no product, no meeting ask. End with the link. A later text can be a
+    Warm, plain, peer to peer. No pitch, no product, no meeting ask. TEXT and LINKEDIN MESSAGE end with the link. A later text can be a
     short, light nudge about the same lunch in new words. This beats the campaign's text and LinkedIn templates.
 
     """
