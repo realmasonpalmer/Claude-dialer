@@ -135,6 +135,13 @@ final class CampaignStore: ObservableObject {
         selectedID = campaigns.contains { $0.id == saved } ? saved : campaigns.first?.id
         // First run with active campaigns: the one in use starts out active.
         if !campaigns.contains(where: \.active), let id = selectedID { setActive(id, true) }
+        ensureSelectedActive()
+    }
+
+    /// The campaign in use must be an active one. If it's paused, move to the first active campaign.
+    func ensureSelectedActive() {
+        guard !selected.active, let next = activeCampaigns.first else { return }
+        selectedID = next.id
     }
 
     var selected: Campaign { campaigns.first { $0.id == selectedID } ?? campaigns.first ?? .clarityDiscovery }

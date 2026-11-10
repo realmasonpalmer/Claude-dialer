@@ -235,6 +235,7 @@ struct CoachView: View {
                 .allowsHitTesting(false)
         )
         .onAppear {
+            campaigns.ensureSelectedActive()
             coach.use(campaigns.selected)
             coach.activate(true)
             syncScriptToList()
@@ -260,7 +261,7 @@ struct CoachView: View {
         // The list open in Chrome decides the script: land on a campaign's list and its script follows.
         .onChange(of: coach.callList.listKey) { _, _ in syncScriptToList() }
         .onChange(of: coach.status) { _, _ in syncScriptToList() }
-        .onChange(of: campaigns.campaigns) { _, _ in syncScriptToList() }
+        .onChange(of: campaigns.campaigns) { _, _ in campaigns.ensureSelectedActive(); syncScriptToList() }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
             SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
