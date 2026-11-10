@@ -14,7 +14,7 @@ struct CampaignSelectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Segments").font(.title2.weight(.semibold))
+            Text("Call Segments").font(.title2.weight(.semibold))
             Text("Up to \(CampaignStore.maxActive) active at a time. Each one has its own Salesforce list and script.")
                 .font(.callout).foregroundStyle(.secondary)
 
@@ -39,10 +39,10 @@ struct CampaignSelectorView: View {
             }
 
             HStack(spacing: 8) {
-                Button("New Segment") { showNew = true }
+                Button("New Call Segment") { showNew = true }
                 Button("Activate") {
                     guard let id = selection else { return }
-                    note = store.setActive(id, true) ? nil : "Up to \(CampaignStore.maxActive) segments can be active. Pause one first."
+                    note = store.setActive(id, true) ? nil : "Up to \(CampaignStore.maxActive) call segments can be active. Pause one first."
                 }
                 .disabled(picked == nil || picked?.active == true)
                 Button("Pause") {
@@ -64,12 +64,12 @@ struct CampaignSelectorView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(picked?.active != true)
-                .help("Pick an active segment to call its list (or double-click it)")
+                .help("Pick an active call segment to call its list (or double-click it)")
             }
             if let note {
                 Text(note).font(.caption).foregroundStyle(.orange)
             } else {
-                Text("Tip: double-click a segment to start calling it.").font(.caption).foregroundStyle(.secondary)
+                Text("Tip: double-click a call segment to start calling it.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(20)
@@ -83,7 +83,7 @@ struct CampaignSelectorView: View {
     private func start(_ id: UUID) {
         guard let c = store.campaigns.first(where: { $0.id == id }) else { return }
         if !c.active, !store.setActive(id, true) {
-            note = "Up to \(CampaignStore.maxActive) segments can be active. Pause one first."
+            note = "Up to \(CampaignStore.maxActive) call segments can be active. Pause one first."
             return
         }
         note = nil
@@ -143,10 +143,10 @@ struct NewCampaignView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New Segment").font(.title2.weight(.semibold))
+            Text("New Call Segment").font(.title2.weight(.semibold))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("1. Segment name").font(.headline)
+                Text("1. Call Segment name").font(.headline)
                 TextField("e.g. Tax firm partners", text: $name).textFieldStyle(.roundedBorder)
             }
 

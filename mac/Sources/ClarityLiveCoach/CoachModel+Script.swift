@@ -148,6 +148,25 @@ extension CoachModel {
         let text = found.texts.first
         if let n = found.linkedinNote ?? found.linkedinMessage ?? text { s.linkedin = fillTags(n, for: calling) }
         if let m = found.linkedinMessage ?? found.linkedinNote ?? text { s.linkedinMessage = fillTags(m, for: calling) }
+        // Portland and SW Washington: the lunch invite beats the script's notes. Later texts are Claude's,
+        // written as lighter nudges about the same lunch.
+        if isLocalLead {
+            let first = Screener.firstName(calling) ?? "there"
+            let rep = Prefs.repName
+            s.linkedin = LocalLunch.linkedinNote(first: first)
+            s.linkedinMessage = LocalLunch.linkedinMessage(first: first)
+            if sent == 0 { s.textMessage = LocalLunch.text(first: first, rep: rep.isEmpty ? "[your name]" : rep, company: shortCompany) }
+        }
+    }
+
+    /// In Portland or SW Washington: from the lead's city and state, else the Salesforce page text,
+    /// else a 503 or 971 phone number.
+    var isLocalLead: Bool {
+        if leads.isActive, let d = leads.details {
+            return LocalLunch.isLocal(city: d.city, state: d.state, phones: [d.mobile, d.phone])
+        }
+        return LocalLunch.isLocal(pageText: recordDetails)
+            || LocalLunch.isLocal(city: nil, state: nil, phones: [followUp?.phone, Aircall.phone(in: recordDetails)])
     }
 
     /// The campaign script's voicemail, word for word with the blanks filled, in place of a written one.

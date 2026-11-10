@@ -177,7 +177,8 @@ enum CoachPrompt {
 
     /// Written before the call, so it's ready the instant a voicemail greeting starts.
     static func voicemail(calling: String?, details: String?, earlierTexts: [String] = [], earlierMessages: [String] = [],
-                          history: String = "") -> String {
+                          history: String = "", localLunch: Bool = false) -> String {
+        let local = localLunch ? LocalLunch.promptNote : ""
         let past = history.isEmpty ? "" : """
         What the rep has already done with this person:
         \(history)
@@ -198,7 +199,7 @@ enum CoachPrompt {
 
         """
         return """
-        \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)If this call goes to voicemail, what should the rep say after the beep?
+        \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)\(local)If this call goes to voicemail, what should the rep say after the beep?
         One voice for everything you write here. The voicemail, TEXT, LINKEDIN and LINKEDIN MESSAGE all come from
         the campaign above: its opening, its angle, its offer, its tone, and any voicemail, text or LinkedIn wording
         it gives. Follow the campaign over the defaults below whenever they differ.

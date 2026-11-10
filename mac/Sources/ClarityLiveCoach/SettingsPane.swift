@@ -94,6 +94,6 @@ struct SettingsPane: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 }

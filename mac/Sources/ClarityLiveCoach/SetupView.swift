@@ -218,7 +218,7 @@ struct SetupView: View {
                 Spacer(minLength: 8)
                 Button(step.id == "export" ? "Export" : step.done ? "Change" : "Set up", action: step.action)
                     .buttonStyle(.bordered)
-                    .tint(step.done || step.optional ? nil : .accentColor)
+                    .tint(step.done || step.optional ? nil : Brand.blue)
             }
             if let guide = Self.guides[step.id] {
                 DisclosureGroup("How to set this up") {
@@ -244,7 +244,7 @@ struct SetupView: View {
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 
     var body: some View {

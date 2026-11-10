@@ -45,7 +45,7 @@ struct DailyGoalCard: View {
                 let hours = touchpoints.contactsByHourToday()
                 let closed = hours.filter { $0 >= Self.perHour }.count
                 ProgressView(value: Double(min(done, Self.perHour)), total: Double(Self.perHour))
-                    .tint(hit ? .green : .accentColor)
+                    .tint(hit ? .green : Brand.blue)
                     .animation(.easeOut(duration: 0.4), value: done)
                     // One soft pulse when the hour's goal is hit.
                     .keyframeAnimator(initialValue: 1.0, trigger: closed) { content, scale in
@@ -78,7 +78,7 @@ struct DailyGoalCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
         .task(id: activeCampaigns.map(\.id)) {
             // Recount now and every 10 minutes.
             while !Task.isCancelled {

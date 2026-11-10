@@ -56,7 +56,8 @@ extension CoachModel {
             ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails,
                                                          earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
                                                          earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [],
-                                                         history: recordKey().map(DialHistory.historySummary) ?? ""))
+                                                         history: recordKey().map(DialHistory.historySummary) ?? "",
+                                                         localLunch: isLocalLead))
         }
     }
 
@@ -274,7 +275,8 @@ extension CoachModel {
         let user = CoachPrompt.voicemail(calling: calling, details: recordDetails,
                                          earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
                                          earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [],
-                                         history: recordKey().map(DialHistory.historySummary) ?? "")
+                                         history: recordKey().map(DialHistory.historySummary) ?? "",
+                                         localLunch: isLocalLead)
         voicemailTask = Task { [weak self] in
             var text = ""
             do {

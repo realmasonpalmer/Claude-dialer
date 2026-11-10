@@ -39,6 +39,7 @@ struct RootView: View {
         .frame(width: showPhone ? 380 + AircallPhoneSide.width : 380)
         // Never taller than the screen, counting the title bar.
         .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
+        .brandWindow()
     }
 
     private var showPhone: Bool {
@@ -64,7 +65,7 @@ struct KeysView: View {
         VStack(spacing: 18) {
             Image(systemName: "key.horizontal")
                 .font(.system(size: 40))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Brand.blue)
             VStack(spacing: 6) {
                 Text("Connect the coach").font(.title2.weight(.semibold))
                 Text("Paste two keys, one time. They're stored safely in your Mac's Keychain.")
@@ -337,14 +338,14 @@ struct CoachView: View {
     /// Pick a campaign, or create and edit one. Locked during a call.
     private var campaignMenu: some View {
         Menu {
-            Button("Segments...") {
+            Button("Call Segments...") {
                 openWindow(id: "campaign-selector")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             }
             Divider()
             // Only the active campaigns (up to 3): pick one to call its list.
             if campaigns.activeCampaigns.isEmpty {
-                Text("No active segments. Open Segments... to activate up to 3.")
+                Text("No active call segments. Open Call Segments... to activate up to 3.")
             }
             ForEach(campaigns.activeCampaigns) { campaign in
                 Button {
@@ -358,14 +359,14 @@ struct CoachView: View {
                 }
             }
             Divider()
-            Button("Edit this segment...") { edit(campaigns.selected) }
+            Button("Edit this call segment...") { edit(campaigns.selected) }
         } label: {
             Text(campaigns.selected.name).font(.caption.weight(.semibold)).lineLimit(1)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(coach.status != .ready)
-        .help(coach.status == .ready ? "Choose or edit a segment" : "Finish the call to switch segments")
+        .help(coach.status == .ready ? "Choose or edit a call segment" : "Finish the call to switch call segments")
     }
 
     /// Picks the active campaign whose Salesforce list is the one open in Chrome (between calls only).
@@ -475,12 +476,12 @@ struct CoachView: View {
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                     .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.25), in: Capsule())
+                    .background(Brand.blue.opacity(0.25), in: Capsule())
             }
             HStack(spacing: 6) {
                 Text(cardLabel)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : .secondary)
+                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
                 // Which script row (or which opener) this line is, so the rep learns what works.
                 if let tag = coach.suggestion.rowTag {
                     tagChip(tag)
@@ -517,7 +518,13 @@ struct CoachView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .background(Brand.scriptCard, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(alignment: .leading) {
+            // Thin teal accent: the brand, without a bright panel behind the words.
+            Rectangle().fill(Brand.teal).frame(width: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.edge, lineWidth: 0.5))
         .overlay(MeetingGlow(trigger: coach.meetingMoments))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
     }
@@ -624,7 +631,7 @@ struct CoachView: View {
                 .controlSize(.large)
         }
         .padding(10)
-        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 
     // MARK: Navigation: always here, always the same two buttons
@@ -662,8 +669,9 @@ struct CoachView: View {
                 Button {
                     coach.previousLead()
                 } label: {
-                    Image(systemName: "chevron.left").frame(width: 28, height: 28)
+                    Image(systemName: "chevron.left").frame(width: 16, height: 20)
                 }
+                .buttonStyle(BrandQuietButton())
                 .disabled(!coach.leads.canGoBack)
                 .help("Previous lead")
 
@@ -707,17 +715,17 @@ struct CoachView: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
+        .buttonStyle(BrandPrimaryButton())
     }
 
     private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).lineLimit(1).frame(maxWidth: 120)
+            Text(title).font(.callout).lineLimit(1).frame(maxWidth: 120)
+                .padding(.vertical, 2)
         }
-        .controlSize(.large)
+        .buttonStyle(BrandQuietButton())
     }
 
     private var canCall: Bool {
@@ -739,8 +747,9 @@ struct CoachView: View {
                 coach.status == .ready ? coach.previousLead() : coach.back()
             } label: {
                 Image(systemName: "chevron.left")
-                    .frame(width: 28, height: 28)
+                    .frame(width: 16, height: 20)
             }
+            .buttonStyle(BrandQuietButton())
             .disabled(!backEnabled)
             .help(coach.status == .ready ? "Previous lead" : "Show the line before this one")
 
@@ -806,7 +815,7 @@ struct CoachView: View {
                     Button("Start next list: \(next.name)") { switchTo(next) }
                         .buttonStyle(.borderedProminent)
                 } else {
-                    Text("Pick another segment at the top, or link a list to one (segment menu).")
+                    Text("Pick another call segment at the top, or link a list to one (call segment menu).")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -840,7 +849,7 @@ struct CoachView: View {
                 Button("Skip text") { coach.startNextSequence() }
             }
             .padding(10)
-            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .brandCard(radius: 10)
         } else if let hint = nextHint, !coach.leads.isActive {
             Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
@@ -970,7 +979,7 @@ struct ScoreboardView: View {
                     GridRow {
                         HStack(spacing: 6) {
                             if row.opener.id == leaderID { Text("🏆") }
-                            if row.opener.id == book.current.id { Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color.accentColor) }
+                            if row.opener.id == book.current.id { Image(systemName: "arrow.right.circle.fill").foregroundStyle(Brand.blue) }
                             Text(row.opener.name)
                         }
                         Text("\(row.score.calls)").monospacedDigit()
@@ -1123,7 +1132,7 @@ struct FollowUpCard: View {
                 }
             }
             .padding(12)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            .brandCard(radius: 12)
             .onChange(of: f.allDone) {
                 // Close only after something was actually sent (a day with nothing due keeps the card up).
                 if f.allDone, f.textDone || f.linkedinDone || f.linkedinMessageDone {
@@ -1150,7 +1159,7 @@ struct FollowUpCard: View {
                         .textFieldStyle(.plain)
                         .lineLimit(2...10)
                         .padding(6)
-                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .brandCard(radius: 6)
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
                         .help("Click to edit the text before you send it")
                 } else {
@@ -1239,7 +1248,7 @@ struct RelationshipCard: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: current == value ? "largecircle.fill.circle" : "circle")
-                                .foregroundStyle(current == value ? Color.accentColor : .secondary)
+                                .foregroundStyle(current == value ? Brand.blue : .secondary)
                             Text(value).font(.callout).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         }
                         .contentShape(Rectangle())
@@ -1276,7 +1285,7 @@ struct RelationshipCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
         .onChange(of: coach.statusRecordID) {
             // New person on screen: start fresh.
             if pickedFor != coach.statusRecordID { picked = nil; pickedFor = nil; reason = nil }

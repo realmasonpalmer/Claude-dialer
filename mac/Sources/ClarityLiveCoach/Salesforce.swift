@@ -402,6 +402,7 @@ enum Salesforce {
         let title: String?
         let phone: String?
         let mobile: String?
+        let city: String?
         let state: String?
         let status: String?
         let doNotCall: Bool
@@ -418,6 +419,7 @@ enum Salesforce {
             var lines = ["Name: \(name)"]
             if let title { lines.append("Title: \(title)") }
             if let company { lines.append("Company: \(company)") }
+            if let city { lines.append("City: \(city)") }
             if let state { lines.append("State: \(state)") }
             if let status { lines.append("Lead status: \(status)") }
             if let notes, !notes.isEmpty { lines.append("Notes: \(notes.prefix(800))") }
@@ -431,8 +433,8 @@ enum Salesforce {
             throw SFError(message: "Unexpected record.")
         }
         let base = object == "Lead"
-            ? "Id, Name, FirstName, Company, Title, Phone, MobilePhone, State, Status, DoNotCall, Description"
-            : "Id, Name, FirstName, Account.Name, Title, Phone, MobilePhone, MailingState, DoNotCall, Description"
+            ? "Id, Name, FirstName, Company, Title, Phone, MobilePhone, City, State, Status, DoNotCall, Description"
+            : "Id, Name, FirstName, Account.Name, Title, Phone, MobilePhone, MailingCity, MailingState, DoNotCall, Description"
         let linkedIn = object == "Lead" ? "Linkedin__c" : "LinkedIn__c"
         // The LinkedIn field is custom; if this org doesn't have it, ask again without it.
         var records = (try? await query("SELECT \(base), \(linkedIn) FROM \(object) WHERE Id = '\(id)'")) ?? []
@@ -460,6 +462,7 @@ enum Salesforce {
             title: r["Title"] as? String,
             phone: r["Phone"] as? String,
             mobile: r["MobilePhone"] as? String,
+            city: (r["City"] as? String) ?? (r["MailingCity"] as? String),
             state: (r["State"] as? String) ?? (r["MailingState"] as? String),
             status: r["Status"] as? String,
             doNotCall: (r["DoNotCall"] as? Bool) ?? false,

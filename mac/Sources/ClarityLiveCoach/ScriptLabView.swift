@@ -63,7 +63,7 @@ struct ScriptLabView: View {
                 HStack {
                     Text(step.stage).frame(width: 110, alignment: .leading)
                     GeometryReader { geo in
-                        Capsule().fill(Color.accentColor.opacity(0.7))
+                        Capsule().fill(Brand.blue.opacity(0.7))
                             .frame(width: max(4, geo.size.width * CGFloat(step.rate) / 100))
                     }
                     .frame(height: 10)
@@ -152,7 +152,7 @@ struct ScriptLabView: View {
             }
         }
         .padding(14)
-        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .background(Brand.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var privacy: some View {

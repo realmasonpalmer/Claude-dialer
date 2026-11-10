@@ -19,18 +19,21 @@ struct ClarityLiveCoachApp: App {
 
         Window("Script Lab", id: "script-lab") {
             ScriptLabView(lab: coach.lab)
+                .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 620, height: 780)
 
-        Window("Segments", id: "campaign-selector") {
+        Window("Call Segments", id: "campaign-selector") {
             CampaignSelectorView()
+                .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 620, height: 480)
 
-        Window("Segment", id: "campaign-editor") {
+        Window("Call Segment", id: "campaign-editor") {
             CampaignEditorView()
+                .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 600, height: 760)
@@ -60,7 +63,7 @@ struct AudioCheckView: View {
 
                 Image(systemName: icon)
                     .font(.system(size: 44, weight: .regular))
-                    .foregroundStyle(model.step == .done ? Color.green : Color.accentColor)
+                    .foregroundStyle(model.step == .done ? Color.green : Brand.blue)
                     .symbolEffect(.pulse, isActive: model.step == .call)
                     .frame(height: 52)
 
@@ -195,7 +198,7 @@ struct AudioCheckView: View {
         .font(.callout)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 
     // MARK: Advanced (hidden by default)
@@ -238,7 +241,7 @@ struct ProgressDots: View {
         HStack(spacing: 8) {
             ForEach([ProofModel.Step.mic, .call, .you, .prospect], id: \.self) { dot in
                 Capsule()
-                    .fill(dot.rawValue <= step.rawValue ? Color.accentColor : Color.secondary.opacity(0.3))
+                    .fill(dot.rawValue <= step.rawValue ? Brand.blue : Color.secondary.opacity(0.3))
                     .frame(width: dot == step ? 22 : 8, height: 8)
             }
         }
@@ -263,7 +266,7 @@ struct LevelMeter: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
-                    Capsule().fill(Color.accentColor)
+                    Capsule().fill(Brand.blue)
                         .frame(width: max(8, geo.size.width * CGFloat(level)))
                 }
             }

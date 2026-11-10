@@ -157,7 +157,7 @@ struct TouchpointsCard: View {
             HStack {
                 // Compare campaigns: each list + script on its own.
                 Picker("", selection: $touchpoints.showCampaign) {
-                    Text("All segments").tag(String?.none)
+                    Text("All call segments").tag(String?.none)
                     ForEach(touchpoints.campaignNames, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
                 .labelsHidden()
@@ -193,7 +193,7 @@ struct TouchpointsCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 
     private func stat(_ label: String, _ value: Int) -> some View { stat(label, "\(value)") }
