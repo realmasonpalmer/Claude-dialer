@@ -284,6 +284,7 @@ struct AircallPhoneView: NSViewRepresentable {
 struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
     @AppStorage("nextDials") private var autoDial = true
+    @AppStorage("doubleTap") private var doubleTap = true
 
     var body: some View {
         HStack(spacing: 8) {
@@ -292,6 +293,9 @@ struct AircallPhonePanel: View {
             Toggle("Auto-dial", isOn: $autoDial)
                 .toggleStyle(.checkbox)
                 .help("On: after you send the text, the next person loads and is called after a 5 second countdown.")
+            Toggle("Double tap", isOn: $doubleTap)
+                .toggleStyle(.checkbox)
+                .help("On: if they don't pick up, the app calls them a 2nd time. Off: one call per lead, then the next person.")
             Spacer(minLength: 0)
             if phone.shown {
                 Button("Reload") { phone.reload() }

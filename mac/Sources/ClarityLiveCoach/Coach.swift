@@ -747,6 +747,14 @@ final class CoachModel: ObservableObject {
 
     // MARK: Moving on after a call: send the text, load the next person, count down, dial
 
+    /// The "Double tap" switch next to Auto-dial: on = call each lead twice (redial), off = once.
+    var doubleTap: Bool {
+        get { UserDefaults.standard.object(forKey: "doubleTap") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "doubleTap"); objectWillChange.send() }
+    }
+    /// Dials per lead per visit: 2 with Double tap, otherwise 1.
+    var maxAttempts: Int { doubleTap ? 2 : 1 }
+
     /// The "Auto-dial" switch next to Aircall phone.
     var autoDial: Bool {
         get { UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true }
@@ -781,7 +789,7 @@ final class CoachModel: ObservableObject {
 
     /// After a first try nobody answered (or voicemail), offer to call right back.
     var shouldOfferRedial: Bool {
-        status == .ready && currentAttemptKey != nil && !lastCallAnswered && currentAttempts < 2
+        status == .ready && currentAttemptKey != nil && !lastCallAnswered && currentAttempts < maxAttempts
             && !(currentAttemptKey.map(DialHistory.isMaxed) ?? false) // last try: no redial
             && !(currentAttemptKey.map(RemovedList.contains) ?? false) // marked Not Quality Prospect / Negative: no redial
     }
@@ -1247,7 +1255,7 @@ final class CoachModel: ObservableObject {
     func endCall() {
         guard status != .ready else { return }
         let hadVoicemail = sawVoicemail // for the log
-        if hadVoicemail, !(currentAttempts < 2 && autoDial), let key = currentAttemptKey,
+        if hadVoicemail, !(currentAttempts < maxAttempts && autoDial), let key = currentAttemptKey,
            Cadence.step(for: key)?.leaveVoicemail ?? true,
            let said = voicemailScript?.say, voicemailFor == calling {
             DialHistory.logVoicemail(key, body: said)
@@ -1283,7 +1291,7 @@ final class CoachModel: ObservableObject {
             return
         }
         // 2nd try went to voicemail: they've had both calls. Move on by itself.
-        let moveOn = sawVoicemail && currentAttempts >= 2
+        let moveOn = sawVoicemail && currentAttempts >= maxAttempts
         nextCall()
         waitingForNewCall = true
         endedAt = Date()
@@ -1314,7 +1322,7 @@ final class CoachModel: ObservableObject {
     /// click Aircall's hang-up button, wait until Aircall says the line is free, then redial in 1 s.
     /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
     private func autoHangUpForRedial() {
-        guard autoDial, AircallPhone.isOn, currentAttempts < 2, !autoHangingUp, !autoHungUpThisCall,
+        guard autoDial, AircallPhone.isOn, currentAttempts < maxAttempts, !autoHangingUp, !autoHungUpThisCall,
               !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
               let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return }
         autoHangingUp = true
@@ -2114,17 +2122,17 @@ final class CoachModel: ObservableObject {
         startFollowUp()
         if mailboxFull {
             mailboxFullShown = true
-            show(Suggestion(say: currentAttempts < 2 ? "Mailbox is full. Hang up and click Redial." : "Mailbox is full. Hang up. The next call starts by itself.",
+            show(Suggestion(say: currentAttempts < maxAttempts ? "Mailbox is full. Hang up and click Redial." : "Mailbox is full. Hang up. The next call starts by itself.",
                             cue: "No message possible.",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
         } else if let step = currentAttemptKey.flatMap(Cadence.step(for:)), !step.leaveVoicemail {
             // Not a voicemail day in the 21-day plan.
-            show(Suggestion(say: currentAttempts < 2 ? "No voicemail today. Hang up. The redial starts by itself."
+            show(Suggestion(say: currentAttempts < maxAttempts ? "No voicemail today. Hang up. The redial starts by itself."
                                                      : "No voicemail today. Hang up and move on.",
                             cue: "The plan leaves one voicemail, on day 1. Today is day \(Cadence.callDays[step.index]).",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
         } else if var script = voicemailScript, voicemailFor == calling {
-            if currentAttempts < 2 {
+            if currentAttempts < maxAttempts {
                 script.cue = "1st try: hang up and click Redial. Leave this message on the 2nd try."
             } else if let step = currentAttemptKey.flatMap(Cadence.step(for:)) {
                 script.cue = "Day \(step.planDay) voicemail (the only one in the plan). Wait for the beep."
