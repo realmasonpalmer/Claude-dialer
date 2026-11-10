@@ -1,0 +1,415 @@
+import AppKit
+import AVFoundation
+import Combine
+import CoreAudio
+import Foundation
+
+/// A call from start to end: the tick, starting and ending calls, auto redial and auto next.
+extension CoachModel {
+    func tick() {
+        guard active else { return }
+        let onCall = AudioProcess.anyCallApp(in: AudioProcess.others())
+        // Between calls, notice which record is open so the opener uses their name.
+        // Dialed from the app: start listening once the Aircall app picks up the call (or after 8 s).
+        if let since = pendingDialSince, status == .ready {
+            // Start listening almost right away, so a "straight to voicemail" greeting is heard from word one.
+            if AudioProcess.aircallAppOnCall(in: AudioProcess.others()) || Date().timeIntervalSince(since) > 1 {
+                pendingDialSince = nil
+                waitingForNewCall = false
+                startCall()
+            }
+            return
+        }
+        if status == .ready, !leads.isActive, !onCall || waitingForNewCall {
+            tabTicks += 1
+            if tabTicks % 2 == 0 {
+                callList.captureIfListView()
+                if openingID == nil { callList.refreshUpNext() }
+                syncRecord()
+            }
+        }
+        switch status {
+        case .ready where onCall:
+            if waitingForNewCall {
+                // Chrome is still holding the last call's mic/speaker: start only when Aircall shows a new call.
+                checkAircallForNewCall()
+            } else {
+                startCall()
+            }
+        case .ready:
+            waitingForNewCall = false // Chrome let go, so the next time it grabs the mic is a new call
+        case .live:
+            if onCall { heardCallAudio = true }
+            // Safety net: nobody has said a word for 90 s = the call is over (no real call is that quiet).
+            let silentFor = Date().timeIntervalSince(lastWordsAt ?? callStartedAt)
+            if silentFor > 90, !startedByHand {
+                ActivityLog.problem("Call ended: 90 s with no words")
+                endCall(); return
+            }
+            // Only count quiet after the call's audio has shown up once, so a call that's
+            // still ringing (we start listening right after dialing) isn't ended early.
+            if !startedByHand, heardCallAudio || Date().timeIntervalSince(callStartedAt) > 45 {
+                quietTicks = onCall ? 0 : quietTicks + 1
+                if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
+            }
+            checkAircallEveryFewSeconds()
+            if aircallTicks % 2 == 0, Date().timeIntervalSince(callStartedAt) < 30 { followCallAudio() }
+            if AudioProcess.doubleCall(in: AudioProcess.others()) {
+                problem = "Two calls at once: Aircall is signed in here and in Salesforce. Log out of the Aircall panel in Salesforce."
+            }
+        default:
+            break
+        }
+    }
+
+    /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
+    func endCall() {
+        guard status != .ready else { return }
+        let hadVoicemail = sawVoicemail // for the log
+        if hadVoicemail, !(currentAttempts < maxAttempts && autoDial), let key = currentAttemptKey,
+           Cadence.step(for: key)?.leaveVoicemail ?? true,
+           let said = voicemailScript?.say, voicemailFor == calling {
+            DialHistory.logVoicemail(key, body: said)
+        }
+        // Didn't connect: over in under 12 seconds, nobody talked, no voicemail. That's a bad
+        // number's beeping tone or a dropped call, not a person who didn't pick up (that rings 20+ s).
+        let quickFail = !badNumberThisCall && !startedByHand && !sawVoicemail
+            && Date().timeIntervalSince(callStartedAt) < 12
+            && !turns.contains { $0.speaker == .prospect }
+        ActivityLog.add("Call ended: \(calling ?? "?") after \(Int(Date().timeIntervalSince(callStartedAt))) s. voicemail=\(sawVoicemail) theySpoke=\(turns.contains(where: { $0.speaker == .prospect })) bad=\(badNumberThisCall)")
+        if quickFail, let key = currentAttemptKey {
+            let fails = DialHistory.logFailedConnect(key)
+            if fails >= 2 { markNotQualityProspect(key, reason: "didn't connect twice") }
+            nextCall()
+            waitingForNewCall = true
+            endedAt = Date()
+            followUp = nil
+            lastCallAnswered = true // no redial
+            problem = fails >= 2 ? "Didn't connect again. Bad number: taken off your list." : "Didn't connect (bad number or network). Moving on."
+            afterHangUp { [weak self] in self?.startNextSequence() }
+            return
+        }
+        if badNumberThisCall {
+            // Number doesn't work: no voicemail, no text, no redial. Off the list, on to the next.
+            badNumberThisCall = false
+            nextCall()
+            waitingForNewCall = true
+            endedAt = Date()
+            followUp = nil
+            lastCallAnswered = true
+            problem = phoneTreeThisCall ? "Phone tree. Disqualified and taken off your list." : "Bad number. Taken off your list."
+            afterHangUp { [weak self] in self?.startNextSequence() }
+            return
+        }
+        // 2nd try went to voicemail: they've had both calls. Move on by itself.
+        let moveOn = sawVoicemail && currentAttempts >= maxAttempts
+        nextCall()
+        waitingForNewCall = true
+        endedAt = Date()
+        // Didn't reach them (no answer or voicemail): the text and LinkedIn card shows after
+        // every such call, even when the voicemail greeting wasn't caught.
+        if !lastCallAnswered, followUp == nil || followUp?.key != currentAttemptKey {
+            startFollowUp()
+            ActivityLog.add("Follow-up card for \(calling ?? "?") (voicemail heard: \(hadVoicemail))")
+        }
+        if let key = currentAttemptKey, RemovedList.contains(key) {
+            // Marked Unqualified (or Not Quality Prospect / Negative) during the call: no text, no redial.
+            ActivityLog.add("Call ended for someone taken off the list: on to the next person")
+            followUp = nil
+            waitingForText = false
+            afterHangUp { [weak self] in self?.startNextSequence() }
+        } else if shouldOfferRedial, autoDial {
+            // 1st try, no answer: "Calling Jane Doe again in 3", then redial the same person.
+            startAutoRedial()
+        } else if !shouldOfferRedial, !lastCallAnswered, let f = followUp {
+            // Done with them for now: send the text, then the next call starts.
+            if f.textDone || !f.textDue { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
+        } else if moveOn {
+            afterHangUp { [weak self] in self?.startNextSequence() }
+        }
+    }
+
+    /// 1st try reached a recording (100% sure: words only a machine says) and auto-dial is on:
+    /// click Aircall's hang-up button, wait until Aircall says the line is free, then redial in 1 s.
+    /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
+    func autoHangUpForRedial() {
+        guard autoDial, AircallPhone.isOn, currentAttempts < maxAttempts, !autoHangingUp, !autoHungUpThisCall,
+              !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
+              let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return }
+        autoHangingUp = true
+        autoHungUpThisCall = true
+        ActivityLog.add("Recording for sure on the 1st try for \(calling ?? "?"): hanging up to redial")
+        Task { [weak self] in
+            guard let self, self.status == .live else { self?.autoHangingUp = false; return }
+            var done = await AircallPhone.shared.hangUp()
+            if done {
+                // Only end the call on our side once Aircall says the line is free (up to 5 s).
+                done = false
+                for _ in 0..<5 {
+                    try? await Task.sleep(for: .seconds(1))
+                    if await Aircall.lineIsOnCall() == false { done = true; break }
+                }
+            }
+            self.autoHangingUp = false
+            guard self.status == .live else { return }
+            if done {
+                self.redialRightAway = true
+                self.endCall()
+            } else {
+                ActivityLog.problem("Auto hang-up didn't finish: the rep hangs up, redial as usual")
+            }
+        }
+    }
+
+    /// Counts down 3 seconds (1 after an automatic hang-up), then calls the same person again. Wait stops it.
+    func startAutoRedial() {
+        autoNextTask?.cancel()
+        autoNextName = Screener.fullName(calling).map { "\($0) again" }
+        let countdown = redialRightAway ? 1 : 3
+        redialRightAway = false
+        autoNextTask = Task { [weak self] in
+            for left in stride(from: countdown, through: 1, by: -1) {
+                self?.autoNextIn = left
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                if self.status != .ready { self.cancelAutoNext(); return }
+            }
+            guard let self, !Task.isCancelled, self.shouldOfferRedial else { return }
+            self.autoNextIn = nil
+            self.redial()
+        }
+    }
+
+    /// Counts down 5 seconds, then loads the next lead (and calls them, if "Next calls right away" is on).
+    func startAutoNext() {
+        guard nextLeadName != nil else { return }
+        autoNextTask?.cancel()
+        autoNextTask = Task { [weak self] in
+            for left in stride(from: 3, through: 1, by: -1) {
+                self?.autoNextIn = left
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                // A call started some other way: stop counting.
+                if self.status != .ready { self.cancelAutoNext(); return }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.nextLead()
+        }
+    }
+
+    /// The rep clicked Wait (or moved on by hand).
+    func cancelAutoNext() {
+        hangUpGen += 1
+        waitingForText = false
+        autoNextName = nil
+        readyTask?.cancel()
+        gettingReady = nil
+        gettingReadyDetail = nil
+        autoNextTask?.cancel()
+        autoNextTask = nil
+        autoNextIn = nil
+    }
+
+    func checkAircallForNewCall() {
+        aircallTicks += 1
+        guard aircallTicks % 4 == 0, aircallCheck == nil, Aircall.isSetUp else { return }
+        aircallCheck = Task { [weak self] in
+            let since = self?.endedAt ?? Date()
+            let onCall = await Aircall.lineIsOnCall(since: since)
+            guard let self else { return }
+            self.aircallCheck = nil
+            if onCall == true, self.status == .ready, self.waitingForNewCall {
+                self.waitingForNewCall = false
+                self.startCall()
+            }
+        }
+    }
+
+    func checkAircallEveryFewSeconds() {
+        aircallTicks += 1
+        guard aircallTicks % 4 == 0, aircallCheck == nil, Aircall.isSetUp else { return }
+        // Give Aircall a moment to register a brand-new call before trusting a "no".
+        guard Date().timeIntervalSince(callStartedAt) > 5 else { return }
+        aircallCheck = Task { [weak self] in
+            let onCall = await Aircall.lineIsOnCall()
+            guard let self else { return }
+            self.aircallCheck = nil
+            guard self.status == .live, let onCall else { return }
+            if onCall { self.aircallSawCall = true }
+            // Trust Aircall's "no call" once it has listed this call, or after 20 s if it never
+            // lists it (some setups don't). But never while people are still talking.
+            let age = Date().timeIntervalSince(self.callStartedAt)
+            let talking = self.lastWordsAt.map { Date().timeIntervalSince($0) < 8 } ?? false
+            guard self.aircallSawCall || age > 20, !talking else { self.aircallSaysOver = 0; return }
+            self.aircallSaysOver = onCall ? 0 : self.aircallSaysOver + 1
+            if self.aircallSaysOver >= 2 {
+                ActivityLog.add("Aircall says the call is over")
+                self.endCall()
+            }
+        }
+    }
+
+    func startByHand() {
+        waitingForNewCall = false
+        startedByHand = true
+        startCall()
+    }
+
+    func startCall() {
+        problem = nil
+        redialRightAway = false
+        autoHungUpThisCall = false
+        phoneTreeThisCall = false
+        phoneTreeActive = false
+        phoneTreeTask?.cancel()
+        keysMessage = nil
+        guard startAudio() else { return }
+        if !leads.isActive { callList.markCurrentCalled() } // so Next skips them today (Chrome list)
+        if let key = recordKey() {
+            currentAttemptKey = key
+            attempts[key, default: 0] += 1
+        }
+        touchpoints.log(.dial)
+        callMessage = nil
+        pendingDialSince = nil // this dial is now the live call
+        ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
+        if let key = currentAttemptKey { DialHistory.logDial(key) }
+        // Calling someone new: the last person's follow-up card goes away.
+        if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
+        status = .live
+        quietTicks = 0
+        availability.refresh() // fresh free times for this call
+        callOpener = kind == .opener ? openerStyle : nil
+        goalHit = false
+        sawVoicemail = false
+        stagesSeen = []
+        callStartedAt = Date()
+        heardCallAudio = false
+        retargets = 0
+        aircallSaysOver = 0
+        aircallSawCall = false
+        aircallTicks = 0
+        journeyStep = 0
+        history = Array(history.suffix(1)) // keep the opener as the first line
+        historyIndex = nil
+        repWordsInCall = 0
+        repWordsSinceShown = 0
+        offeredTimes = []
+        codeByDate = [:]
+        nextOffer = []
+        screenerActive = false
+        openerBeforeScreener = nil
+        voicemailActive = false
+        badNumberThisCall = false
+        mailboxFullShown = false
+        followUpThisCall = false
+        cancelAutoNext()
+        if voicemailScript == nil { prepareVoicemail() }
+        firstProspectAt = nil
+        lastWordsAt = nil
+    }
+
+    /// Counts the call that just ended. Picked up = a real person talked (not voicemail, not
+    /// only a screener). Conversation = they kept talking: 3+ turns, or 45+ seconds after pickup.
+    func logTouchpoints(answered: Bool) {
+        if sawVoicemail { touchpoints.log(.voicemail) }
+        guard answered else { return }
+        touchpoints.log(.pickup)
+        if let key = currentAttemptKey {
+            DialHistory.logPickup(key)
+            // A real person answered: check "Picked Up Cold Call" in Salesforce.
+            if Salesforce.isConnected {
+                let who = calling ?? key
+                Task {
+                    do {
+                        try await Salesforce.markPickedUp(key)
+                        ActivityLog.add("Picked Up Cold Call checked for \(who)")
+                    } catch {
+                        ActivityLog.problem("Couldn't check Picked Up Cold Call: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+        let prospectTurns = turns.filter { $0.speaker == .prospect }.count
+        let talked = firstProspectAt.map { Date().timeIntervalSince($0) } ?? 0
+        if prospectTurns >= 3 || talked >= 45 { touchpoints.log(.conversation) }
+        if goalHit { touchpoints.log(.meeting) }
+    }
+
+    /// Clears everything about this prospect and gets the next opener ready.
+    func nextCall() {
+        if status != .ready {
+            // Reached a person = they spoke, and it wasn't a voicemail or only a screener.
+            let theySpoke = turns.contains { $0.speaker == .prospect }
+            lastCallAnswered = theySpoke && !sawVoicemail && !screenerActive
+            logTouchpoints(answered: lastCallAnswered)
+        }
+        history = []
+        historyIndex = nil
+        journeyStep = 0
+        scoreOpener()
+        stopAudio()
+        coachTask?.cancel()
+        holdTask?.cancel()
+        startedByHand = false
+        turns = []
+        interim = [:]
+        uncoached = ""
+        latestProspect = ""
+        latency = nil
+        status = .ready
+        if leads.isActive {
+            applyLead()
+        } else {
+            // The call is over: the voicemail (or any mid-call line) goes away and a fresh
+            // "when they pick up" opener shows right away, ready for the redial.
+            prepareOpener()
+            // Read Chrome a moment later, not while Aircall plays the hang-up tone.
+            afterHangUp { [weak self] in self?.syncRecord() } // same person: keep their ready voicemail
+        }
+    }
+
+    /// Runs work 2 seconds after a call ends. Doing it all at the hang-up moment
+    /// (Chrome reads, saving, loading the next person) makes Aircall's hang-up tone skip.
+    func afterHangUp(_ work: @escaping () -> Void) {
+        let gen = hangUpGen
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            // Skip it if the rep already moved on by hand (Next, Redial, Call).
+            guard let self, self.status == .ready, self.hangUpGen == gen else { return }
+            work()
+        }
+    }
+
+    /// Scores the call if a real person answered (not voicemail): credits the opener,
+    /// then saves it to the Script Lab.
+    func scoreOpener() {
+        defer { callOpener = nil }
+        let prospectTurns = turns.filter { $0.speaker == .prospect }.count
+        // Skip voicemails, no-answers, and calls where only a screener ever talked.
+        guard status != .ready, !sawVoicemail, !screenerActive, prospectTurns > 0, let start = firstProspectAt else { return }
+        let talk = max(0, (lastWordsAt ?? start).timeIntervalSince(start))
+        let score = CallScore.compute(talkSeconds: talk, stages: stagesSeen, goal: goalHit)
+        let usedOpener = callOpener.flatMap { $0 == openers.current ? $0 : nil }
+        if usedOpener != nil {
+            openers.record(score: score, kept: prospectTurns >= 3, goal: goalHit)
+        }
+        let record = CallRecord(
+            campaignID: campaign.id, campaignVersion: campaign.version, openerID: usedOpener?.id,
+            talkSeconds: talk, prospectTurns: prospectTurns, stages: Array(stagesSeen).sorted(),
+            goal: goalHit, score: score
+        )
+        let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        lab.add(record, campaign: campaign, transcript: transcript)
+    }
+
+    func togglePause() {
+        if status == .paused {
+            if startAudio() { status = .live }
+        } else if status == .live {
+            stopAudio()
+            coachTask?.cancel()
+            status = .paused
+        }
+    }
+}
