@@ -322,14 +322,14 @@ struct CoachView: View {
     /// Pick a campaign, or create and edit one. Locked during a call.
     private var campaignMenu: some View {
         Menu {
-            Button("Campaigns...") {
+            Button("Segments...") {
                 openWindow(id: "campaign-selector")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             }
             Divider()
             // Only the active campaigns (up to 3): pick one to call its list.
             if campaigns.activeCampaigns.isEmpty {
-                Text("No active campaigns. Open Campaigns... to activate up to 3.")
+                Text("No active segments. Open Segments... to activate up to 3.")
             }
             ForEach(campaigns.activeCampaigns) { campaign in
                 Button {
@@ -343,14 +343,14 @@ struct CoachView: View {
                 }
             }
             Divider()
-            Button("Edit this campaign...") { edit(campaigns.selected) }
+            Button("Edit this segment...") { edit(campaigns.selected) }
         } label: {
             Text(campaigns.selected.name).font(.caption.weight(.semibold)).lineLimit(1)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(coach.status != .ready)
-        .help(coach.status == .ready ? "Choose or edit a campaign" : "Finish the call to switch campaigns")
+        .help(coach.status == .ready ? "Choose or edit a segment" : "Finish the call to switch segments")
     }
 
     /// Picks the active campaign whose Salesforce list is the one open in Chrome (between calls only).
@@ -796,7 +796,7 @@ struct CoachView: View {
                     Button("Start next list: \(next.name)") { switchTo(next) }
                         .buttonStyle(.borderedProminent)
                 } else {
-                    Text("Pick another campaign at the top, or link a list to one (campaign menu).")
+                    Text("Pick another segment at the top, or link a list to one (segment menu).")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }

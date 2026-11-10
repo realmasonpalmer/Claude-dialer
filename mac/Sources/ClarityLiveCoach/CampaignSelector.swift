@@ -14,7 +14,7 @@ struct CampaignSelectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Campaigns").font(.title2.weight(.semibold))
+            Text("Segments").font(.title2.weight(.semibold))
             Text("Up to \(CampaignStore.maxActive) active at a time. Each one has its own Salesforce list and script.")
                 .font(.callout).foregroundStyle(.secondary)
 
@@ -27,10 +27,10 @@ struct CampaignSelectorView: View {
             .frame(minHeight: 220)
 
             HStack(spacing: 8) {
-                Button("New Campaign") { showNew = true }
+                Button("New Segment") { showNew = true }
                 Button("Activate") {
                     guard let id = selection else { return }
-                    note = store.setActive(id, true) ? nil : "Up to \(CampaignStore.maxActive) campaigns can be active. Pause one first."
+                    note = store.setActive(id, true) ? nil : "Up to \(CampaignStore.maxActive) segments can be active. Pause one first."
                 }
                 .disabled(picked == nil || picked?.active == true)
                 Button("Pause") {
@@ -53,7 +53,7 @@ struct CampaignSelectorView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(picked?.active != true)
-                .help("Pick an active campaign to call its list")
+                .help("Pick an active segment to call its list")
             }
             if let note {
                 Text(note).font(.caption).foregroundStyle(.orange)
@@ -114,7 +114,7 @@ struct NewCampaignView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New Campaign").font(.title2.weight(.semibold))
+            Text("New Segment").font(.title2.weight(.semibold))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("1. Segment name").font(.headline)

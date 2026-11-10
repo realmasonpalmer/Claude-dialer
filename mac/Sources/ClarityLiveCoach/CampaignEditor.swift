@@ -44,8 +44,8 @@ struct CampaignEditorView: View {
 
     private var basics: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(isNew ? "New campaign" : "Edit campaign").font(.title2.weight(.semibold))
-            field("Campaign name", text: $draft.name, placeholder: "e.g. Q4 RevOps outreach")
+            Text(isNew ? "New segment" : "Edit segment").font(.title2.weight(.semibold))
+            field("Segment name", text: $draft.name, placeholder: "e.g. Q4 RevOps outreach")
             field("Goal of these calls", text: $draft.objective,
                   placeholder: "e.g. Book a 30 minute meeting, or transfer to Mason")
             listPicker
@@ -76,7 +76,7 @@ struct CampaignEditorView: View {
                     ForEach(listViews) { Text($0.title).tag($0.id) }
                 }
                 .labelsHidden()
-                Text("Picking this campaign opens this list in Chrome and calls everyone on it who's due today.")
+                Text("Picking this segment opens this list in Chrome and calls everyone on it who's due today.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -151,7 +151,7 @@ struct CampaignEditorView: View {
             Button("Cancel") { dismissWindow(id: "campaign-editor") }
                 .keyboardShortcut(.cancelAction)
             Button("Save and use") {
-                if draft.name.trimmed.isEmpty { draft.name = "Untitled campaign" }
+                if draft.name.trimmed.isEmpty { draft.name = "Untitled segment" }
                 store.save(draft)
                 store.selectedID = draft.id
                 dismissWindow(id: "campaign-editor")
@@ -182,7 +182,7 @@ struct CampaignEditorView: View {
                 }
             }
             if draft.objective.trimmed.isEmpty, let goal = result["objective"]?.trimmed { draft.objective = goal }
-            if draft.name == "New campaign" || draft.name.trimmed.isEmpty, let name = result["name"]?.trimmed, !name.isEmpty {
+            if draft.name == "New segment" || draft.name == "New campaign" || draft.name.trimmed.isEmpty, let name = result["name"]?.trimmed, !name.isEmpty {
                 draft.name = name
             }
             showSections = true

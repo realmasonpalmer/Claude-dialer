@@ -196,7 +196,7 @@ final class CallLab: ObservableObject {
         guard !analyzing, let key = Keychain.read(.anthropic) else { return }
         let calls = records(for: campaign)
         guard calls.count >= Self.minimumCalls else {
-            analysisError = "Needs at least \(Self.minimumCalls) answered calls on this campaign."
+            analysisError = "Needs at least \(Self.minimumCalls) answered calls on this segment."
             return
         }
         analyzing = true

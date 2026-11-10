@@ -125,7 +125,7 @@ struct TouchpointsCard: View {
             HStack {
                 // Compare campaigns: each list + script on its own.
                 Picker("", selection: $touchpoints.showCampaign) {
-                    Text("All campaigns").tag(String?.none)
+                    Text("All segments").tag(String?.none)
                     ForEach(touchpoints.campaignNames, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
                 .labelsHidden()
