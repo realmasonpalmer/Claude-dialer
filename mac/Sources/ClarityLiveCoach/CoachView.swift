@@ -162,6 +162,7 @@ struct CoachView: View {
     @AppStorage("repName") private var repName = ""
     @AppStorage("showTouchpoints") private var showTouchpoints = true
     @AppStorage("nextDials") private var nextDials = true
+    @State private var listViewCache: [Salesforce.ListView] = []
     @AppStorage("appPhone") private var appPhone = true
 
     // One visual system: blue = actions, green = listening, amber = real warnings.
@@ -236,6 +237,7 @@ struct CoachView: View {
         .onAppear {
             coach.use(campaigns.selected)
             coach.activate(true)
+            syncScriptToList()
         }
         .task {
             // Look for a new version now and every 2 minutes, so the Update button shows up on its own.
@@ -256,14 +258,9 @@ struct CoachView: View {
             if old.id != new.id { coach.listDone = false }
         }
         // The list open in Chrome decides the script: land on a campaign's list and its script follows.
-        .onChange(of: coach.callList.listKey) { _, key in
-            guard coach.status == .ready, let view = key?.view, view.count >= 15 else { return }
-            if let match = campaigns.campaigns.first(where: { $0.active && $0.listViewID.prefix(15) == view.prefix(15) }),
-               match.id != campaigns.selectedID {
-                ActivityLog.add("Campaign: list matches \(match.name), switching script")
-                campaigns.selectedID = match.id
-            }
-        }
+        .onChange(of: coach.callList.listKey) { _, _ in syncScriptToList() }
+        .onChange(of: coach.status) { _, _ in syncScriptToList() }
+        .onChange(of: campaigns.campaigns) { _, _ in syncScriptToList() }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
             SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
@@ -354,6 +351,21 @@ struct CoachView: View {
         .help(coach.status == .ready ? "Choose or edit a campaign" : "Finish the call to switch campaigns")
     }
 
+    /// Picks the active campaign whose Salesforce list is the one open in Chrome (between calls only).
+    /// Chrome's address can hold the list's Id or its API name, so both are matched.
+    private func syncScriptToList() {
+        guard coach.status == .ready, let key = coach.callList.listKey?.view, !key.isEmpty else { return }
+        Task {
+            if listViewCache.isEmpty { listViewCache = (try? await Salesforce.listViews()) ?? [] }
+            let openID = listViewCache.first { $0.id.prefix(15) == key.prefix(15) || $0.developerName == key }?.id ?? key
+            guard coach.status == .ready,
+                  let match = campaigns.campaigns.first(where: { $0.active && !$0.listViewID.isEmpty && $0.listViewID.prefix(15) == openID.prefix(15) }),
+                  match.id != campaigns.selectedID else { return }
+            ActivityLog.add("Campaign: the open list matches \(match.name), switching script")
+            campaigns.selectedID = match.id
+        }
+    }
+
     /// Switches campaign (its script) and opens its Salesforce list in Chrome, so the app works that list.
     private func switchTo(_ campaign: Campaign) {
         campaigns.selectedID = campaign.id // its list opens via onChange below
@@ -363,7 +375,9 @@ struct CoachView: View {
     private func openList(of campaign: Campaign) {
         guard !campaign.listViewID.isEmpty, !campaign.listObject.isEmpty else { return }
         // Already on that list in Chrome (the script just followed it): don't reload it.
-        if let open = coach.callList.listKey?.view, open.prefix(15) == campaign.listViewID.prefix(15) { return }
+        if let open = coach.callList.listKey?.view,
+           open.prefix(15) == campaign.listViewID.prefix(15)
+            || listViewCache.contains(where: { $0.developerName == open && $0.id.prefix(15) == campaign.listViewID.prefix(15) }) { return }
         let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } }
             ?? Keychain.read(.sfInstance) ?? ""
         guard !origin.isEmpty else { return }
