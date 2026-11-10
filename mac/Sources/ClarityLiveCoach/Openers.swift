@@ -10,16 +10,10 @@ struct Opener: Identifiable, Equatable {
     /// Where the evidence comes from, in plain words.
     let evidence: String
 
-    /// Five openers with the best published evidence (Gong Labs call studies).
+    /// Openers with the best published evidence (Gong Labs call studies).
     /// "Did I catch you at a bad time?" is deliberately absent: it tested worst.
+    /// "Have you heard our name tossed around?" was removed at the rep's request.
     static let all: [Opener] = [
-        Opener(
-            id: "heard-name",
-            name: "Heard the name",
-            template: "Hey [first name], this is [rep] from [company]. Have you heard our name tossed around?",
-            followUp: "If no: \"No worries, that's why I'm calling\" plus a one-line problem their peers have, then a question. If yes: \"Nice, what have you heard?\"",
-            evidence: "Top opener in Gong's study of 300M+ cold calls (about 11% success)."
-        ),
         Opener(
             id: "permission",
             name: "Permission",
