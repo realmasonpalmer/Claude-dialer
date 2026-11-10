@@ -9,7 +9,7 @@ enum ColdCallBackbone {
     static var campaign: Campaign {
         var c = Campaign(
             id: campaignID,
-            name: "Clarity: Cold call backbone",
+            name: "Cold call: AI health check",
             objective: "Book a free 45 minute AI health check with Oliver, our managing partner.",
             pastedScript: text,
             company: "Clarity Consulting. Anthropic partner. Salesforce partner."

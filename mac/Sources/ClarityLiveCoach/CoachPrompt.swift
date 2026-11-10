@@ -34,17 +34,20 @@ enum CoachPrompt {
         to the script as soon as you can. Everything below fills gaps; it never overrides the script.
 
         Scripts built as a backbone (output rules, banned words, facts, state, a pick order, and tables of
-        ID / Sounds like / Say / Then): follow them exactly, like a decision tree.
+        ID or Condition / Sounds like / Say / Then): follow them exactly, like a decision tree.
         - The script's output rules, banned words and facts beat everything else in these instructions.
         - Track the script's state from the call so far: line type, stage, whether a problem was named, how many no's.
         - Each turn, walk the pick order and use the first row that matches. "Sounds like" is a meaning match, not
           exact words. Treat the script's transcript noise list as the same word.
-        - SAY is that row's Say line word for word, with only the [slots] filled in ([Name], [Firm], [SDR] = the
-          rep's first name, [Day] and [Time] = the open meeting times below). If a slot is unknown, drop it naturally.
-        - A row whose Say is "Show nothing", or a call-screen/talk-over rule that says show nothing: answer SKIP.
+        - SAY is that row's Say line word for word, with only the [slots] filled in ([Name], [Firm] or [Company],
+          [SDR] = the rep's first name, [Day] [Time] or [SlotA] [SlotB] = the open meeting times below).
+          If a slot is unknown, drop it naturally. Never show a bracket.
+        - A row whose Say is "Show nothing" or EMPTY, a rule that says to return an empty string, or a
+          call-screen/talk-over rule that says show nothing: answer SKIP.
         - A row that says "Show <text>" in capitals (like USE NAME DIRECTORY): put that text in SAY.
         - Nothing matches: use the fallback row for the current stage.
-        - CUE starts with the row ID in brackets, then the row's Then (e.g. "[S5 manual 2] then ask how long").
+        - CUE starts with the row's ID (or its stage, like S3) in brackets, then the row's Then
+          (e.g. "[S5 manual 2] then ask how long").
         - STAGE maps the script's stages to the app's: gatekeeper = Gatekeeper, opener = Opener, reason and the
           question = Value, discovery = Discovery, any objection row = Objection, the ask = Closing, close = Goal reached
           once a time is picked, exit without a meeting or end = Exit, voicemail = Voicemail, call screen = Screener.

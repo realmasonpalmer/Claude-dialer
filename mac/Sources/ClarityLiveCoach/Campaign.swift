@@ -128,16 +128,13 @@ final class CampaignStore: ObservableObject {
             .filter { $0.pathExtension == "json" }
             .compactMap { try? JSONDecoder().decode(Campaign.self, from: Data(contentsOf: $0)) }
             .sorted { $0.name < $1.name }
-        if campaigns.isEmpty {
-            save(.clarityDiscovery)
-        }
-        // The cold call backbone ships once as its own (paused) campaign. Deleting it keeps it gone.
-        if !UserDefaults.standard.bool(forKey: PrefKey.backboneCampaignAdded) {
-            UserDefaults.standard.set(true, forKey: PrefKey.backboneCampaignAdded)
-            if !campaigns.contains(where: { $0.id == ColdCallBackbone.campaignID }) { save(ColdCallBackbone.campaign) }
-        }
+        // The built-in segments (lunch invite and cold call), ready to use. New installs get both active.
+        let freshInstall = campaigns.isEmpty
+        BuiltInSegments.seed(into: self, freshInstall: freshInstall)
+        if campaigns.isEmpty { save(.clarityDiscovery) }
         let saved = UserDefaults.standard.string(forKey: PrefKey.selectedCampaign).flatMap(UUID.init)
-        selectedID = campaigns.contains { $0.id == saved } ? saved : campaigns.first?.id
+        selectedID = campaigns.contains { $0.id == saved } ? saved
+            : freshInstall ? BuiltInSegments.lunchID : campaigns.first?.id
         // First run with active campaigns: the one in use starts out active.
         if !campaigns.contains(where: \.active), let id = selectedID { setActive(id, true) }
         ensureSelectedActive()
