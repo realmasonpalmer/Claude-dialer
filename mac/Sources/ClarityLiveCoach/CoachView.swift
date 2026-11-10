@@ -1077,7 +1077,8 @@ struct FollowUpCard: View {
 
                 // Text: only on the plan's text day (the 2nd call day), never to Washington numbers.
                 if f.textDue || f.textDone {
-                row(done: f.textDone, title: "Text", message: f.text) {
+                row(done: f.textDone, title: "Text", message: f.text,
+                    editable: !f.textDone && !f.text.isEmpty ? textBinding : nil) {
                     if f.textDone {
                         Label("Sent", systemImage: "checkmark").foregroundStyle(.green)
                     } else if canSend {
@@ -1123,20 +1124,41 @@ struct FollowUpCard: View {
         }
     }
 
-    private func row<Actions: View>(done: Bool, title: String, message: String, @ViewBuilder actions: () -> Actions) -> some View {
+    private func row<Actions: View>(done: Bool, title: String, message: String, editable: Binding<String>? = nil,
+                                     @ViewBuilder actions: () -> Actions) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: done ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(done ? Color.green : Color.secondary)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(message.isEmpty ? "Writing..." : message)
-                    .font(.callout)
-                    .foregroundStyle(message.isEmpty || done ? .secondary : .primary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let editable {
+                    // Click and type to change it before it goes out.
+                    TextField("Text message", text: editable, axis: .vertical)
+                        .font(.callout)
+                        .textFieldStyle(.plain)
+                        .lineLimit(2...10)
+                        .padding(6)
+                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
+                        .help("Click to edit the text before you send it")
+                } else {
+                    Text(message.isEmpty ? "Writing..." : message)
+                        .font(.callout)
+                        .foregroundStyle(message.isEmpty || done ? .secondary : .primary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 actions().font(.caption)
             }
         }
+    }
+
+    private var textBinding: Binding<String> {
+        Binding(get: { followUp?.text ?? "" }, set: { new in
+            guard followUp?.text != new else { return }
+            followUp?.text = new
+            followUp?.textEdited = true
+        })
     }
 
     private var phoneBinding: Binding<String> {

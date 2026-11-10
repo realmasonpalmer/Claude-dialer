@@ -313,6 +313,8 @@ struct FollowUp: Equatable {
     var key: String?
     var prospect: String?
     var text = ""
+    /// The rep typed in the text box: never overwrite their words with a fresh draft.
+    var textEdited = false
     var linkedin = ""
     var textDone = false
     var linkedinDone = false
@@ -2283,7 +2285,7 @@ final class CoachModel: ObservableObject {
         guard var f = followUp, f.key == nil || voicemailKey == nil || f.key == voicemailKey else { return }
         var s = written
         applyScriptMessages(&s, for: calling)
-        if (f.text.isEmpty || (replace && !f.textDone)), !s.textMessage.isEmpty { f.text = s.textMessage }
+        if (f.text.isEmpty || (replace && !f.textDone && !f.textEdited)), !s.textMessage.isEmpty { f.text = s.textMessage }
         if (f.linkedin.isEmpty || (replace && !f.linkedinDone)), !s.linkedin.isEmpty { f.linkedin = s.linkedin }
         if (f.linkedinMessage.isEmpty || (replace && !f.linkedinMessageDone)), !s.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
         followUp = f
@@ -2725,7 +2727,7 @@ final class CoachModel: ObservableObject {
         guard var f = followUp else { return }
         var s = Suggestion()
         applyScriptMessages(&s, for: calling)
-        if !f.textDone, !s.textMessage.isEmpty { f.text = s.textMessage }
+        if !f.textDone, !f.textEdited, !s.textMessage.isEmpty { f.text = s.textMessage }
         if !f.linkedinDone, !s.linkedin.isEmpty { f.linkedin = s.linkedin }
         if !f.linkedinMessageDone, !s.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
         followUp = f
