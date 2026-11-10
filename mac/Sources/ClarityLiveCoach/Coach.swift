@@ -236,7 +236,8 @@ enum CoachPrompt {
 
     /// Written before the call, so it's ready the instant a voicemail greeting starts.
     static func voicemail(calling: String?, details: String?, earlierTexts: [String] = [], earlierMessages: [String] = [],
-                          history: String = "") -> String {
+                          history: String = "", localLunch: Bool = false) -> String {
+        let local = localLunch ? LocalLunch.promptNote : ""
         let past = history.isEmpty ? "" : """
         What the rep has already done with this person:
         \(history)
@@ -257,7 +258,7 @@ enum CoachPrompt {
 
         """
         return """
-        \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)If this call goes to voicemail, what should the rep say after the beep?
+        \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)\(local)If this call goes to voicemail, what should the rep say after the beep?
         One voice for everything you write here. The voicemail, TEXT, LINKEDIN and LINKEDIN MESSAGE all come from
         the campaign above: its opening, its angle, its offer, its tone, and any voicemail, text or LinkedIn wording
         it gives. Follow the campaign over the defaults below whenever they differ.
@@ -2207,7 +2208,8 @@ final class CoachModel: ObservableObject {
             ask(.voicemail, user: CoachPrompt.voicemail(calling: calling, details: recordDetails,
                                                          earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
                                                          earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [],
-                                                         history: recordKey().map(DialHistory.historySummary) ?? ""))
+                                                         history: recordKey().map(DialHistory.historySummary) ?? "",
+                                                         localLunch: isLocalLead))
         }
     }
 
@@ -2437,7 +2439,8 @@ final class CoachModel: ObservableObject {
         let user = CoachPrompt.voicemail(calling: calling, details: recordDetails,
                                          earlierTexts: recordKey().map(DialHistory.sentTexts) ?? [],
                                          earlierMessages: recordKey().map(DialHistory.sentLinkedInMessages) ?? [],
-                                         history: recordKey().map(DialHistory.historySummary) ?? "")
+                                         history: recordKey().map(DialHistory.historySummary) ?? "",
+                                         localLunch: isLocalLead)
         voicemailTask = Task { [weak self] in
             var text = ""
             do {
@@ -2755,6 +2758,25 @@ final class CoachModel: ObservableObject {
         let text = found.texts.first
         if let n = found.linkedinNote ?? found.linkedinMessage ?? text { s.linkedin = fillTags(n, for: calling) }
         if let m = found.linkedinMessage ?? found.linkedinNote ?? text { s.linkedinMessage = fillTags(m, for: calling) }
+        // Portland and SW Washington: the lunch invite beats the script's notes. Later texts are Claude's,
+        // written as lighter nudges about the same lunch.
+        if isLocalLead {
+            let first = Screener.firstName(calling) ?? "there"
+            let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+            s.linkedin = LocalLunch.linkedinNote(first: first)
+            s.linkedinMessage = LocalLunch.linkedinMessage(first: first)
+            if sent == 0 { s.textMessage = LocalLunch.text(first: first, rep: rep.isEmpty ? "[your name]" : rep, company: shortCompany) }
+        }
+    }
+
+    /// In Portland or SW Washington: from the lead's city and state, else the Salesforce page text,
+    /// else a 503 or 971 phone number.
+    private var isLocalLead: Bool {
+        if leads.isActive, let d = leads.details {
+            return LocalLunch.isLocal(city: d.city, state: d.state, phones: [d.mobile, d.phone])
+        }
+        return LocalLunch.isLocal(pageText: recordDetails)
+            || LocalLunch.isLocal(city: nil, state: nil, phones: [followUp?.phone, Aircall.phone(in: recordDetails)])
     }
 
     /// The campaign script's voicemail, word for word with the blanks filled, in place of a written one.
