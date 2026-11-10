@@ -32,7 +32,8 @@ enum Screener {
               let open = calling.firstIndex(of: "\""),
               let name = calling[calling.index(after: open)...].split(separator: " ").first else { return nil }
         let first = name.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        return first.isEmpty ? nil : first
+        // "Unknown" is a placeholder, not a name: callers fall back to "there".
+        return first.isEmpty || Salesforce.isPlaceholderName(first) ? nil : first
     }
 }
 

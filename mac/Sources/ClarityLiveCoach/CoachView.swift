@@ -737,7 +737,10 @@ struct CoachView: View {
     private var currentName: String {
         guard let calling = coach.calling, let open = calling.firstIndex(of: "\""), let close = calling.lastIndex(of: "\""),
               open < close else { return "them" }
-        return String(calling[calling.index(after: open)..<close])
+        let name = String(calling[calling.index(after: open)..<close])
+        // "Unknown Unknown" is a placeholder: show the company from the open page instead.
+        if Salesforce.isPlaceholderName(name), let company = coach.recordCompany, !company.isEmpty { return company }
+        return name
     }
 
     private var backEnabled: Bool {

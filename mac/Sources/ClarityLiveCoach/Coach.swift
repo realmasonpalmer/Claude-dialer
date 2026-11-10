@@ -1181,6 +1181,7 @@ final class CoachModel: ObservableObject {
             self.detailsTried = true
             // Fill in the card's phone and LinkedIn link now that the page is loaded.
             if var f = self.followUp, f.key == self.recordKey() {
+                if Salesforce.isPlaceholderName(f.prospect ?? ""), let company = self.recordCompany, !company.isEmpty { f.prospect = company }
                 if f.phone.isEmpty { f.phone = Aircall.phone(in: self.recordDetails) ?? SalesforceChrome.mobileNumber() ?? "" }
                 if f.linkedinURL == nil { f.linkedinURL = Self.linkedInProfile(details: self.recordDetails) }
                 self.followUp = f
@@ -2352,7 +2353,7 @@ final class CoachModel: ObservableObject {
     }
 
     /// The company line from the Salesforce page, if it shows one (helps LinkedIn find the right person).
-    private var recordCompany: String? {
+    var recordCompany: String? {
         guard let lines = recordDetails?.components(separatedBy: "\n") else { return nil }
         for (i, line) in lines.enumerated() where ["Company", "Account Name"].contains(line.trimmingCharacters(in: .whitespaces)) {
             if i + 1 < lines.count { return lines[i + 1].trimmingCharacters(in: .whitespaces) }
