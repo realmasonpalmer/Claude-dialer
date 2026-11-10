@@ -29,6 +29,9 @@ struct Campaign: Codable, Identifiable, Equatable {
     var active = false
     /// People on the Salesforce list, last time it was counted.
     var listSize = 0
+    /// Open with the script's own first line instead of the rotating proven openers
+    /// (for scripts like the lunch invite, where a pitch opener doesn't fit).
+    var ownOpener = false
 
     init(id: UUID = UUID(), name: String = "New segment", objective: String = "", pastedScript: String = "",
          company: String = "", offer: String = "", idealCustomer: String = "", persona: String = "",
@@ -56,6 +59,7 @@ struct Campaign: Codable, Identifiable, Equatable {
         listObject = text(.listObject); listViewID = text(.listViewID); listName = text(.listName)
         active = (try? c.decodeIfPresent(Bool.self, forKey: .active)) ?? false
         listSize = (try? c.decodeIfPresent(Int.self, forKey: .listSize)) ?? 0
+        ownOpener = (try? c.decodeIfPresent(Bool.self, forKey: .ownOpener)) ?? false
     }
 
     /// The sections, in the order the editor and the prompt show them.

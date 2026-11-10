@@ -49,6 +49,8 @@ struct CampaignEditorView: View {
             field("Segment name", text: $draft.name, placeholder: "e.g. Q4 RevOps outreach")
             field("Goal of these calls", text: $draft.objective,
                   placeholder: "e.g. Book a 30 minute meeting, or transfer to Mason")
+            Toggle("Open with this script's own first line", isOn: $draft.ownOpener)
+                .help("Off: the app rotates your proven openers. On: it uses the opener in this script.")
             listPicker
         }
     }

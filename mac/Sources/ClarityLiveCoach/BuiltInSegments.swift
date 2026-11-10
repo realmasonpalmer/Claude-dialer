@@ -16,6 +16,7 @@ enum BuiltInSegments {
             company: "Clarity Consulting. Lunch host: Oliver Sholder, managing partner."
         )
         c.persona = "Portland CEOs, founders, owners and company presidents, any industry."
+        c.ownOpener = true // opens with the lunch invite, not a pitch
         return c
     }
 

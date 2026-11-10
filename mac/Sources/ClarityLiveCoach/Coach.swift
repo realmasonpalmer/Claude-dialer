@@ -219,7 +219,8 @@ final class CoachModel: ObservableObject {
     var codeByDate: [Date: String] = [:]
     @Published var nextOffer: [Date] = []
 
-    var openerStyle: Opener? { openers.current } // proven openers always rotate
+    /// Proven openers rotate, unless this segment opens with its script's own first line.
+    var openerStyle: Opener? { campaign.ownOpener ? nil : openers.current }
     /// The opener's tag on the card: "Peer name drop · 31%" (how often people kept talking after it,
     /// once it has 3 or more answered calls).
     var openerName: String? {
