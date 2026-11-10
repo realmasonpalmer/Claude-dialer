@@ -219,7 +219,7 @@ final class CoachModel: ObservableObject {
     var codeByDate: [Date: String] = [:]
     @Published var nextOffer: [Date] = []
 
-    var openerStyle: Opener? { openers.rotate ? openers.current : nil }
+    var openerStyle: Opener? { openers.current } // proven openers always rotate
     /// The opener's tag on the card: "Peer name drop · 31%" (how often people kept talking after it,
     /// once it has 3 or more answered calls).
     var openerName: String? {

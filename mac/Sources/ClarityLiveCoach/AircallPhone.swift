@@ -12,8 +12,8 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
 
     /// On by default. Off = use the Aircall desktop app or the Aircall panel in Chrome instead.
     nonisolated static var isOn: Bool {
-        get { UserDefaults.standard.object(forKey: PrefKey.appPhone) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: PrefKey.appPhone) }
+        get { true } // always: the Aircall phone lives inside the coach
+        set { _ = newValue }
     }
 
     /// The phone is shown big (to sign in) or tucked away (while calling).

@@ -8,7 +8,7 @@ struct RootView: View {
     @EnvironmentObject var proof: ProofModel
     @EnvironmentObject var coach: CoachModel
     @AppStorage(PrefKey.audioCheckPassed) private var audioCheckPassed = false
-    @AppStorage(PrefKey.appPhone) private var appPhone = true
+    private let appPhone = true // always: the Aircall phone is inside the coach
     @ObservedObject private var phone = AircallPhone.shared
     @State private var screen: Screen?
 
@@ -165,10 +165,10 @@ struct CoachView: View {
     @AppStorage(PrefKey.tourSeen) private var tourSeen = false
     @StateObject private var updater = Updater()
     @AppStorage(PrefKey.repName) private var repName = ""
-    @AppStorage(PrefKey.showTouchpoints) private var showTouchpoints = true
+    private let showTouchpoints = true // always on
     @AppStorage(PrefKey.nextDials) private var nextDials = true
     @State private var listViewCache: [Salesforce.ListView] = []
-    @AppStorage(PrefKey.appPhone) private var appPhone = true
+    private let appPhone = true // always: the Aircall phone is inside the coach
 
     // One visual system: blue = actions, green = listening, amber = real warnings.
     private let margin: CGFloat = 16
@@ -427,6 +427,7 @@ struct CoachView: View {
                     }
                     Divider()
                     Button("Reload list") { Task { await coach.leads.reload() } }
+                    Button("Use the list open in Chrome instead") { coach.leads.close() }
                 } label: {
                     Text(coach.leads.selected?.label ?? "Pick a list").font(.caption.weight(.semibold))
                 }
@@ -631,13 +632,19 @@ struct CoachView: View {
     @ViewBuilder private var navigation: some View {
         if coach.status != .ready {
             // During a call: no stage buttons, just a way out if the app ever misses the hang-up.
-            Button(role: .destructive) {
-                coach.endCall()
-            } label: {
-                Label("End call", systemImage: "phone.down.fill").frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                Button(role: .destructive) {
+                    coach.endCall()
+                } label: {
+                    Label("End call", systemImage: "phone.down.fill").frame(maxWidth: .infinity)
+                }
+                .help("The call is over but the app didn't notice? Click here. (Command-E)")
+                if coach.status == .live {
+                    Button("Voicemail") { coach.markVoicemail() }
+                        .help("It's a voicemail and the app missed it: show the voicemail now")
+                }
             }
             .controlSize(.large)
-            .help("The call is over but the app didn't notice? Click here. (Command-E)")
         } else if coach.leads.isActive {
             leadNavigation
         } else {

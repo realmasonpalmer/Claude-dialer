@@ -63,9 +63,9 @@ enum Prefs {
         set { d.set(newValue, forKey: PrefKey.doubleTap) }
     }
     /// Show a line once it's whole, not word by word.
-    static var wholeLine: Bool { d.object(forKey: PrefKey.wholeLine) as? Bool ?? true }
+    static var wholeLine: Bool { true } // always: no switch
     /// Old phone tree behavior: disqualify and hang up.
     static var hangUpPhoneTrees: Bool { d.bool(forKey: PrefKey.hangUpPhoneTrees) }
     /// Use the Mac's built-in mic for the rep's side.
-    static var builtInMic: Bool { d.object(forKey: PrefKey.coachBuiltInMic) as? Bool ?? true }
+    static var builtInMic: Bool { true } // always: no switch
 }
