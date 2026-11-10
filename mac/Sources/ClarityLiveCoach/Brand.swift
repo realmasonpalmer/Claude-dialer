@@ -52,10 +52,10 @@ extension View {
 /// front (the Mac's own blue buttons turn gray then, and the coach floats over Salesforce).
 struct BrandPrimaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        Look(configuration: configuration)
     }
 
-    private struct Body: View {
+    private struct Look: View {
         let configuration: Configuration
         @Environment(\.isEnabled) private var enabled
 
@@ -76,10 +76,10 @@ struct BrandPrimaryButton: ButtonStyle {
 /// label and a clear outline.
 struct BrandQuietButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        Look(configuration: configuration)
     }
 
-    private struct Body: View {
+    private struct Look: View {
         let configuration: Configuration
         @Environment(\.isEnabled) private var enabled
 
