@@ -285,6 +285,7 @@ extension CoachModel {
         availability.refresh() // fresh free times for this call
         callOpener = kind == .opener ? openerStyle : nil
         goalHit = false
+        meetingThisWeek = nil
         sawVoicemail = false
         stagesSeen = []
         callStartedAt = Date()

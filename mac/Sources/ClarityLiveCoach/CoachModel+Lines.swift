@@ -294,7 +294,11 @@ extension CoachModel {
             nextOffer = pickNextPair(from: availability.offerSlots())
         }
         if s.stage == "Closing" { availability.refreshIfOlder() } // fresh times while booking
-        if s.stage == "Goal reached" { goalHit = true }
+        if s.stage == "Goal reached", !goalHit {
+            goalHit = true
+            meetingThisWeek = touchpoints.meetingsThisWeek() + 1 // logged when the call ends
+            meetingMoments += 1
+        }
         if s.stage == "Voicemail" { sawVoicemail = true }
     }
 

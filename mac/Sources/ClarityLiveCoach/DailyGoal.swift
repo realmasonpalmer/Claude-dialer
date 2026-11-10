@@ -25,7 +25,15 @@ struct DailyGoalCard: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                        Text("This hour: \(done) of \(Self.perHour)").font(.callout.weight(.semibold))
+                        // The count rolls up like a clock digit each time it changes.
+                        HStack(spacing: 0) {
+                            Text("This hour: ")
+                            Text("\(done)")
+                                .contentTransition(.numericText(value: Double(done)))
+                                .animation(.snappy, value: done)
+                            Text(" of \(Self.perHour)")
+                        }
+                        .font(.callout.weight(.semibold).monospacedDigit())
                         Spacer()
                         Text(String(format: "%d:%02d left", left / 60, left % 60))
                             .font(.callout.weight(.semibold).monospacedDigit())
@@ -34,8 +42,28 @@ struct DailyGoalCard: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                let hours = touchpoints.contactsByHourToday()
+                let closed = hours.filter { $0 >= Self.perHour }.count
                 ProgressView(value: Double(min(done, Self.perHour)), total: Double(Self.perHour))
                     .tint(hit ? .green : .accentColor)
+                    .animation(.easeOut(duration: 0.4), value: done)
+                    // One soft pulse when the hour's goal is hit.
+                    .keyframeAnimator(initialValue: 1.0, trigger: closed) { content, scale in
+                        content.scaleEffect(x: 1, y: scale)
+                    } keyframes: { _ in
+                        SpringKeyframe(2.2, duration: 0.18)
+                        SpringKeyframe(1.0, duration: 0.5)
+                    }
+                // One ring per hour today, closing at the goal. And how today compares with last time.
+                HStack(spacing: 5) {
+                    ForEach(Array(hours.enumerated()), id: \.offset) { _, count in
+                        HourRing(progress: Double(count) / Double(Self.perHour))
+                    }
+                    Spacer(minLength: 8)
+                    if let line = beatLine {
+                        Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
                 if open {
                 Text(hit ? "Goal hit for this hour" : "\(Self.perHour - done) to go")
                     .font(.caption.weight(.semibold))
@@ -60,6 +88,13 @@ struct DailyGoalCard: View {
         }
     }
 
+    /// "4 more to beat yesterday", then "Ahead of yesterday" once passed.
+    private var beatLine: String? {
+        guard let last = touchpoints.lastDay(), last.total > 0 else { return nil }
+        let today = touchpoints.totalAll(in: .today)
+        return today > last.total ? "Ahead of \(last.name)" : "\(last.total - today + 1) more to beat \(last.name)"
+    }
+
     /// For each active campaign: people still due today, and the contacts their plan step still needs.
     private func refresh() async {
         guard Salesforce.isConnected else { return }
@@ -80,5 +115,24 @@ struct DailyGoalCard: View {
             result[c.id] = (people: people, touches: touches)
         }
         due = result
+    }
+}
+
+/// A small ring that fills as the hour's contacts add up, and turns green when it closes.
+struct HourRing: View {
+    let progress: Double
+
+    var body: some View {
+        let done = progress >= 1
+        ZStack {
+            Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: min(progress, 1))
+                .stroke(done ? Color.green : Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.easeOut(duration: 0.4), value: progress)
+        }
+        .frame(width: 10, height: 10)
+        .help(done ? "Goal hit this hour" : "\(Int(progress * 100))% of the hour's goal")
     }
 }

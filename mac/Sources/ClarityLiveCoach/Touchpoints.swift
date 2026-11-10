@@ -71,6 +71,38 @@ final class Touchpoints: ObservableObject {
         return events.filter { contacts.contains($0.kind) && $0.at >= start }.count
     }
 
+    private static let contactKinds: Set<Kind> = [.dial, .text, .linkedin, .linkedinMessage]
+
+    /// Contacts in each clock hour today, from the first busy hour (or now) to this hour. At most 12.
+    func contactsByHourToday() -> [Int] {
+        let cal = Calendar.current
+        let now = Date()
+        let today = events.filter { Self.contactKinds.contains($0.kind) && cal.isDateInToday($0.at) }
+        let thisHour = cal.component(.hour, from: now)
+        let firstHour = today.map { cal.component(.hour, from: $0.at) }.min() ?? thisHour
+        var counts = Array(repeating: 0, count: thisHour - firstHour + 1)
+        for e in today { counts[cal.component(.hour, from: e.at) - firstHour] += 1 }
+        return Array(counts.suffix(12))
+    }
+
+    /// The last day before today with any contacts: its name ("yesterday", "Friday") and its total.
+    func lastDay() -> (name: String, total: Int)? {
+        let cal = Calendar.current
+        let startToday = cal.startOfDay(for: Date())
+        guard let last = events.last(where: { Self.contactKinds.contains($0.kind) && $0.at < startToday }) else { return nil }
+        let day = cal.startOfDay(for: last.at)
+        let total = events.filter { Self.contactKinds.contains($0.kind) && $0.at >= day && $0.at < startToday
+                                    && cal.isDate($0.at, inSameDayAs: day) }.count
+        let name = cal.isDateInYesterday(day) ? "yesterday" : day.formatted(.dateTime.weekday(.wide))
+        return (name, total)
+    }
+
+    /// Meetings booked this week, all campaigns.
+    func meetingsThisWeek() -> Int {
+        let start = Self.start(of: .week)
+        return events.filter { $0.kind == .meeting && $0.at >= start }.count
+    }
+
     func count(_ kind: Kind, in period: Period) -> Int {
         let start = Self.start(of: period)
         return events.filter { $0.kind == kind && $0.at >= start && (showCampaign == nil || $0.campaign == showCampaign) }.count

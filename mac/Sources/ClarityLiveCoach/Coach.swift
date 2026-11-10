@@ -197,6 +197,10 @@ final class CoachModel: ObservableObject {
     let openers = OpenerBook()
     var callOpener: Opener?   // the opener used on this call
     var goalHit = false
+    /// Set the moment a meeting is booked on this call: "Meeting 3 this week". Cleared on the next call.
+    @Published var meetingThisWeek: Int?
+    /// Goes up once per meeting booked, so the card glows exactly once.
+    @Published var meetingMoments = 0
     var sawVoicemail = false
     var stagesSeen: Set<String> = []
     var screenerActive = false       // a screener is talking; wait for the real person
@@ -216,8 +220,14 @@ final class CoachModel: ObservableObject {
     @Published var nextOffer: [Date] = []
 
     var openerStyle: Opener? { openers.rotate ? openers.current : nil }
-    /// The opener's name for the tag on the card ("Peer name drop"), when rotating openers.
-    var openerName: String? { openerStyle?.name }
+    /// The opener's tag on the card: "Peer name drop · 31%" (how often people kept talking after it,
+    /// once it has 3 or more answered calls).
+    var openerName: String? {
+        guard let o = openerStyle else { return nil }
+        let s = openers.scores[o.id] ?? OpenerScore()
+        guard s.calls >= OpenerBook.warmUp else { return o.name }
+        return "\(o.name) · \(Int((Double(s.kept) / Double(s.calls) * 100).rounded()))%"
+    }
 
     @Published private(set) var campaign = Campaign.clarityDiscovery
     var system = CoachPrompt.system(for: .clarityDiscovery)

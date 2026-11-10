@@ -493,10 +493,17 @@ struct CoachView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(lineIsSoft ? Color.secondary : Color.primary)
                 .opacity(coach.historyIndex == nil ? 1 : 0.6)
+            if let n = coach.meetingThisWeek, coach.status == .live {
+                Text("Meeting \(n) this week")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.green)
+                    .transition(.opacity)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(MeetingGlow(trigger: coach.meetingMoments))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
     }
 
@@ -1305,5 +1312,23 @@ struct TranscriptSection: View {
             Text(speaker == .rep ? "You" : "Them").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             Text(text).font(.callout)
         }
+    }
+}
+
+/// One soft green glow around the card when a meeting is booked. Fades in, holds, fades out.
+struct MeetingGlow: View {
+    let trigger: Int
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .strokeBorder(Color.green, lineWidth: 2)
+            .keyframeAnimator(initialValue: 0.0, trigger: trigger) { content, glow in
+                content.opacity(glow).shadow(color: Color.green.opacity(glow * 0.5), radius: 8 * glow)
+            } keyframes: { _ in
+                CubicKeyframe(1.0, duration: 0.35)
+                CubicKeyframe(1.0, duration: 0.8)
+                CubicKeyframe(0.0, duration: 1.4)
+            }
+            .allowsHitTesting(false)
     }
 }
