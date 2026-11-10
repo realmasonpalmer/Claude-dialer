@@ -1136,6 +1136,8 @@ final class CoachModel: ObservableObject {
     /// Points the coach at the record open in Chrome right now: name, opener, voicemail,
     /// follow-ups and status all for that one person. Called every second between calls,
     /// and always right before dialing, so nothing from the last person carries over.
+    private var lastSyncedKey: String?
+
     private func syncRecord() {
         guard !leads.isActive else { return }
         // Just opened someone: ignore the old page until theirs shows, so nothing flips back.
@@ -1152,7 +1154,10 @@ final class CoachModel: ObservableObject {
         // Nothing on screen (LinkedIn opened, a list page): keep everything for the last person,
         // so the status, LinkedIn and text cards stay up. Only a different person switches them.
         guard record != nil else { return }
-        guard record != calling || detailsPending else { return }
+        // Two leads can share a name ("Unknown Unknown"): a different Salesforce record ID is a new person too.
+        let pageKey = recordKey()
+        guard record != calling || detailsPending || pageKey != lastSyncedKey else { return }
+        lastSyncedKey = pageKey
         if record != calling {
             ActivityLog.add("Record on screen: \(record ?? "none") (was \(calling ?? "none"))")
             callMessage = nil // a new person: the last person's message no longer applies
