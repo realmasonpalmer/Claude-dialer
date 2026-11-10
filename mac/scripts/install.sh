@@ -14,6 +14,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$WORK/release/ClarityLiveCoach" "$APP/Contents/MacOS/ClarityLiveCoach"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Sign with this Mac's own certificate, so macOS remembers permissions across updates.
 # Made once by setup-signing.sh; if that can't run, fall back to a temporary signature.
 CERT="Clarity Live Coach Signing"

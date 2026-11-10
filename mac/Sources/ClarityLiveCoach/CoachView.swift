@@ -13,6 +13,8 @@ struct RootView: View {
     @State private var screen: Screen?
 
     var body: some View {
+        VStack(spacing: 0) {
+        BrandHeader()
         Group {
             switch screen ?? firstScreen {
             case .check:
@@ -35,6 +37,8 @@ struct RootView: View {
                 )
             }
         }
+        }
+        .tint(Brand.blue)
         // Wider, not taller, when the Aircall phone is open on the right.
         .frame(width: showPhone ? 380 + AircallPhoneSide.width : 380)
         // Never taller than the screen, counting the title bar.
@@ -64,7 +68,7 @@ struct KeysView: View {
         VStack(spacing: 18) {
             Image(systemName: "key.horizontal")
                 .font(.system(size: 40))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Brand.blue)
             VStack(spacing: 6) {
                 Text("Connect the coach").font(.title2.weight(.semibold))
                 Text("Paste two keys, one time. They're stored safely in your Mac's Keychain.")
@@ -458,7 +462,7 @@ struct CoachView: View {
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                     .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.25), in: Capsule())
+                    .background(Brand.blue.opacity(0.25), in: Capsule())
             }
             HStack {
                 Text(cardLabel)
@@ -616,7 +620,7 @@ struct CoachView: View {
                 .controlSize(.large)
         }
         .padding(10)
-        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .background(Brand.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: Navigation: always here, always the same two buttons
@@ -828,7 +832,7 @@ struct CoachView: View {
                 Button("Skip text") { coach.startNextSequence() }
             }
             .padding(10)
-            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .background(Brand.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
         } else if let hint = nextHint, !coach.leads.isActive {
             Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
@@ -958,7 +962,7 @@ struct ScoreboardView: View {
                     GridRow {
                         HStack(spacing: 6) {
                             if row.opener.id == leaderID { Text("🏆") }
-                            if row.opener.id == book.current.id { Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color.accentColor) }
+                            if row.opener.id == book.current.id { Image(systemName: "arrow.right.circle.fill").foregroundStyle(Brand.blue) }
                             Text(row.opener.name)
                         }
                         Text("\(row.score.calls)").monospacedDigit()
@@ -1213,7 +1217,7 @@ struct RelationshipCard: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: current == value ? "largecircle.fill.circle" : "circle")
-                                .foregroundStyle(current == value ? Color.accentColor : .secondary)
+                                .foregroundStyle(current == value ? Brand.blue : .secondary)
                             Text(value).font(.callout).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         }
                         .contentShape(Rectangle())

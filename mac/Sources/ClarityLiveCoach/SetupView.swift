@@ -186,7 +186,7 @@ struct SetupView: View {
                         Spacer(minLength: 8)
                         Button(step.done ? "Change" : "Set up", action: step.action)
                             .buttonStyle(.bordered)
-                            .tint(step.done ? nil : .accentColor)
+                            .tint(step.done ? nil : Brand.blue)
                     }
                     if let guide = Self.guides[step.id] {
                         DisclosureGroup("How to set this up") {

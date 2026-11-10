@@ -26,7 +26,7 @@ struct DailyGoalCard: View {
                         .foregroundStyle(hit ? Color.green : left < 600 ? Color.orange : Color.primary)
                 }
                 ProgressView(value: Double(min(done, Self.perHour)), total: Double(Self.perHour))
-                    .tint(hit ? .green : .accentColor)
+                    .tint(hit ? .green : Brand.blue)
                 Text(hit ? "Goal hit for this hour" : "\(Self.perHour - done) to go")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(hit ? Color.green : Color.secondary)

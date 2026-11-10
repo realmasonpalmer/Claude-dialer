@@ -54,7 +54,7 @@ struct ScriptOutlineCard: View {
                 ForEach(parts) { part in
                     let here = part.id == currentID
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(part.title.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(here ? Color.accentColor : .secondary)
+                        Text(part.title.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(here ? Brand.blue : .secondary)
                         Text(part.text.trimmed)
                             .font(.callout.weight(here ? .bold : .regular))
                             .foregroundStyle(here ? .primary : .secondary)
@@ -62,7 +62,7 @@ struct ScriptOutlineCard: View {
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(here ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                    .background(here ? Brand.blue.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 }
                 if parts.isEmpty {
                     Text("No script written for this campaign yet.").font(.caption).foregroundStyle(.secondary)
