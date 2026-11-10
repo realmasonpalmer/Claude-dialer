@@ -10,37 +10,29 @@ struct Opener: Identifiable, Equatable {
     /// Where the evidence comes from, in plain words.
     let evidence: String
 
-    /// Openers with the best published evidence (Gong Labs call studies).
-    /// "Did I catch you at a bad time?" is deliberately absent: it tested worst.
-    /// "Have you heard our name tossed around?" was removed at the rep's request.
+    /// The rep's best openers, best first. New callers start at the top and go down the list;
+    /// after a few tries each, the ones that work best on your calls come up more often.
     static let all: [Opener] = [
         Opener(
-            id: "permission",
-            name: "Permission",
-            template: "Hi [first name], this is [rep] from [company]. I know I'm calling out of the blue. Mind if I take 30 seconds to tell you why, and you tell me if it's worth talking?",
+            id: "peer-name-drop",
+            name: "Peer name drop",
+            template: "Hey [first name], we work with a few [industry] teams on Claude and AI. It's [rep] from Clarity Consulting. Have you heard our name tossed around?",
+            followUp: "If no: \"No worries, that's why I'm calling\" plus a one-line problem their peers have, then a question. If yes: \"Nice, what have you heard?\"",
+            evidence: "Your #1 opener. Name-drop openers topped Gong's study of 300M+ cold calls."
+        ),
+        Opener(
+            id: "ask-30-seconds",
+            name: "Ask for 30 seconds",
+            template: "Hi [first name], this is [rep] at Clarity Consulting. I know you weren't expecting my call. Can I get 30 seconds to tell you why I called?",
             followUp: "Give the reason in one line built on a peer problem, then ask if it's true for them.",
-            evidence: "Nearly tied for first in Gong's 300M-call study. Being upfront keeps people listening."
+            evidence: "Your #2 opener. Being upfront keeps people listening (Gong)."
         ),
         Opener(
-            id: "how-been",
-            name: "How have you been",
-            template: "Hey [first name], it's [rep] with [company]. How have you been?",
-            followUp: "After their answer, be honest: \"Truth is, we haven't spoken before. This is a cold call. Can I tell you why I called?\"",
-            evidence: "6.6x the average success rate in Gong's study of 90,000 cold calls."
-        ),
-        Opener(
-            id: "reason-first",
-            name: "Reason first",
-            template: "Hi [first name], [rep] from [company]. The reason I'm calling is [a problem their peers have]. Is that on your radar?",
+            id: "problem-question",
+            name: "Problem question",
+            template: "Hey [first name], [rep] with Clarity Consulting. Quick reason for my call: we talk to sales leaders whose reps spend too much time updating notes, creating deliverables and following up with people, all that manual busy work. Is that you guys, or am I off base?",
             followUp: "Dig into their answer with one follow-up question before saying anything about the offer.",
-            evidence: "Saying why you're calling right away doubled success (2.1x) in Gong's research."
-        ),
-        Opener(
-            id: "hang-up",
-            name: "Wildcard: hang up or 30 seconds",
-            template: "Hi [first name], [rep] from [company]. I'll be honest, this is a cold call. Want to hang up now, or give me 30 seconds?",
-            followUp: "They usually laugh and say go ahead. Give the reason in one line, then ask a question.",
-            evidence: "A fun pattern interrupt. The data is thinner, so your own calls will settle it."
+            evidence: "Your #3 opener. Saying why you're calling right away doubled success (2.1x) in Gong's research."
         ),
     ]
 }
@@ -83,7 +75,7 @@ final class OpenerBook: ObservableObject {
     private let defaults = UserDefaults.standard
 
     init() {
-        index = defaults.integer(forKey: "openerIndex") % Opener.all.count
+        index = defaults.integer(forKey: "openerIndexV2") % Opener.all.count
         rotate = defaults.object(forKey: "rotateOpeners") as? Bool ?? true
         if let data = defaults.data(forKey: "openerScores"),
            let saved = try? JSONDecoder().decode([String: OpenerScore].self, from: data) {
@@ -131,7 +123,7 @@ final class OpenerBook: ObservableObject {
     }
 
     private func save() {
-        defaults.set(index, forKey: "openerIndex")
+        defaults.set(index, forKey: "openerIndexV2")
         if let data = try? JSONEncoder().encode(scores) { defaults.set(data, forKey: "openerScores") }
     }
 }

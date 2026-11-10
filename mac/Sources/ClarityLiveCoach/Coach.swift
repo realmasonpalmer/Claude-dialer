@@ -189,7 +189,7 @@ enum CoachPrompt {
         return """
         \(about(calling, details))The call has not connected yet. Write the opener using this proven structure. \
         Keep its wording and shape; only fill in the brackets. [company] is the rep's company from the campaign. \
-        If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
+        [industry] is their industry from the Salesforce facts (like "accounting" or "insurance"); if unknown, drop it ("a few teams"). If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
         Opener: \(style.template)
         Put the opener's name in the CUE: "\(style.name) opener".
         """
@@ -2624,6 +2624,7 @@ final class CoachModel: ObservableObject {
         t = t.replacingOccurrences(of: "[first name]", with: Screener.firstName(calling) ?? "there")
             .replacingOccurrences(of: "[rep]", with: rep.isEmpty ? "[your name]" : rep)
             .replacingOccurrences(of: "[company]", with: shortCompany)
+            .replacingOccurrences(of: " [industry] teams", with: " teams") // Claude's version names their industry
         return Suggestion(say: t, cue: openerStyle?.name ?? "Opener", stage: "Opener", sayComplete: true)
     }
 
