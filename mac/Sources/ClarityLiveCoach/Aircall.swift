@@ -300,11 +300,9 @@ struct AircallSetupView: View {
         do {
             numbers = try await Aircall.numbers()
             users = (try? await Aircall.users()) ?? []
-            if !numbers.contains(where: { $0.id == selected }), let first = numbers.first {
-                selected = first.id
-                UserDefaults.standard.set(first.id, forKey: "aircallNumberID")
-            }
-            status = numbers.isEmpty ? "Connected, but no numbers found." : "Connected. Pick the number that sends texts."
+            // Never silently pick the first number (that was someone else's line). The rep chooses.
+            if !numbers.contains(where: { $0.id == selected }) { selected = 0 }
+            status = numbers.isEmpty ? "Connected, but no numbers found." : "Connected. Pick the number that calls and texts."
         } catch {
             status = error.localizedDescription
         }

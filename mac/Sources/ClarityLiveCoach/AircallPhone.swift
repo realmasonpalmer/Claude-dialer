@@ -285,6 +285,8 @@ struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
     @AppStorage("nextDials") private var autoDial = true
     @AppStorage("doubleTap") private var doubleTap = true
+    @AppStorage("aircallNumberID") private var numberID = 0
+    @State private var numbers: [Aircall.Number] = []
 
     var body: some View {
         HStack(spacing: 8) {
@@ -296,12 +298,23 @@ struct AircallPhonePanel: View {
             Toggle("Double tap", isOn: $doubleTap)
                 .toggleStyle(.checkbox)
                 .help("On: if they don't pick up, the app calls them a 2nd time. Off: one call per lead, then the next person.")
+            if !numbers.isEmpty {
+                // The app dials through Aircall's system, so it needs to be told which line to use.
+                Picker("From", selection: $numberID) {
+                    if !numbers.contains(where: { $0.id == numberID }) { Text("Pick number").tag(0) }
+                    ForEach(numbers) { Text($0.name).tag($0.id) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Calls and texts go out from this Aircall number")
+            }
             Spacer(minLength: 0)
             if phone.shown {
                 Button("Reload") { phone.reload() }
             }
             Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }
         }
+        .task { numbers = (try? await Aircall.numbers()) ?? [] }
     }
 }
 
