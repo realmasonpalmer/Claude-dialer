@@ -289,30 +289,38 @@ struct AircallPhonePanel: View {
     @State private var numbers: [Aircall.Number] = []
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "phone.circle")
-            Text("Aircall phone").font(.callout.weight(.semibold))
-            Toggle("Auto-dial", isOn: $autoDial)
-                .toggleStyle(.checkbox)
-                .help("On: after you send the text, the next person loads and is called after a 5 second countdown.")
-            Toggle("Double tap", isOn: $doubleTap)
-                .toggleStyle(.checkbox)
-                .help("On: if they don't pick up, the app calls them a 2nd time. Off: one call per lead, then the next person.")
-            if !numbers.isEmpty {
-                // The app dials through Aircall's system, so it needs to be told which line to use.
-                Picker("From", selection: $numberID) {
-                    if !numbers.contains(where: { $0.id == numberID }) { Text("Pick number").tag(0) }
-                    ForEach(numbers) { Text($0.name).tag($0.id) }
+        // Two rows, so nothing gets squeezed on a narrow window. Labels and buttons never shrink.
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "phone.circle")
+                Text("Aircall phone").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
+                Spacer(minLength: 8)
+                if phone.shown {
+                    Button("Reload") { phone.reload() }.fixedSize()
                 }
-                .labelsHidden()
-                .fixedSize()
-                .help("Calls and texts go out from this Aircall number")
+                Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }.fixedSize()
             }
-            Spacer(minLength: 0)
-            if phone.shown {
-                Button("Reload") { phone.reload() }
+            HStack(spacing: 12) {
+                Toggle("Auto-dial", isOn: $autoDial)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+                    .help("On: after you send the text, the next person loads and is called after a 5 second countdown.")
+                Toggle("Double tap", isOn: $doubleTap)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+                    .help("On: if they don't pick up, the app calls them a 2nd time. Off: one call per lead, then the next person.")
+                Spacer(minLength: 8)
+                if !numbers.isEmpty {
+                    // The app dials through Aircall's system, so it needs to be told which line to use.
+                    Picker("From", selection: $numberID) {
+                        if !numbers.contains(where: { $0.id == numberID }) { Text("Pick number").tag(0) }
+                        ForEach(numbers) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 200)
+                    .help("Calls and texts go out from this Aircall number")
+                }
             }
-            Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }
         }
         .task { numbers = (try? await Aircall.numbers()) ?? [] }
     }
