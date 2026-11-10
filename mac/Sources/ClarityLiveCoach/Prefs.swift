@@ -3,6 +3,7 @@ import Foundation
 /// Every saved setting's name in one place, so a typo can't quietly break a setting.
 /// The stored names never change (changing one would lose the rep's saved value).
 enum PrefKey {
+    static let tourSeen = "tourSeen"
     static let goalCardOpen = "goalCardOpen"
     static let statusCardOpen = "statusCardOpen"
     static let aircallNumberID = "aircallNumberID"

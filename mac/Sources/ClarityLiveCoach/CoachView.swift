@@ -160,6 +160,9 @@ struct CoachView: View {
     @State private var showAircall = false
     @State private var showSetup = false
     @State private var showSettings = false
+    /// The first-run tour: 0 = welcome card, 1...n = steps, nil = hidden.
+    @State private var tourStep: Int?
+    @AppStorage(PrefKey.tourSeen) private var tourSeen = false
     @StateObject private var updater = Updater()
     @AppStorage(PrefKey.repName) private var repName = ""
     @AppStorage(PrefKey.showTouchpoints) private var showTouchpoints = true
@@ -177,6 +180,9 @@ struct CoachView: View {
         HStack(alignment: .top, spacing: 0) {
             // Exactly the screen's height (minus the title bar): the middle scrolls, nothing gets cut off.
             coachColumn.frame(width: 380, height: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
+                .overlayPreferenceValue(TourSpotKey.self) { spots in
+                    TourOverlay(step: $tourStep, spots: spots) { tourSeen = true }
+                }
             // The Aircall phone sits to the right. Hidden = 1 point wide, but still running.
             if appPhone { AircallPhoneSide() }
         }
@@ -193,7 +199,7 @@ struct CoachView: View {
             if coach.status != .ready {
                 StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: true)
             }
-            scriptCard
+            scriptCard.tourSpot(.line)
             ScriptOutlineCard(coach: coach)
             belowCard
             if coach.statusRecordID != nil { // stays up during calls too, with the LinkedIn and text cards
@@ -211,9 +217,11 @@ struct CoachView: View {
                     onLinkedInMessage: { coach.openLinkedIn(message: true) },
                     onSetupAircall: { showAircall = true }
                 )
+                .tourSpot(.followUp)
             }
             if coach.status == .ready {
                 DailyGoalCard(touchpoints: coach.touchpoints, activeCampaigns: campaigns.activeCampaigns)
+                    .tourSpot(.goal)
             }
             if showTouchpoints && coach.status == .ready {
                 TouchpointsCard(touchpoints: coach.touchpoints)
@@ -225,7 +233,7 @@ struct CoachView: View {
             Spacer(minLength: 0)
             if appPhone { AircallPhonePanel() }
             bottomBanner
-            navigation
+            navigation.tourSpot(.call)
         }
         .padding(.horizontal, margin)
         .padding(.vertical, gap)
@@ -237,6 +245,7 @@ struct CoachView: View {
                 .allowsHitTesting(false)
         )
         .onAppear {
+            if !tourSeen, coach.status == .ready { tourStep = 0 } // first open: the welcome card
             campaigns.ensureSelectedActive()
             coach.use(campaigns.selected)
             coach.activate(true)
@@ -262,7 +271,10 @@ struct CoachView: View {
         }
         // The list open in Chrome decides the script: land on a campaign's list and its script follows.
         .onChange(of: coach.callList.listKey) { _, _ in syncScriptToList() }
-        .onChange(of: coach.status) { _, _ in syncScriptToList() }
+        .onChange(of: coach.status) { _, status in
+            syncScriptToList()
+            if status != .ready { tourStep = nil } // never during a call
+        }
         .onChange(of: campaigns.campaigns) { _, _ in campaigns.ensureSelectedActive(); syncScriptToList() }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
@@ -296,8 +308,8 @@ struct CoachView: View {
                     .controlSize(.small)
                     .help("A new version is ready. Click to install it (about 2 minutes, no Terminal).")
             }
-            campaignMenu
-            settingsMenu
+            campaignMenu.tourSpot(.segment)
+            settingsMenu.tourSpot(.gear)
         }
     }
 
@@ -313,6 +325,8 @@ struct CoachView: View {
             Button(setupLabel) { showSetup = true }
             Button("Settings and tools...") { showSettings = true }
             Button("How to use") { showHelp = true }
+            Button("Take the tour") { tourStep = 0 }
+                .disabled(coach.status != .ready)
         } label: {
             Image(systemName: "gearshape")
         }
