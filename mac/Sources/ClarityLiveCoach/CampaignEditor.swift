@@ -253,6 +253,9 @@ func keepWindowsOnTop() {
     DispatchQueue.main.async {
         for window in NSApplication.shared.windows {
             window.level = .floating
+            // Navy title bar that blends into the navy window.
+            window.titlebarAppearsTransparent = true
+            window.backgroundColor = Brand.navyNS
             window.collectionBehavior.insert(.canJoinAllSpaces)
         }
     }

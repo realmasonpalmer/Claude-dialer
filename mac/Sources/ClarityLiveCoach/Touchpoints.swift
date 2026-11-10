@@ -161,7 +161,7 @@ struct TouchpointsCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 
     private func stat(_ label: String, _ value: Int) -> some View { stat(label, "\(value)") }

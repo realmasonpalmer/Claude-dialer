@@ -13,8 +13,6 @@ struct RootView: View {
     @State private var screen: Screen?
 
     var body: some View {
-        VStack(spacing: 0) {
-        BrandHeader()
         Group {
             switch screen ?? firstScreen {
             case .check:
@@ -37,12 +35,11 @@ struct RootView: View {
                 )
             }
         }
-        }
-        .tint(Brand.blue)
         // Wider, not taller, when the Aircall phone is open on the right.
         .frame(width: showPhone ? 380 + AircallPhoneSide.width : 380)
         // Never taller than the screen, counting the title bar.
         .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
+        .brandWindow()
     }
 
     private var showPhone: Bool {
@@ -467,7 +464,7 @@ struct CoachView: View {
             HStack {
                 Text(cardLabel)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : .secondary)
+                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
                 Spacer()
                 if coach.thinking && coach.status == .live {
                     ProgressView().controlSize(.mini)
@@ -488,7 +485,8 @@ struct CoachView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .background(Brand.hero, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.teal.opacity(0.35)))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
     }
 
@@ -1115,7 +1113,7 @@ struct FollowUpCard: View {
                 }
             }
             .padding(12)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            .brandCard(radius: 12)
             .onChange(of: f.allDone) {
                 // Close only after something was actually sent (a day with nothing due keeps the card up).
                 if f.allDone, f.textDone || f.linkedinDone || f.linkedinMessageDone {
@@ -1142,7 +1140,7 @@ struct FollowUpCard: View {
                         .textFieldStyle(.plain)
                         .lineLimit(2...10)
                         .padding(6)
-                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .brandCard(radius: 6)
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
                         .help("Click to edit the text before you send it")
                 } else {
@@ -1253,7 +1251,7 @@ struct RelationshipCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
         .onChange(of: coach.statusRecordID) {
             // New person on screen: start fresh.
             if pickedFor != coach.statusRecordID { picked = nil; pickedFor = nil; reason = nil }

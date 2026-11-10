@@ -19,21 +19,21 @@ struct ClarityLiveCoachApp: App {
 
         Window("Script Lab", id: "script-lab") {
             ScriptLabView(lab: coach.lab)
-                .tint(Brand.blue)
+                .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 620, height: 780)
 
         Window("Campaigns", id: "campaign-selector") {
             CampaignSelectorView()
-                .tint(Brand.blue)
+                .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 620, height: 480)
 
         Window("Campaign", id: "campaign-editor") {
             CampaignEditorView()
-                .tint(Brand.blue)
+                .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 600, height: 760)
@@ -198,7 +198,7 @@ struct AudioCheckView: View {
         .font(.callout)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 
     // MARK: Advanced (hidden by default)
