@@ -101,10 +101,59 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
     })();
     """
 
+    /// Clarity colors on Aircall's phone. Aircall's class names change with each release, so instead
+    /// of targeting them this finds every dark gray background or border and swaps it for the
+    /// matching shade of Clarity navy. Colored parts (green call buttons, red badges) stay as they are.
+    /// Runs again whenever the page changes.
+    private static let navyTheme = """
+    (function () {
+      if (window.__clarityTheme) return;
+      window.__clarityTheme = true;
+      var RGB = /rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/;
+      function navy(c) {
+        var m = RGB.exec(c || "");
+        if (!m) return null;
+        var r = +m[1], g = +m[2], b = +m[3], a = m[4] === undefined ? 1 : +m[4];
+        if (a === 0 || r > 110 || Math.max(r, g, b) - Math.min(r, g, b) > 12) return null; // not dark gray
+        var R = Math.round(r * 0.55), G = Math.round(g * 0.75), B = Math.min(255, Math.round(b * 1.35 + 18));
+        return "rgba(" + R + ", " + G + ", " + B + ", " + a + ")";
+      }
+      function paint() {
+        var all = document.querySelectorAll("*");
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i], cs = getComputedStyle(el);
+          var bg = navy(cs.backgroundColor);
+          if (bg) el.style.setProperty("background-color", bg, "important");
+          if (cs.borderTopStyle !== "none") {
+            var bd = navy(cs.borderTopColor);
+            if (bd) el.style.setProperty("border-color", bd, "important");
+          }
+        }
+        var root = navy(getComputedStyle(document.documentElement).backgroundColor);
+        document.documentElement.style.setProperty("background-color", root || "#0B1533", "important");
+      }
+      var queued = false;
+      function later() {
+        if (queued) return;
+        queued = true;
+        setTimeout(function () { queued = false; try { paint(); } catch (e) {} }, 250);
+      }
+      function start() {
+        later();
+        new MutationObserver(later).observe(document.documentElement,
+          { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      }
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+      else start();
+    })();
+    """
+
     override init() {
         let config = WKWebViewConfiguration()
         config.userContentController.addUserScript(
             WKUserScript(source: Self.audioHook, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        config.userContentController.addUserScript(
+            WKUserScript(source: Self.navyTheme, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         config.websiteDataStore = .default() // stays signed in between launches
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
