@@ -255,6 +255,15 @@ struct CoachView: View {
             if old.id != new.id || old.listViewID != new.listViewID { openList(of: new) }
             if old.id != new.id { coach.listDone = false }
         }
+        // The list open in Chrome decides the script: land on a campaign's list and its script follows.
+        .onChange(of: coach.callList.listKey) { _, key in
+            guard coach.status == .ready, let view = key?.view, view.count >= 15 else { return }
+            if let match = campaigns.campaigns.first(where: { $0.active && $0.listViewID.prefix(15) == view.prefix(15) }),
+               match.id != campaigns.selectedID {
+                ActivityLog.add("Campaign: list matches \(match.name), switching script")
+                campaigns.selectedID = match.id
+            }
+        }
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showSetup) {
             SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
@@ -353,6 +362,8 @@ struct CoachView: View {
 
     private func openList(of campaign: Campaign) {
         guard !campaign.listViewID.isEmpty, !campaign.listObject.isEmpty else { return }
+        // Already on that list in Chrome (the script just followed it): don't reload it.
+        if let open = coach.callList.listKey?.view, open.prefix(15) == campaign.listViewID.prefix(15) { return }
         let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } }
             ?? Keychain.read(.sfInstance) ?? ""
         guard !origin.isEmpty else { return }

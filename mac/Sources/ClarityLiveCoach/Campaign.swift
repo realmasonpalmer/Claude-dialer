@@ -150,6 +150,8 @@ final class CampaignStore: ObservableObject {
         if on, !c.active, activeCampaigns.count >= Self.maxActive { return false }
         c.active = on
         save(c)
+        // Paused the campaign in use: switch to one that's still active, so its script doesn't linger.
+        if !on, selectedID == id, let next = activeCampaigns.first { selectedID = next.id }
         return true
     }
 
