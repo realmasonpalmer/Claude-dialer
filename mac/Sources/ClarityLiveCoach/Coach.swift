@@ -641,6 +641,14 @@ final class CoachModel: ObservableObject {
 
     /// Calls the lead from the Aircall desktop app.
     func dial(_ number: String? = nil) {
+        // Mobile first, then Phone. Neither: skip them and take them off the list.
+        if status == .ready, !dialing, number == nil, let d = leads.details, !d.doNotCall, d.callNumber == nil {
+            ActivityLog.add("No Mobile or Phone for \(d.name): skipping and removing from the list")
+            RemovedList.add(d.id)
+            problem = "No phone number. Removed from your list, on to the next person."
+            nextLead()
+            return
+        }
         guard status == .ready, !dialing, let d = leads.details, !d.doNotCall,
               let phone = number ?? d.callNumber else { return }
         dialing = true
@@ -989,7 +997,8 @@ final class CoachModel: ObservableObject {
                 return
             }
             // No Mobile or Phone: nothing to call. Skip to the next person (up to 20 in a row).
-            ActivityLog.add("Next: no Mobile or Phone for \(self.calling ?? "?"), skipping")
+            ActivityLog.add("Next: no Mobile or Phone for \(self.calling ?? "?"), skipping and removing from the list")
+            if let key = id ?? self.recordKey() { RemovedList.add(key); self.callList.refreshUpNext() }
             self.noMobileSkips += 1
             if self.noMobileSkips <= 20 {
                 self.problem = "No phone number. Skipped to the next person."
