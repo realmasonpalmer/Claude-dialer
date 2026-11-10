@@ -400,10 +400,66 @@ enum SalesforceChrome {
         !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty
     }
 
+    // MARK: Snapshot (address + title), kept fresh off the main thread
+
+    /// Every AppleScript runs on this one queue, never two at once. The main thread only waits
+    /// for actions (open, click, JavaScript) and for "live" reads; plain reads use the snapshot.
+    private static let queue = DispatchQueue(label: "SalesforceChrome", qos: .userInitiated)
+    private static let lock = NSLock()
+    private static var snapshot: (at: Date, url: String?, title: String?)?
+    private static var watching = false
+    /// How old the snapshot may be for a plain read. It's refreshed every half second.
+    private static let maxAge: TimeInterval = 1.0
+
+    private static func startWatching() {
+        lock.lock(); defer { lock.unlock() }
+        guard !watching else { return }
+        watching = true
+        queue.async { refreshLoop() }
+    }
+
+    private static func refreshLoop() {
+        _ = takeSnapshot()
+        queue.asyncAfter(deadline: .now() + 0.5) { refreshLoop() }
+    }
+
+    /// Reads the address and title in one AppleScript. Runs on `queue`.
+    private static func takeSnapshot() -> (url: String?, title: String?) {
+        let r = runNow("return (URL of theTab) & linefeed & (title of theTab)")
+        var url: String?, title: String?
+        if let r, r != "NOSF" {
+            let parts = r.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            url = parts.first.flatMap { $0.isEmpty ? nil : $0 }
+            title = parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil
+        }
+        lock.lock(); snapshot = (Date(), url, title); lock.unlock()
+        return (url, title)
+    }
+
+    /// The snapshot if it's fresh enough, else a live read.
+    private static func current(live: Bool) -> (url: String?, title: String?) {
+        startWatching()
+        if !live {
+            lock.lock(); let s = snapshot; lock.unlock()
+            if let s, Date().timeIntervalSince(s.at) < maxAge { return (s.url, s.title) }
+        }
+        return queue.sync { takeSnapshot() }
+    }
+
+    /// After the app changes the page, plain reads wait for a new snapshot.
+    private static func invalidate() {
+        lock.lock(); snapshot = nil; lock.unlock()
+    }
+
+    /// Runs an AppleScript action on the AppleScript queue (waits for it).
+    private static func run(_ action: String) -> String? {
+        queue.sync { runNow(action) }
+    }
+
     /// Runs an AppleScript action against the Salesforce tab. The action uses `theTab`
     /// (and `theWindow`, `theIndex`). Prefers a Salesforce tab that's showing; else the first one found.
-    /// Returns "NOSF" if no Salesforce tab is open, nil if the script failed.
-    private static func run(_ action: String) -> String? {
+    /// Returns "NOSF" if no Salesforce tab is open, nil if the script failed. Only call on `queue`.
+    private static func runNow(_ action: String) -> String? {
         guard chromeRunning else { return nil }
         let source = """
         tell application "Google Chrome"
@@ -440,15 +496,11 @@ enum SalesforceChrome {
         return NSAppleScript(source: source)?.executeAndReturnError(nil).stringValue
     }
 
-    static func url() -> String? {
-        guard let r = run("return URL of theTab"), r != "NOSF", !r.isEmpty else { return nil }
-        return r
-    }
+    /// The Salesforce tab's address. `live` reads Chrome now (for checks right before acting);
+    /// otherwise the background snapshot (at most a second old) is used.
+    static func url(live: Bool = false) -> String? { current(live: live).url }
 
-    static func title() -> String? {
-        guard let r = run("return title of theTab"), r != "NOSF", !r.isEmpty else { return nil }
-        return r
-    }
+    static func title(live: Bool = false) -> String? { current(live: live).title }
 
     /// Runs JavaScript in the Salesforce tab. nil if Chrome blocks it or there's no Salesforce tab.
     static func javascript(_ js: String) -> String? {
@@ -460,6 +512,7 @@ enum SalesforceChrome {
     /// Shows the Salesforce tab and goes to an address.
     static func open(_ url: String) -> Bool {
         guard url.hasPrefix("https://"), !url.contains("\"") else { return false }
+        defer { invalidate() }
         return run("""
         set URL of theTab to "\(url)"
         set active tab index of theWindow to theIndex
@@ -476,6 +529,7 @@ enum SalesforceChrome {
             + "if(a.getClientRects().length&&a.href.indexOf('\(recordID)')>=0&&(a.textContent||'').trim()){a.click();return 'ok';}}"
             + "return 'no';})()"
         guard javascript(js) == "ok" else { return false }
+        defer { invalidate() }
         _ = run("""
         set active tab index of theWindow to theIndex
         set index of theWindow to 1

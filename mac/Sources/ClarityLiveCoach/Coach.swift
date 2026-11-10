@@ -427,6 +427,13 @@ final class StreamBox: @unchecked Sendable {
 
 // MARK: - The coach
 
+/// What's been said on this call, plus the words still coming in. Changes many times a second.
+@MainActor
+final class LiveTranscript: ObservableObject {
+    @Published var turns: [Turn] = []
+    @Published var interim: [Speaker: String] = [:]
+}
+
 @MainActor
 final class CoachModel: ObservableObject {
     enum Status { case ready, live, paused }
@@ -436,8 +443,17 @@ final class CoachModel: ObservableObject {
     @Published private(set) var suggestion = Suggestion()
     @Published private(set) var kind: Kind = .opener
     @Published private(set) var latestProspect = ""
-    @Published private(set) var turns: [Turn] = []
-    @Published private(set) var interim: [Speaker: String] = [:]
+    /// The live transcript lives in its own small model, so a new word only redraws the
+    /// transcript, not the whole screen.
+    let transcript = LiveTranscript()
+    private(set) var turns: [Turn] {
+        get { transcript.turns }
+        set { transcript.turns = newValue }
+    }
+    private(set) var interim: [Speaker: String] {
+        get { transcript.interim }
+        set { transcript.interim = newValue }
+    }
     @Published private(set) var latency: Double?
     @Published private(set) var problem: String?
     @Published private(set) var thinking = false
@@ -462,9 +478,6 @@ final class CoachModel: ObservableObject {
     private var history: [(s: Suggestion, kind: Kind)] = []
     @Published private(set) var historyIndex: Int?   // nil = showing the newest line
     var canGoBack: Bool { (historyIndex ?? history.count - 1) > 0 }
-
-    /// True while the prospect is talking (words are coming in from their side).
-    var prospectSpeaking: Bool { !(interim[.prospect] ?? "").isEmpty }
 
     private func trackJourney(_ stage: String) {
         let step: Int?
@@ -858,7 +871,7 @@ final class CoachModel: ObservableObject {
     /// Everything on screen is for the person open in Salesforce: name, page details,
     /// voicemail and follow-ups (written from their page), and Claude's opener for them.
     private func readyToDial(waited: TimeInterval) -> Bool {
-        guard let calling, SalesforceTab.currentRecord() == calling else { return false }
+        guard let calling, SalesforceTab.currentRecord(live: true) == calling else { return false }
         let detailsOK = detailsTried
         let voicemailOK = voicemailScript != nil && voicemailFor == calling
             && (voicemailUsedDetails || recordDetails == nil || waited > 8)
@@ -1004,7 +1017,7 @@ final class CoachModel: ObservableObject {
             for _ in 0..<16 {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard let self, !Task.isCancelled, self.status == .ready else { return }
-                if let id, SalesforceChrome.url().flatMap(CallList.recordID) != id { continue } // not loaded yet
+                if let id, SalesforceChrome.url(live: true).flatMap(CallList.recordID) != id { continue } // not loaded yet
                 pageOpened = true
                 if SalesforceChrome.dialNumber() != nil {
                     // Page loaded and has a Mobile or Phone: dial once their script and follow-ups are ready.
@@ -1214,7 +1227,7 @@ final class CoachModel: ObservableObject {
         detailsTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1200))
             guard let self, !Task.isCancelled, self.calling == record, record != nil,
-                  SalesforceChrome.url().flatMap(CallList.recordID) == pageID else { return }
+                  SalesforceChrome.url(live: true).flatMap(CallList.recordID) == pageID else { return }
             self.recordDetails = SalesforceTab.pageText()
             self.detailsTried = true
             // Fill in the card's phone and LinkedIn link now that the page is loaded.

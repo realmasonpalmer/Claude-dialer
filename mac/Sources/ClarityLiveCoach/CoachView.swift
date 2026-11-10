@@ -529,52 +529,7 @@ struct CoachView: View {
                         .buttonStyle(.link).font(.caption)
                 }
             }
-            transcript
-        }
-    }
-
-    private var transcript: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                showTranscript.toggle()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: showTranscript ? "chevron.down" : "chevron.right").font(.caption2)
-                    Text("Transcript").font(.caption)
-                    if !showTranscript, let last = coach.turns.last(where: { $0.speaker == .prospect }) {
-                        Text("· \(last.text)").font(.caption).lineLimit(1).foregroundStyle(.tertiary)
-                    }
-                }
-                .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            if showTranscript {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(coach.turns) { turn in
-                                line(turn.speaker, turn.text)
-                            }
-                            ForEach([Speaker.rep, .prospect], id: \.self) { speaker in
-                                if let text = coach.interim[speaker], !text.isEmpty {
-                                    line(speaker, text).opacity(0.5)
-                                }
-                            }
-                            Color.clear.frame(height: 1).id("end")
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 140)
-                    .onChange(of: coach.turns.count) { proxy.scrollTo("end") }
-                }
-            }
-        }
-    }
-
-    private func line(_ speaker: Speaker, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(speaker == .rep ? "You" : "Them").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            Text(text).font(.callout)
+            TranscriptSection(transcript: coach.transcript, open: $showTranscript)
         }
     }
 
@@ -1251,6 +1206,58 @@ struct RelationshipCard: View {
         .onChange(of: coach.statusRecordID) {
             // New person on screen: start fresh.
             if pickedFor != coach.statusRecordID { picked = nil; pickedFor = nil; reason = nil }
+        }
+    }
+}
+
+/// The transcript under the script card. Watches only the transcript, so words streaming in
+/// don't redraw the rest of the screen.
+struct TranscriptSection: View {
+    @ObservedObject var transcript: LiveTranscript
+    @Binding var open: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                open.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
+                    Text("Transcript").font(.caption)
+                    if !open, let last = transcript.turns.last(where: { $0.speaker == .prospect }) {
+                        Text("· \(last.text)").font(.caption).lineLimit(1).foregroundStyle(.tertiary)
+                    }
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if open {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(transcript.turns) { turn in
+                                line(turn.speaker, turn.text)
+                            }
+                            ForEach([Speaker.rep, .prospect], id: \.self) { speaker in
+                                if let text = transcript.interim[speaker], !text.isEmpty {
+                                    line(speaker, text).opacity(0.5)
+                                }
+                            }
+                            Color.clear.frame(height: 1).id("end")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                    .onChange(of: transcript.turns.count) { proxy.scrollTo("end") }
+                }
+            }
+        }
+    }
+
+    private func line(_ speaker: Speaker, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(speaker == .rep ? "You" : "Them").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text(text).font(.callout)
         }
     }
 }

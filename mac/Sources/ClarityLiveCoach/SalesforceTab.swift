@@ -6,9 +6,10 @@ import AppKit
 enum SalesforceTab {
     /// Runs on the main thread. Returns nil if Chrome isn't open or no record is showing.
     /// Reads the Salesforce tab even when another tab (like LinkedIn) is in front.
+    /// `live` reads Chrome right now, for checks just before dialing; otherwise a snapshot under a second old.
     @MainActor
-    static func currentRecord() -> String? {
-        SalesforceChrome.title().flatMap(parse)
+    static func currentRecord(live: Bool = false) -> String? {
+        SalesforceChrome.title(live: live).flatMap(parse)
     }
 
     /// The visible text of the open Salesforce record (title, company, notes...), trimmed.
