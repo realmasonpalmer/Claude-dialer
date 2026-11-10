@@ -97,13 +97,14 @@ struct CampaignSelectorView: View {
     }
 }
 
-/// New Campaign: segment name, a Salesforce list, and a script (paste one, or let Claude write it
-/// from the people on the list).
+/// New Campaign: segment name, a Salesforce list, who it's for, and a script (paste one, or let
+/// Claude write it in the cold call backbone format from who the rep says it's for).
 struct NewCampaignView: View {
     @EnvironmentObject var store: CampaignStore
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var listID = ""
+    @State private var audience = ""
     @State private var script = ""
     @State private var views: [Salesforce.ListView] = []
     @State private var writing = false
@@ -136,23 +137,41 @@ struct NewCampaignView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
+                Text("3. Who is this for?").font(.headline)
+                Text("Who you're calling and what they deal with. Claude writes the script for them.")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: $audience)
+                    .font(.callout)
+                    .frame(height: 80)
+                    .overlay(alignment: .topLeading) {
+                        if audience.isEmpty {
+                            Text("e.g. Owners of 5 to 20 person CPA firms. Busy in tax season. Lots of client calls, notes typed by hand, often no CRM.")
+                                .foregroundStyle(.tertiary).padding(6).allowsHitTesting(false)
+                        }
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("3. Script").font(.headline)
+                    Text("4. Script").font(.headline)
                     Spacer()
+                    Button("Use the backbone") { script = ColdCallBackbone.text }
+                        .help("Start from Clarity's cold call backbone as is")
                     Button {
                         Task { await writeScript() }
                     } label: {
-                        Label(writing ? "Writing..." : "Write it for me from the list", systemImage: "sparkles")
+                        Label(writing ? "Writing..." : "Write it for me", systemImage: "sparkles")
                     }
-                    .disabled(view == nil || writing || Keychain.read(.anthropic) == nil)
-                    .help("Claude reads who's on the list and writes a script for that segment")
+                    .disabled((audience.trimmed.isEmpty && view == nil) || writing || Keychain.read(.anthropic) == nil)
+                    .help("Claude writes a full script in the backbone format for the people in box 3")
                 }
                 TextEditor(text: $script)
                     .font(.callout)
                     .frame(minHeight: 220)
                     .overlay(alignment: .topLeading) {
                         if script.isEmpty {
-                            Text("Paste your script, or click \"Write it for me from the list\".")
+                            Text("Paste your script, or fill in box 3 and click \"Write it for me\". Takes about a minute.")
                                 .foregroundStyle(.tertiary).padding(6).allowsHitTesting(false)
                         }
                     }
@@ -172,7 +191,7 @@ struct NewCampaignView: View {
             }
         }
         .padding(20)
-        .frame(width: 560, height: 620)
+        .frame(width: 640, height: 760)
         .task {
             guard Salesforce.isConnected, views.isEmpty else { return }
             views = (try? await Salesforce.listViews()) ?? []
@@ -180,51 +199,67 @@ struct NewCampaignView: View {
     }
 
     private func save() {
-        var c = Campaign(name: name.trimmed, objective: "Book a 20 minute meeting", pastedScript: script.trimmed,
-                         company: "Clarity Consulting: a boutique Salesforce partner and Anthropic Claude partner.")
+        var c = Campaign(name: name.trimmed, objective: "Book a free AI health check with Oliver, our managing partner.",
+                         pastedScript: script.trimmed,
+                         company: "Clarity Consulting. Anthropic partner. Salesforce partner.")
+        c.persona = audience.trimmed
         if let v = view { c.listObject = v.object; c.listViewID = v.id; c.listName = v.label }
         c.active = store.activeCampaigns.count < CampaignStore.maxActive
         store.save(c)
         dismiss()
     }
 
-    /// Reads who's on the list (titles and companies) and asks Claude for a script for that segment.
+    /// Writes a full script in the cold call backbone format. The rep's "who is this for" leads;
+    /// titles and companies from the list are only a backup hint.
     private func writeScript() async {
-        guard let v = view, let key = Keychain.read(.anthropic) else { return }
+        guard let key = Keychain.read(.anthropic) else { return }
         writing = true
         message = nil
         defer { writing = false }
-        let rows = (try? await Salesforce.fullList(object: v.object, key: v.id)) ?? []
-        let sample = rows.prefix(60).map { $0.subtitle.isEmpty ? $0.name : $0.subtitle }.joined(separator: "\n")
+        var sample = ""
+        if let v = view {
+            let rows = (try? await Salesforce.fullList(object: v.object, key: v.id)) ?? []
+            sample = rows.prefix(40).map { $0.subtitle.isEmpty ? $0.name : $0.subtitle }.joined(separator: "\n")
+        }
         var client = ClaudeClient(apiKey: key) // Opus
         client.effort = "medium"
+        client.maxTokens = 24000 // a full backbone script is long
         let system = """
-        You write cold call scripts for Clarity Consulting, a boutique Salesforce partner and Anthropic Claude partner.
-        What Clarity sells: Claude implementations. Flagship: an AI notetaker plus Claude updating CRM fields after
-        every call, so reps stop doing data entry and managers get clean pipeline data. Also Claude and AI health checks,
-        and Salesforce implementation, cleanup and automation.
-        How Clarity talks: outcome first (time back, more selling time, cleaner data, more revenue), then the problem,
-        then the fix. Technology last. Plain English, short lines a rep can say out loud, warm and confident, no jargon,
-        no hype, no em dashes. The goal of every call is a 20 minute meeting with Oliver, Clarity's managing partner.
+        You write cold call scripts for Clarity Consulting that a live call coach app reads during the call.
+        The app follows the script like a decision tree: it tracks state, walks the pick order, matches what the
+        prospect says to a row's "Sounds like", and shows that row's "Say" line word for word.
+
+        Below is the backbone. Your script must match it exactly in format and level of detail:
+        the same sections in the same order (OUTPUT RULES, BANNED WORDS AND CLAIMS, TRANSCRIPT NOISE, FACTS,
+        STATE TO TRACK, PICK ORDER, GLOBAL TRIGGERS, S1 to S8, OBJECTIONS, VOICEMAIL, AFTER THE CALL), the same
+        row IDs, the same table columns separated by tabs, and about the same number of rows per section.
+        Keep OUTPUT RULES, BANNED WORDS AND CLAIMS, TRANSCRIPT NOISE, STATE TO TRACK and PICK ORDER as written.
+        Rewrite the lines for the audience you're given: their words, their world, their likely answers in
+        "Sounds like", their objections. Swap rows that don't fit them for rows that do (keep the ID style).
+
+        Rules for every Say line: max 25 words, ends with a question unless it ends the call, plain spoken
+        English a 5th grader could read, warm and direct, no jargon, no em dashes. Outcome first (time back,
+        more selling), then the problem, then the fix. Technology last.
+        Facts: use only the FACTS section. Never invent a number, client name, price, offer or result.
+        If the audience isn't a tax or accounting firm, still use the real tax firm proof point, said as it is.
+        Use [slots] like [Name], [Firm], [SDR], [Day], [Time], [Number] the way the backbone does.
+        Use [Name] for the prospect, never he or she.
+        Return only the script as plain text. No markdown, no notes before or after.
+
+        BACKBONE:
+        \(ColdCallBackbone.text)
         """
         let user = """
-        Write a cold call script for this segment.
-        Segment: \(name.isEmpty ? v.label : name)
-        Salesforce list: \(v.label) (\(rows.count) people)
-        Titles and companies of people on the list:
-        \(sample.isEmpty ? "(not available)" : sample)
-
-        Use what the list tells you about their roles and industry. Sections, each short:
-        OPENER (one line, honest that it's a cold call), REASON FOR THE CALL (a problem their peers have, ending in a
-        question), 3 DISCOVERY QUESTIONS, VALUE (one sentence), OBJECTIONS (5 common ones for this segment with a short
-        answer each, including "we're all good": offer a free 20 minute health check), CLOSE (offer two specific times),
-        VOICEMAIL (about 20 seconds). Plain text, no markdown tables.
+        Write the script for this campaign.
+        Segment: \(name.trimmed.isEmpty ? (view?.label ?? "Not named") : name.trimmed)
+        Who it's for (from the rep, this leads): \(audience.trimmed.isEmpty ? "Not given. Use the list below." : audience.trimmed)
+        \(sample.isEmpty ? "" : "Titles and companies from the Salesforce list (a hint only; the rep's description wins):\n\(sample)")
         """
         do {
             var text = ""
             try await client.stream(system: system, user: user) { text = $0 }
             script = text.trimmed
-            if name.trimmed.isEmpty { name = v.label }
+            if name.trimmed.isEmpty, let v = view { name = v.label }
         } catch {
             message = "Couldn't write the script: \(error.localizedDescription)"
         }

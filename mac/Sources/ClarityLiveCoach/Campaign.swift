@@ -82,7 +82,7 @@ struct Campaign: Codable, Identifiable, Equatable {
             parts.append("## \(section.title)\n\(self[keyPath: section.key].trimmed)")
         }
         if !pastedScript.trimmed.isEmpty {
-            parts.append("## Original script (follow its intent and tone, not word for word)\n\(pastedScript.trimmed)")
+            parts.append("## Call script (the script leads: use its lines in its words)\n\(pastedScript.trimmed)")
         }
         return parts.joined(separator: "\n\n")
     }
@@ -130,6 +130,11 @@ final class CampaignStore: ObservableObject {
             .sorted { $0.name < $1.name }
         if campaigns.isEmpty {
             save(.clarityDiscovery)
+        }
+        // The cold call backbone ships once as its own (paused) campaign. Deleting it keeps it gone.
+        if !UserDefaults.standard.bool(forKey: "backboneCampaignAdded") {
+            UserDefaults.standard.set(true, forKey: "backboneCampaignAdded")
+            if !campaigns.contains(where: { $0.id == ColdCallBackbone.campaignID }) { save(ColdCallBackbone.campaign) }
         }
         let saved = UserDefaults.standard.string(forKey: "selectedCampaign").flatMap(UUID.init)
         selectedID = campaigns.contains { $0.id == saved } ? saved : campaigns.first?.id

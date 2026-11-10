@@ -99,7 +99,8 @@ final class ScriptTemplates {
           If one template is labeled as both ("LinkedIn message/connection request"), put it in both.
         - opener: the rep's very first line when the person picks up the phone (the start of the call script), word
           for word, blanks and all ("Is this ___?"). Only the rep's first line, not the rest of the call. null if
-          the script has no call script.
+          the script has no call script. If the script has a gatekeeper line and a separate opener for the
+          person themselves (like "S2 open"), use the person's opener.
         - voicemails: every voicemail script (what the rep says after the beep), in the order they're left. If the
           script gives two versions of the same voicemail, keep only the first. Empty list if there are none.
         - Copy each one exactly: same words, same placeholders ([Name], {first name}, [Your Name]). Drop only

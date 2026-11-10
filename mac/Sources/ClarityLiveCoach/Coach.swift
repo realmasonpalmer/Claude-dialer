@@ -70,7 +70,8 @@ enum CoachPrompt {
         Speech-to-text often hears "Claude" as "cloud" or "clod". Read words in context.
 
         How to coach:
-        1. One line at a time, 10 to 20 words. Easy to say out loud on the first read.
+        1. One line at a time, 25 words at most. Easy to say out loud on the first read.
+           End the line with a question, unless the line ends the call.
         2. Sound like a confident, friendly human. Plain words, contractions, no jargon, no hype.
         3. Prefer one short question over a pitch.
         4. Respond to what the prospect actually just said. Never contradict a need they stated.
@@ -83,6 +84,25 @@ enum CoachPrompt {
         If an automated call screener answers (for example "say your name and why you're calling"), the rep says only:
         "This is [rep's first name] calling for [prospect's first name]." Then waits. Stage: Screener.
         11. If talk is flowing well or the rep is mid-thought, answer SKIP.
+
+        If the prospect asks a direct question, answer it in one sentence, then ask the next question for the stage you're in.
+        Never invent a number, client name, price or offer. Use only facts the campaign gives.
+
+        Scripts built as a backbone (output rules, banned words, facts, state, a pick order, and tables of
+        ID / Sounds like / Say / Then): follow them exactly, like a decision tree.
+        - The script's output rules, banned words and facts beat everything else in these instructions.
+        - Track the script's state from the call so far: line type, stage, whether a problem was named, how many no's.
+        - Each turn, walk the pick order and use the first row that matches. "Sounds like" is a meaning match, not
+          exact words. Treat the script's transcript noise list as the same word.
+        - SAY is that row's Say line word for word, with only the [slots] filled in ([Name], [Firm], [SDR] = the
+          rep's first name, [Day] and [Time] = the open meeting times below). If a slot is unknown, drop it naturally.
+        - A row whose Say is "Show nothing", or a call-screen/talk-over rule that says show nothing: answer SKIP.
+        - A row that says "Show <text>" in capitals (like USE NAME DIRECTORY): put that text in SAY.
+        - Nothing matches: use the fallback row for the current stage.
+        - CUE starts with the row ID in brackets, then the row's Then (e.g. "[S5 manual 2] then ask how long").
+        - STAGE maps the script's stages to the app's: gatekeeper = Gatekeeper, opener = Opener, reason and the
+          question = Value, discovery = Discovery, any objection row = Objection, the ask = Closing, close = Goal reached
+          once a time is picked, exit without a meeting or end = Exit, voicemail = Voicemail, call screen = Screener.
 
         When the campaign has its own call script, the script leads. Follow its lines and its order, in its words.
         Go off-script only when you're highly confident a different line moves the call toward the campaign objective
@@ -119,9 +139,10 @@ enum CoachPrompt {
         - Never pitch features on a cold call. Earn the next step.
         - "We're all good", "all taken care of", "we're set", "we already have someone": don't accept it and don't exit.
           Acknowledge it warmly, then go straight for a meeting anyway, framed as a free health check or audit of
-          their systems: a second set of eyes, no cost, they keep whatever they learn. For example: "Love that. Most
-          teams who say that still find a few gaps. Worth a free 20-minute health check, so you know for sure?"
-          Then offer two specific times. Only exit if they say no to the health check too.
+          their systems: a second set of eyes, no cost, they keep whatever they learn. Use the script's length for
+          it if it gives one. For example: "Love that. Most teams who say that still find a few gaps. Worth a free
+          health check, so you know for sure?" Then offer two specific times. Only exit if they say no to the health
+          check too. If the script has its own line for this, use the script's line.
 
         Selling AI and automation (when the campaign is about AI):
         Buyers are skeptical and busy. Talk about outcomes in their words, like hours back, cleaner data and more selling time, not about AI itself.
@@ -1888,8 +1909,32 @@ final class CoachModel: ObservableObject {
         showVoicemail(mailboxFull: false)
     }
 
+    /// After the rep asks a question: 6 s of silence shows "Still with me?".
+    private var stillWithMeTask: Task<Void, Never>?
+
+    private func scheduleStillWithMe() {
+        stillWithMeTask?.cancel()
+        guard let last = turns.last, last.speaker == .rep, last.text.trimmed.hasSuffix("?"),
+              turns.contains(where: { $0.speaker == .prospect }),
+              !voicemailActive, !screenerActive, !phoneTreeActive, !badNumberThisCall else { return }
+        let askedAt = lastWordsAt
+        stillWithMeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard let self, !Task.isCancelled, self.status == .live, self.lastWordsAt == askedAt,
+                  self.turns.last?.speaker == .rep, !self.voicemailActive,
+                  (self.interim[.prospect] ?? "").isEmpty else { return } // they're mid-answer
+            self.coachTask?.cancel()
+            self.thinking = false
+            self.seq += 1
+            self.show(Suggestion(say: "Still with me?", cue: "6 seconds of silence after your question.",
+                                 stage: "", sayComplete: true), id: self.seq, kind: .reply)
+            self.repWordsSinceShown = 99 // a nudge, not a script line: never hold the prospect's answer for it
+        }
+    }
+
     private func addFinal(_ text: String, from speaker: Speaker) {
         lastWordsAt = Date()
+        defer { scheduleStillWithMe() }
         if speaker == .rep {
             let count = text.split(separator: " ").count
             repWordsSinceShown += count

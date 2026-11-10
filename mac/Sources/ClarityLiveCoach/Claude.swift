@@ -5,6 +5,8 @@ struct ClaudeClient {
     let apiKey: String
     var model = "claude-opus-5-5"
     var effort = "low" // fastest setting that keeps Opus-level quality
+    /// Room for the answer (and thinking). Long scripts need much more than a live line.
+    var maxTokens = 1500
     /// Optional thinking setting. nil = the model's default (Opus 5.5 always thinks).
     var thinking: [String: String]?
 
@@ -23,7 +25,7 @@ struct ClaudeClient {
 
         var body: [String: Any] = [
             "model": model,
-            "max_tokens": 1500,
+            "max_tokens": maxTokens,
             "stream": true,
             "output_config": ["effort": effort],
             // The rules and campaign never change during a call, so they are cached.
