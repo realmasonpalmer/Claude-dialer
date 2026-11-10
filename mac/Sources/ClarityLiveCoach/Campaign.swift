@@ -4,7 +4,7 @@ import Foundation
 /// Every field is optional except the name. Claude reads the intent, not just the words.
 struct Campaign: Codable, Identifiable, Equatable {
     var id = UUID()
-    var name = "New campaign"
+    var name = "New segment"
     var objective = ""
     var pastedScript = ""
     var company = ""
@@ -30,7 +30,7 @@ struct Campaign: Codable, Identifiable, Equatable {
     /// People on the Salesforce list, last time it was counted.
     var listSize = 0
 
-    init(id: UUID = UUID(), name: String = "New campaign", objective: String = "", pastedScript: String = "",
+    init(id: UUID = UUID(), name: String = "New segment", objective: String = "", pastedScript: String = "",
          company: String = "", offer: String = "", idealCustomer: String = "", persona: String = "",
          opening: String = "", discovery: String = "", qualification: String = "", objections: String = "",
          transitions: String = "", closing: String = "", success: String = "", exit: String = "", version: Int = 1) {
@@ -46,7 +46,7 @@ struct Campaign: Codable, Identifiable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) -> String { (try? c.decodeIfPresent(String.self, forKey: key)) ?? "" }
         id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
-        name = text(.name).isEmpty ? "Untitled campaign" : text(.name)
+        name = text(.name).isEmpty ? "Untitled segment" : text(.name)
         objective = text(.objective); pastedScript = text(.pastedScript)
         company = text(.company); offer = text(.offer); idealCustomer = text(.idealCustomer); persona = text(.persona)
         opening = text(.opening); discovery = text(.discovery); qualification = text(.qualification)
