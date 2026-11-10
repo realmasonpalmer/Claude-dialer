@@ -13,7 +13,7 @@ enum LocalLunch {
     /// LinkedIn connection note, under 200 characters, no link. Sent from the rep's own
     /// profile, so no name needed. A very long first name is dropped to stay under the limit.
     static func linkedinNote(first: String) -> String {
-        let body = "inviting you to a lunch for Portland business leaders. We're comparing notes on what's working with AI. No pitches. Open to connecting?"
+        let body = "inviting you to a lunch for Portland business leaders. A lot of us are figuring out AI on our own, and we'd get further comparing notes. No pitches. Open to connecting?"
         let named = "Hey \(first), " + body
         return named.count <= noteLimit ? named : "Hey, " + body
     }
