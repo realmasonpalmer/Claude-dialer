@@ -65,7 +65,7 @@ struct ScriptOutlineCard: View {
                     .background(here ? Brand.blue.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 }
                 if parts.isEmpty {
-                    Text("No script written for this segment yet.").font(.caption).foregroundStyle(.secondary)
+                    Text("No script written for this call segment yet.").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
