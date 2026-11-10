@@ -488,10 +488,10 @@ struct CoachView: View {
             Text(coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Add your Anthropic key: gear > Setup > AI keys." : "Getting your line ready...")
                  : coach.suggestion.say)
-                .font(.system(size: coach.suggestion.nudge ? 22 : 26, weight: coach.suggestion.nudge ? .medium : .semibold))
+                .font(lineFont)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(coach.suggestion.say.isEmpty || coach.suggestion.nudge ? .secondary : .primary)
+                .foregroundStyle(lineIsSoft ? Color.secondary : Color.primary)
                 .opacity(coach.historyIndex == nil ? 1 : 0.6)
         }
         .padding(16)
@@ -499,6 +499,13 @@ struct CoachView: View {
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
     }
+
+    /// The line on the card: big and bold, or a little softer for a nudge.
+    private var lineFont: Font {
+        coach.suggestion.nudge ? Font.system(size: 22, weight: .medium) : Font.system(size: 26, weight: .semibold)
+    }
+
+    private var lineIsSoft: Bool { coach.suggestion.say.isEmpty || coach.suggestion.nudge }
 
     private func tagChip(_ text: String) -> some View {
         Text(text)
