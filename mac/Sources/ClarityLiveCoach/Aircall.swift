@@ -56,7 +56,12 @@ enum Aircall {
                 ? "Aircall couldn't dial that number, or your Aircall number isn't active."
                 : "Aircall said: \(failed.detail)")
         } catch let error as AircallError where error.message.contains("405") {
-            throw AircallError(message: "Aircall says you're not available. Open the Aircall app, set yourself Available, and make sure you're not on a call.")
+            // Say WHO the app tried to dial as: a wrong user in settings looks just like "not available".
+            let user = try? await request("/users/\(userID)")
+            let u = user?["user"] as? [String: Any]
+            let name = (u?["name"] as? String) ?? "user \(userID)"
+            let status = (u?["availability_status"] as? String) ?? ((u?["available"] as? Bool).map { $0 ? "available" : "unavailable" } ?? "unknown")
+            throw AircallError(message: "Aircall won't start the call as \(name) (Aircall says: \(status)). If that's not you, pick yourself in gear > Setup > Aircall > Aircall user. If it is you, make sure you're not already on a call.")
         }
     }
 
