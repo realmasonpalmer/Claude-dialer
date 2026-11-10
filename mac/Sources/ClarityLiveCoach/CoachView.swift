@@ -485,8 +485,13 @@ struct CoachView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Brand.hero, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.teal.opacity(0.35)))
+        .background(Brand.scriptCard, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(alignment: .leading) {
+            // Thin teal accent: the brand, without a bright panel behind the words.
+            Rectangle().fill(Brand.teal).frame(width: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.edge, lineWidth: 0.5))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
     }
 
@@ -618,7 +623,7 @@ struct CoachView: View {
                 .controlSize(.large)
         }
         .padding(10)
-        .background(Brand.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .brandCard(radius: 10)
     }
 
     // MARK: Navigation: always here, always the same two buttons
@@ -650,8 +655,9 @@ struct CoachView: View {
                 Button {
                     coach.previousLead()
                 } label: {
-                    Image(systemName: "chevron.left").frame(width: 28, height: 28)
+                    Image(systemName: "chevron.left").frame(width: 16, height: 20)
                 }
+                .buttonStyle(BrandQuietButton())
                 .disabled(!coach.leads.canGoBack)
                 .help("Previous lead")
 
@@ -695,17 +701,17 @@ struct CoachView: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
+        .buttonStyle(BrandPrimaryButton())
     }
 
     private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).lineLimit(1).frame(maxWidth: 120)
+            Text(title).font(.callout).lineLimit(1).frame(maxWidth: 120)
+                .padding(.vertical, 2)
         }
-        .controlSize(.large)
+        .buttonStyle(BrandQuietButton())
     }
 
     private var canCall: Bool {
@@ -727,8 +733,9 @@ struct CoachView: View {
                 coach.status == .ready ? coach.previousLead() : coach.back()
             } label: {
                 Image(systemName: "chevron.left")
-                    .frame(width: 28, height: 28)
+                    .frame(width: 16, height: 20)
             }
+            .buttonStyle(BrandQuietButton())
             .disabled(!backEnabled)
             .help(coach.status == .ready ? "Previous lead" : "Show the line before this one")
 
@@ -830,7 +837,7 @@ struct CoachView: View {
                 Button("Skip text") { coach.startNextSequence() }
             }
             .padding(10)
-            .background(Brand.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .brandCard(radius: 10)
         } else if let hint = nextHint, !coach.leads.isActive {
             Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

@@ -110,27 +110,36 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       if (window.__clarityTheme) return;
       window.__clarityTheme = true;
       var RGB = /rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/;
-      function navy(c) {
+      function gray(c) {
         var m = RGB.exec(c || "");
         if (!m) return null;
         var r = +m[1], g = +m[2], b = +m[3], a = m[4] === undefined ? 1 : +m[4];
-        if (a === 0 || r > 110 || Math.max(r, g, b) - Math.min(r, g, b) > 12) return null; // not dark gray
-        var R = Math.round(r * 0.55), G = Math.round(g * 0.75), B = Math.min(255, Math.round(b * 1.35 + 18));
-        return "rgba(" + R + ", " + G + ", " + B + ", " + a + ")";
+        if (a === 0 || Math.max(r, g, b) - Math.min(r, g, b) > 12) return null; // colored: leave it
+        return { l: (r + g + b) / 3, a: a };
+      }
+      // Slate navy for a gray of lightness L: 20 = page #111827, 35 = card #1B2538.
+      function slate(L, a) {
+        return "rgba(" + Math.round(L * 0.62 + 5) + ", " + Math.round(L * 0.85 + 7) + ", " +
+          Math.round(L * 1.15 + 16) + ", " + a + ")";
       }
       function paint() {
         var all = document.querySelectorAll("*");
         for (var i = 0; i < all.length; i++) {
-          var el = all[i], cs = getComputedStyle(el);
-          var bg = navy(cs.backgroundColor);
-          if (bg) el.style.setProperty("background-color", bg, "important");
-          if (cs.borderTopStyle !== "none") {
-            var bd = navy(cs.borderTopColor);
-            if (bd) el.style.setProperty("border-color", bd, "important");
+          var el = all[i], cs = getComputedStyle(el), x;
+          // Backgrounds: squeeze the grays together so panels and pills barely stand out
+          // from the card color. Quiet panel, eyes stay on the script.
+          if ((x = gray(cs.backgroundColor)) && x.l < 110)
+            el.style.setProperty("background-color", slate(Math.max(28, 30 + (x.l - 20) * 0.35), x.a), "important");
+          // Outlines stay clearly visible.
+          if (cs.borderTopStyle !== "none" && (x = gray(cs.borderTopColor)) && x.l < 140)
+            el.style.setProperty("border-color", slate(Math.max(45, x.l), x.a), "important");
+          // Text: bright white becomes soft white; gray details (timestamps, numbers) become muted.
+          if ((x = gray(cs.color))) {
+            if (x.l > 225) el.style.setProperty("color", "rgba(229, 234, 242, " + x.a + ")", "important");
+            else if (x.l > 110) el.style.setProperty("color", "rgba(167, 178, 197, " + x.a + ")", "important");
           }
         }
-        var root = navy(getComputedStyle(document.documentElement).backgroundColor);
-        document.documentElement.style.setProperty("background-color", root || "#0B1533", "important");
+        document.documentElement.style.setProperty("background-color", "#1B2538", "important");
       }
       var queued = false;
       function later() {
@@ -345,9 +354,9 @@ struct AircallPhonePanel: View {
                 Text("Aircall phone").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
                 Spacer(minLength: 8)
                 if phone.shown {
-                    Button("Reload") { phone.reload() }.fixedSize()
+                    Button("Reload") { phone.reload() }.buttonStyle(BrandQuietButton()).fixedSize()
                 }
-                Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }.fixedSize()
+                Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }.buttonStyle(BrandQuietButton()).fixedSize()
             }
             HStack(spacing: 12) {
                 Toggle("Auto-dial", isOn: $autoDial)
