@@ -89,9 +89,9 @@ struct CampaignSelectorView: View {
     private func refreshSizes() async {
         guard Salesforce.isConnected else { return }
         for c in store.campaigns where !c.listViewID.isEmpty {
-            guard let rows = try? await Salesforce.fullList(object: c.listObject, key: c.listViewID) else { continue }
-            guard var latest = store.campaigns.first(where: { $0.id == c.id }), latest.listSize != rows.count else { continue }
-            latest.listSize = rows.count
+            guard let size = try? await Salesforce.count(object: c.listObject, key: c.listViewID) else { continue }
+            guard var latest = store.campaigns.first(where: { $0.id == c.id }), latest.listSize != size else { continue }
+            latest.listSize = size
             store.save(latest)
         }
     }
@@ -224,6 +224,8 @@ struct NewCampaignView: View {
         var client = ClaudeClient(apiKey: key) // Opus
         client.effort = "medium"
         client.maxTokens = 24000 // a full backbone script is long
+        client.idleTimeout = 60
+        client.totalTimeout = 300
         let system = """
         You write cold call scripts for Clarity Consulting that a live call coach app reads during the call.
         The app follows the script like a decision tree: it tracks state, walks the pick order, matches what the

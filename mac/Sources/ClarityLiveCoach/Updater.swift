@@ -14,7 +14,7 @@ final class Updater: ObservableObject {
     private var latestSHA: String?
     private var etag: String?
 
-    private var installedSHA: String? { UserDefaults.standard.string(forKey: "installedSHA") }
+    private var installedSHA: String? { UserDefaults.standard.string(forKey: PrefKey.installedSHA) }
 
     /// Asks GitHub for the newest version (at launch, then every 10 minutes).
     /// - Parameter byHand: the rep clicked "Check for updates", so always say what happened.

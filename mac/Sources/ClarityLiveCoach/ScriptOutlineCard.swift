@@ -3,7 +3,7 @@ import SwiftUI
 /// A fold-out card that just shows the campaign script. The part you're on is bold and highlighted.
 struct ScriptOutlineCard: View {
     @ObservedObject var coach: CoachModel
-    @AppStorage("scriptOutlineOpen") private var open = false
+    @AppStorage(PrefKey.scriptOutlineOpen) private var open = false
 
     private struct Part: Identifiable {
         let id: String

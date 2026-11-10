@@ -118,9 +118,7 @@ final class ScriptTemplates {
             ActivityLog.problem("Script templates: couldn't read the script: \(error.localizedDescription)")
             return nil
         }
-        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end,
-              let data = String(text[start...end]).data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let json = ClaudeClient.jsonObject(in: text) else {
             ActivityLog.problem("Script templates: Claude's answer wasn't readable")
             return nil
         }

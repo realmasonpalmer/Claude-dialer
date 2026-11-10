@@ -7,8 +7,8 @@ struct RootView: View {
 
     @EnvironmentObject var proof: ProofModel
     @EnvironmentObject var coach: CoachModel
-    @AppStorage("audioCheckPassed") private var audioCheckPassed = false
-    @AppStorage("appPhone") private var appPhone = true
+    @AppStorage(PrefKey.audioCheckPassed) private var audioCheckPassed = false
+    @AppStorage(PrefKey.appPhone) private var appPhone = true
     @ObservedObject private var phone = AircallPhone.shared
     @State private var screen: Screen?
 
@@ -159,11 +159,11 @@ struct CoachView: View {
     @State private var showSetup = false
     @State private var showSettings = false
     @StateObject private var updater = Updater()
-    @AppStorage("repName") private var repName = ""
-    @AppStorage("showTouchpoints") private var showTouchpoints = true
-    @AppStorage("nextDials") private var nextDials = true
+    @AppStorage(PrefKey.repName) private var repName = ""
+    @AppStorage(PrefKey.showTouchpoints) private var showTouchpoints = true
+    @AppStorage(PrefKey.nextDials) private var nextDials = true
     @State private var listViewCache: [Salesforce.ListView] = []
-    @AppStorage("appPhone") private var appPhone = true
+    @AppStorage(PrefKey.appPhone) private var appPhone = true
 
     // One visual system: blue = actions, green = listening, amber = real warnings.
     private let margin: CGFloat = 16
@@ -762,9 +762,7 @@ struct CoachView: View {
 
     /// The person on screen now, from the Salesforce tab (e.g. Lead "Burcin Sonmezer").
     private var currentName: String {
-        guard let calling = coach.calling, let open = calling.firstIndex(of: "\""), let close = calling.lastIndex(of: "\""),
-              open < close else { return "them" }
-        let name = String(calling[calling.index(after: open)..<close])
+        guard let name = Screener.fullName(coach.calling) else { return "them" }
         // "Unknown Unknown" is a placeholder: show the company from the open page instead.
         if Salesforce.isPlaceholderName(name), let company = coach.recordCompany, !company.isEmpty { return company }
         return name
@@ -1089,7 +1087,7 @@ struct FollowUpCard: View {
                             Button("Send text") { onSend() }
                                 .buttonStyle(.borderedProminent)
                                 .keyboardShortcut("t", modifiers: .command)
-                                .disabled(f.text.isEmpty || f.phone.isEmpty || f.textStatus == "Sending...")
+                                .disabled(f.text.isEmpty || f.phone.isEmpty || f.sending)
                         }
                     } else {
                         HStack(spacing: 12) {
@@ -1100,9 +1098,9 @@ struct FollowUpCard: View {
                     }
                 }
                 }
-                if let status = f.textStatus, status != "Sent" {
+                if let status = f.textStatus {
                     Text(status).font(.caption)
-                        .foregroundStyle(status == "Sending..." ? Color.secondary : Color.orange)
+                        .foregroundStyle(f.sending ? Color.secondary : Color.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !f.textDue && !f.textDone && !f.linkedInDue {

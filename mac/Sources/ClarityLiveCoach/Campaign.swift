@@ -111,7 +111,7 @@ struct Campaign: Codable, Identifiable, Equatable {
 final class CampaignStore: ObservableObject {
     @Published private(set) var campaigns: [Campaign] = []
     @Published var selectedID: UUID? {
-        didSet { UserDefaults.standard.set(selectedID?.uuidString, forKey: "selectedCampaign") }
+        didSet { UserDefaults.standard.set(selectedID?.uuidString, forKey: PrefKey.selectedCampaign) }
     }
     /// The campaign open in the editor window.
     @Published var editing: Campaign?
@@ -132,11 +132,11 @@ final class CampaignStore: ObservableObject {
             save(.clarityDiscovery)
         }
         // The cold call backbone ships once as its own (paused) campaign. Deleting it keeps it gone.
-        if !UserDefaults.standard.bool(forKey: "backboneCampaignAdded") {
-            UserDefaults.standard.set(true, forKey: "backboneCampaignAdded")
+        if !UserDefaults.standard.bool(forKey: PrefKey.backboneCampaignAdded) {
+            UserDefaults.standard.set(true, forKey: PrefKey.backboneCampaignAdded)
             if !campaigns.contains(where: { $0.id == ColdCallBackbone.campaignID }) { save(ColdCallBackbone.campaign) }
         }
-        let saved = UserDefaults.standard.string(forKey: "selectedCampaign").flatMap(UUID.init)
+        let saved = UserDefaults.standard.string(forKey: PrefKey.selectedCampaign).flatMap(UUID.init)
         selectedID = campaigns.contains { $0.id == saved } ? saved : campaigns.first?.id
         // First run with active campaigns: the one in use starts out active.
         if !campaigns.contains(where: \.active), let id = selectedID { setActive(id, true) }

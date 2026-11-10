@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Every call to each person, saved on this Mac. After the max number of tries with no
@@ -42,12 +43,12 @@ enum DialHistory {
 
     private static var cache: [String: Person]?
 
-    private static var file: URL {
+    private static let file: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ClarityLiveCoach", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("dial-history.json")
-    }
+    }()
 
     private static var all: [String: Person] {
         get {
@@ -58,16 +59,44 @@ enum DialHistory {
         }
         set {
             cache = newValue
-            if let data = try? JSONEncoder().encode(newValue) { try? data.write(to: file, options: .atomic) }
+            scheduleSave()
         }
+    }
+
+    // Saving: changes come in bursts (a dial, then a voicemail, then a text), so the file is
+    // written once, a second after the last change, off the main thread. Quitting saves right away.
+    private static var saveWork: DispatchWorkItem?
+    private static let saveQueue = DispatchQueue(label: "DialHistory.save", qos: .utility)
+    private static var savesOnQuit: NSObjectProtocol?
+
+    private static func scheduleSave() {
+        saveWork?.cancel()
+        let work = DispatchWorkItem { save() }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+        if savesOnQuit == nil {
+            savesOnQuit = NotificationCenter.default.addObserver(
+                forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+            ) { _ in
+                saveWork?.cancel()
+                guard let cache, let data = try? JSONEncoder().encode(cache) else { return }
+                try? data.write(to: file, options: .atomic) // quitting: write now, not later
+            }
+        }
+    }
+
+    private static func save() {
+        saveWork = nil
+        guard let cache, let data = try? JSONEncoder().encode(cache) else { return }
+        saveQueue.async { try? data.write(to: file, options: .atomic) }
     }
 
     private static func key(_ id: String) -> String { String(id.prefix(15)) }
 
     /// 3, 4 or 5. 0 = never take anyone off for this.
     static var maxDials: Int {
-        get { UserDefaults.standard.object(forKey: "maxDials") as? Int ?? 4 }
-        set { UserDefaults.standard.set(newValue, forKey: "maxDials") }
+        get { UserDefaults.standard.object(forKey: PrefKey.maxDials) as? Int ?? 4 }
+        set { UserDefaults.standard.set(newValue, forKey: PrefKey.maxDials) }
     }
 
     static func person(_ id: String) -> Person { all[key(id)] ?? Person() }

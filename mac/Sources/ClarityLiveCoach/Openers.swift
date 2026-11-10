@@ -67,7 +67,7 @@ struct OpenerScore: Codable {
 final class OpenerBook: ObservableObject {
     @Published private(set) var scores: [String: OpenerScore] = [:]
     @Published private(set) var index: Int
-    @Published var rotate: Bool { didSet { defaults.set(rotate, forKey: "rotateOpeners") } }
+    @Published var rotate: Bool { didSet { defaults.set(rotate, forKey: PrefKey.rotateOpeners) } }
 
     /// Tries each opener gets before results start steering the choice.
     static let warmUp = 3
@@ -75,9 +75,9 @@ final class OpenerBook: ObservableObject {
     private let defaults = UserDefaults.standard
 
     init() {
-        index = defaults.integer(forKey: "openerIndexV2") % Opener.all.count
-        rotate = defaults.object(forKey: "rotateOpeners") as? Bool ?? true
-        if let data = defaults.data(forKey: "openerScores"),
+        index = defaults.integer(forKey: PrefKey.openerIndex) % Opener.all.count
+        rotate = defaults.object(forKey: PrefKey.rotateOpeners) as? Bool ?? true
+        if let data = defaults.data(forKey: PrefKey.openerScores),
            let saved = try? JSONDecoder().decode([String: OpenerScore].self, from: data) {
             scores = saved
         }
@@ -123,8 +123,8 @@ final class OpenerBook: ObservableObject {
     }
 
     private func save() {
-        defaults.set(index, forKey: "openerIndexV2")
-        if let data = try? JSONEncoder().encode(scores) { defaults.set(data, forKey: "openerScores") }
+        defaults.set(index, forKey: PrefKey.openerIndex)
+        if let data = try? JSONEncoder().encode(scores) { defaults.set(data, forKey: PrefKey.openerScores) }
     }
 }
 

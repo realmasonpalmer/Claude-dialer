@@ -30,7 +30,7 @@ enum Aircall {
 
     /// The Aircall person calls are placed as (so Salesforce shows "made by" them).
     static var userID: Int? {
-        let id = UserDefaults.standard.integer(forKey: "aircallUserID")
+        let id = UserDefaults.standard.integer(forKey: PrefKey.aircallUserID)
         return id == 0 ? nil : id
     }
 
@@ -66,7 +66,7 @@ enum Aircall {
     }
 
     static var numberID: Int? {
-        let id = UserDefaults.standard.integer(forKey: "aircallNumberID")
+        let id = UserDefaults.standard.integer(forKey: PrefKey.aircallNumberID)
         return id == 0 ? nil : id
     }
 
@@ -234,14 +234,14 @@ struct AircallSetupView: View {
                     Picker("Your Aircall number", selection: $selected) {
                         ForEach(numbers) { n in Text("\(n.name)  \(n.digits)").tag(n.id) }
                     }
-                    .onChange(of: selected) { UserDefaults.standard.set(selected, forKey: "aircallNumberID") }
+                    .onChange(of: selected) { UserDefaults.standard.set(selected, forKey: PrefKey.aircallNumberID) }
                 }
                 if !users.isEmpty {
                     Picker("Calls are made as", selection: $selectedUser) {
                         Text("Choose yourself").tag(0)
                         ForEach(users) { u in Text(u.name).tag(u.id) }
                     }
-                    .onChange(of: selectedUser) { UserDefaults.standard.set(selectedUser, forKey: "aircallUserID") }
+                    .onChange(of: selectedUser) { UserDefaults.standard.set(selectedUser, forKey: PrefKey.aircallUserID) }
                     Text("Pick yourself, so Salesforce logs calls as made by you.")
                         .font(.caption).foregroundStyle(.secondary)
                 }

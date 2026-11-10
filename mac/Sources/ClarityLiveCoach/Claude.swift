@@ -7,6 +7,10 @@ struct ClaudeClient {
     var effort = "low" // fastest setting that keeps Opus-level quality
     /// Room for the answer (and thinking). Long scripts need much more than a live line.
     var maxTokens = 1500
+    /// Give up if nothing arrives for this long (a stuck answer never hangs the app).
+    var idleTimeout: TimeInterval = 20
+    /// Give up if the whole answer takes longer than this.
+    var totalTimeout: TimeInterval = 90
     /// Optional thinking setting. nil = the model's default (Opus 5.5 always thinks).
     var thinking: [String: String]?
 
@@ -40,7 +44,12 @@ struct ClaudeClient {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = idleTimeout
+        config.timeoutIntervalForResource = totalTimeout
+        let session = URLSession(configuration: config)
+        defer { session.finishTasksAndInvalidate() }
+        let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError(message: "No response from Claude") }
         guard http.statusCode == 200 else {
             var text = ""
@@ -67,6 +76,24 @@ struct ClaudeClient {
     }
 }
 
+extension ClaudeClient {
+    /// The JSON object in Claude's answer (from the first "{" to the last "}"), or nil.
+    static func jsonObject(in text: String) -> [String: Any]? {
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end else { return nil }
+        return (try? JSONSerialization.jsonObject(with: Data(text[start...end].utf8))) as? [String: Any]
+    }
+
+    /// Streams the whole answer and returns its JSON object. Throws if it isn't JSON.
+    func json(system: String, user: String) async throws -> [String: Any] {
+        var text = ""
+        try await stream(system: system, user: user) { text = $0 }
+        guard let json = Self.jsonObject(in: text) else {
+            throw APIError(message: "Claude's answer wasn't in the expected format. Try again.")
+        }
+        return json
+    }
+}
+
 /// How the live coach trades polish for speed. Pick in the gear menu.
 enum CoachSpeed: String, CaseIterable, Identifiable {
     case best, balanced, fastest
@@ -82,12 +109,14 @@ enum CoachSpeed: String, CaseIterable, Identifiable {
     }
 
     static var current: CoachSpeed {
-        CoachSpeed(rawValue: UserDefaults.standard.string(forKey: "coachSpeed") ?? "") ?? .balanced
+        CoachSpeed(rawValue: UserDefaults.standard.string(forKey: PrefKey.coachSpeed) ?? "") ?? .balanced
     }
 
     func client(apiKey: String) -> ClaudeClient {
         var c = ClaudeClient(apiKey: apiKey)
         c.effort = "low"
+        c.idleTimeout = 10 // a live line that stalls is useless; the rep keeps the last one
+        c.totalTimeout = 30
         switch self {
         case .best:
             c.model = "claude-opus-5-5" // always thinks; low effort keeps it short

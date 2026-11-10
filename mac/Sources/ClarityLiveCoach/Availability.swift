@@ -33,10 +33,10 @@ final class Availability: ObservableObject {
     var hasAccess: Bool { status == .fullAccess }
 
     init() {
-        selectedIDs = Set(UserDefaults.standard.stringArray(forKey: "bookingCalendars") ?? [])
-        startHour = UserDefaults.standard.object(forKey: "bookingStartHour") as? Int ?? 9
-        endHour = UserDefaults.standard.object(forKey: "bookingEndHour") as? Int ?? 17
-        meetingMinutes = UserDefaults.standard.object(forKey: "bookingMinutes") as? Int ?? 30
+        selectedIDs = Set(UserDefaults.standard.stringArray(forKey: PrefKey.bookingCalendars) ?? [])
+        startHour = UserDefaults.standard.object(forKey: PrefKey.bookingStartHour) as? Int ?? 9
+        endHour = UserDefaults.standard.object(forKey: PrefKey.bookingEndHour) as? Int ?? 17
+        meetingMinutes = UserDefaults.standard.object(forKey: PrefKey.bookingMinutes) as? Int ?? 30
         feedInput = Keychain.read(.calendarFeed)
         loadCalendars()
         if usesFeed { Task { await loadFeed() } }
@@ -261,10 +261,10 @@ final class Availability: ObservableObject {
     }
 
     private func save() {
-        defaults.set(Array(selectedIDs), forKey: "bookingCalendars")
-        defaults.set(startHour, forKey: "bookingStartHour")
-        defaults.set(endHour, forKey: "bookingEndHour")
-        defaults.set(meetingMinutes, forKey: "bookingMinutes")
+        defaults.set(Array(selectedIDs), forKey: PrefKey.bookingCalendars)
+        defaults.set(startHour, forKey: PrefKey.bookingStartHour)
+        defaults.set(endHour, forKey: PrefKey.bookingEndHour)
+        defaults.set(meetingMinutes, forKey: PrefKey.bookingMinutes)
         cached = nil
     }
 }

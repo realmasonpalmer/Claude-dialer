@@ -234,16 +234,10 @@ enum CampaignOrganizer {
         "objections" lists each objection with its approved answer, one per line.
         Return only a JSON object with exactly these string keys: \(keys.joined(separator: ", ")).
         """
-        var text = ""
         var client = ClaudeClient(apiKey: apiKey)
         client.effort = "medium"
-        try await client.stream(system: system, user: "Script:\n\n\(script)") { text = $0 }
-
-        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"),
-              let json = try JSONSerialization.jsonObject(with: Data(text[start...end].utf8)) as? [String: Any] else {
-            throw ClaudeClient.APIError(message: "Claude's answer wasn't in the expected format. Try again.")
-        }
-        return json.compactMapValues { $0 as? String }
+        client.totalTimeout = 180
+        return try await client.json(system: system, user: "Script:\n\n\(script)").compactMapValues { $0 as? String }
     }
 }
 

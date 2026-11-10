@@ -9,12 +9,12 @@ struct SettingsPane: View {
     @EnvironmentObject var coach: CoachModel
     @ObservedObject var updater: Updater
 
-    @AppStorage("coachSpeed") private var speed = CoachSpeed.balanced.rawValue
-    @AppStorage("wholeLine") private var wholeLine = true
-    @AppStorage("nextDials") private var nextDials = true
-    @AppStorage("showTouchpoints") private var showTouchpoints = true
-    @AppStorage("appPhone") private var appPhone = true
-    @AppStorage("coachBuiltInMic") private var builtInMic = true
+    @AppStorage(PrefKey.coachSpeed) private var speed = CoachSpeed.balanced.rawValue
+    @AppStorage(PrefKey.wholeLine) private var wholeLine = true
+    @AppStorage(PrefKey.nextDials) private var nextDials = true
+    @AppStorage(PrefKey.showTouchpoints) private var showTouchpoints = true
+    @AppStorage(PrefKey.appPhone) private var appPhone = true
+    @AppStorage(PrefKey.coachBuiltInMic) private var builtInMic = true
     @State private var showScoreboard = false
     @State private var confirmReset = false
     @State private var note: String?

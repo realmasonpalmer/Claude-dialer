@@ -80,7 +80,7 @@ final class CallLab: ObservableObject {
     @Published private(set) var analyzing = false
     @Published private(set) var hasNewSuggestions = false
     @Published var analysisError: String?
-    @Published var learning: Bool { didSet { UserDefaults.standard.set(learning, forKey: "learnFromCalls") } }
+    @Published var learning: Bool { didSet { UserDefaults.standard.set(learning, forKey: PrefKey.learnFromCalls) } }
 
     /// Fewest answered calls before Claude suggests edits.
     static let minimumCalls = 10
@@ -94,12 +94,12 @@ final class CallLab: ObservableObject {
     private var recordsFile: URL { folder.appendingPathComponent("calls.json") }
     private var suggestionsFile: URL { folder.appendingPathComponent("suggestions.json") }
     private var analyzedAt: [String: Int] {
-        get { UserDefaults.standard.dictionary(forKey: "labAnalyzedAt") as? [String: Int] ?? [:] }
-        set { UserDefaults.standard.set(newValue, forKey: "labAnalyzedAt") }
+        get { UserDefaults.standard.dictionary(forKey: PrefKey.labAnalyzedAt) as? [String: Int] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: PrefKey.labAnalyzedAt) }
     }
 
     init() {
-        learning = UserDefaults.standard.object(forKey: "learnFromCalls") as? Bool ?? true
+        learning = UserDefaults.standard.object(forKey: PrefKey.learnFromCalls) as? Bool ?? true
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         records = (try? JSONDecoder().decode([CallRecord].self, from: Data(contentsOf: recordsFile))) ?? []
         suggestions = (try? JSONDecoder().decode([ScriptSuggestion].self, from: Data(contentsOf: suggestionsFile))) ?? []
@@ -248,13 +248,8 @@ final class CallLab: ObservableObject {
         guard let key = Keychain.read(.anthropic) else { throw ClaudeClient.APIError(message: "No Anthropic key") }
         var client = ClaudeClient(apiKey: key)
         client.effort = effort
-        var text = ""
-        try await client.stream(system: system, user: user) { text = $0 }
-        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"),
-              let json = try JSONSerialization.jsonObject(with: Data(text[start...end].utf8)) as? [String: Any] else {
-            throw ClaudeClient.APIError(message: "Unexpected answer format")
-        }
-        return json
+        client.totalTimeout = 180
+        return try await client.json(system: system, user: user)
     }
 
     static func summarize(transcript: String) async throws -> CallSummary {

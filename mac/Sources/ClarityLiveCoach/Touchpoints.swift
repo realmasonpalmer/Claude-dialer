@@ -96,8 +96,8 @@ final class Touchpoints: ObservableObject {
 /// The Touchpoints card: pick a time period, see the numbers that matter.
 struct TouchpointsCard: View {
     @ObservedObject var touchpoints: Touchpoints
-    @AppStorage("touchpointsPeriod") private var periodRaw = Touchpoints.Period.today.rawValue
-    @AppStorage("touchpointsOpen") private var open = false
+    @AppStorage(PrefKey.touchpointsPeriod) private var periodRaw = Touchpoints.Period.today.rawValue
+    @AppStorage(PrefKey.touchpointsOpen) private var open = false
     @State private var confirmReset = false
 
     private var period: Touchpoints.Period { Touchpoints.Period(rawValue: periodRaw) ?? .today }

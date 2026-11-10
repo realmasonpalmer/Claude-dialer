@@ -312,7 +312,8 @@ enum CoachPrompt {
     /// The Salesforce record the rep had open: the tab title and, if allowed, the page's text.
     private static func about(_ calling: String?, _ details: String? = nil) -> String {
         var lines: [String] = []
-        if let rep = UserDefaults.standard.string(forKey: "repName")?.trimmed, !rep.isEmpty {
+        let rep = Prefs.repName
+        if !rep.isEmpty {
             lines.append("The rep's first name is \(rep).")
         }
         if let calling {
@@ -343,8 +344,10 @@ struct FollowUp: Equatable {
     var phone = ""
     /// Their LinkedIn profile, from the Salesforce record's LinkedIn field.
     var linkedinURL: URL?
-    /// "Sending...", "Sent", or an error, for the text row.
+    /// A note for the text row ("Sending...", an error). nil once sent.
     var textStatus: String?
+    /// The text is on its way: the Send button waits.
+    var sending = false
     /// A LinkedIn direct message, for people who are already connected.
     var linkedinMessage = ""
     var linkedinMessageDone = false
@@ -710,7 +713,7 @@ final class CoachModel: ObservableObject {
     /// - Parameter dial: false = just show the next person, don't call yet.
     func nextLead(dial shouldDial: Bool = true) {
         cancelAutoNext()
-        let dialNow = shouldDial && (UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true)
+        let dialNow = shouldDial && (Prefs.autoDial)
         if leads.isActive {
             if status != .ready { endCall() }
             Task { [weak self] in
@@ -780,16 +783,16 @@ final class CoachModel: ObservableObject {
 
     /// The "Double tap" switch next to Auto-dial: on = call each lead twice (redial), off = once.
     var doubleTap: Bool {
-        get { UserDefaults.standard.object(forKey: "doubleTap") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "doubleTap"); objectWillChange.send() }
+        get { Prefs.doubleTap }
+        set { Prefs.doubleTap = newValue; objectWillChange.send() }
     }
     /// Dials per lead per visit: 2 with Double tap, otherwise 1.
     var maxAttempts: Int { doubleTap ? 2 : 1 }
 
     /// The "Auto-dial" switch next to Aircall phone.
     var autoDial: Bool {
-        get { UserDefaults.standard.object(forKey: "nextDials") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "nextDials"); objectWillChange.send() }
+        get { Prefs.autoDial }
+        set { Prefs.autoDial = newValue; objectWillChange.send() }
     }
 
     /// The text was sent (or skipped): open the next person, wait until their opener,
@@ -915,9 +918,7 @@ final class CoachModel: ObservableObject {
                     // Everything matches: "Calling Burcin Sonmezer in 5", with a Wait button.
                     if countdown > 0 {
                         let who = self.calling
-                        self.autoNextName = who.flatMap { c in
-                            c.firstIndex(of: "\"").map { String(c[c.index(after: $0)...]).replacingOccurrences(of: "\"", with: "") }
-                        }
+                        self.autoNextName = Screener.fullName(who)
                         for left in stride(from: countdown, through: 1, by: -1) {
                             self.autoNextIn = left
                             try? await Task.sleep(for: .seconds(1))
@@ -1249,9 +1250,6 @@ final class CoachModel: ObservableObject {
             if tabTicks % 2 == 0 {
                 callList.captureIfListView()
                 if openingID == nil { callList.refreshUpNext() }
-                if let m = callMessage, m.hasPrefix("Everyone on this Salesforce list"), case .ready = callList.state {
-                    callMessage = nil
-                }
                 syncRecord()
             }
         }
@@ -1395,9 +1393,7 @@ final class CoachModel: ObservableObject {
     /// Counts down 3 seconds (1 after an automatic hang-up), then calls the same person again. Wait stops it.
     private func startAutoRedial() {
         autoNextTask?.cancel()
-        autoNextName = calling.flatMap { c in
-            c.firstIndex(of: "\"").map { String(c[c.index(after: $0)...]).replacingOccurrences(of: "\"", with: "") }
-        }.map { "\($0) again" }
+        autoNextName = Screener.fullName(calling).map { "\($0) again" }
         let countdown = redialRightAway ? 1 : 3
         redialRightAway = false
         autoNextTask = Task { [weak self] in
@@ -1863,7 +1859,7 @@ final class CoachModel: ObservableObject {
                 } else if !badNumberThisCall, !phoneTreeThisCall, repWordsInCall < 5,
                           !Voicemail.recordingPrompt(recent), PhoneTree.detects(prospectSoFar + " " + text) {
                     // Work through it by default. Old behavior (disqualify + hang up) behind a setting.
-                    if UserDefaults.standard.bool(forKey: "hangUpPhoneTrees") { markPhoneTree() } else { enterPhoneTree() }
+                    if Prefs.hangUpPhoneTrees { markPhoneTree() } else { enterPhoneTree() }
                 } else if Voicemail.detects(recent, earlyInCall: early)
                     || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
@@ -2115,10 +2111,7 @@ final class CoachModel: ObservableObject {
         phoneTreeThisCall = true
         coachTask?.cancel()
         thinking = false
-        let full = calling.flatMap { c -> String? in
-            guard let open = c.firstIndex(of: "\""), let close = c.lastIndex(of: "\""), open < close else { return nil }
-            return String(c[c.index(after: open)..<close])
-        }
+        let full = Screener.fullName(calling)
         let last = full?.split(separator: " ").last.map(String.init) ?? ""
         let keys: [Character: Character] = Dictionary(uniqueKeysWithValues: Array(zip("abcdefghijklmnopqrstuvwxyz",
                                                                                         "22233344455566677778889999")))
@@ -2213,10 +2206,7 @@ final class CoachModel: ObservableObject {
 
     /// Sets up the follow-up card for this prospect, filled from the pre-written voicemail if ready.
     private func startFollowUp() {
-        let name = calling.flatMap { c -> String? in
-            guard let open = c.firstIndex(of: "\""), let close = c.lastIndex(of: "\""), open < close else { return nil }
-            return String(c[c.index(after: open)..<close])
-        }
+        let name = Screener.fullName(calling)
         // A fresh card for every voicemail, so nothing (like an old error) carries over.
         // Same person as last time (2nd try): keep what was already sent, so they don't get it twice.
         let lead = leads.isActive ? leads.details : nil
@@ -2338,7 +2328,7 @@ final class CoachModel: ObservableObject {
 
     /// Sends the follow-up text through Aircall and checks it off.
     func sendFollowUpText() {
-        guard let f = followUp, !f.text.isEmpty, f.textStatus != "Sending..." else { return }
+        guard let f = followUp, !f.text.isEmpty, !f.sending else { return }
         if let key = f.key, DialHistory.textedToday(key) {
             followUp?.textStatus = "Already texted today. Not sent again."
             followUp?.textDone = true
@@ -2350,6 +2340,7 @@ final class CoachModel: ObservableObject {
             return
         }
         followUp?.textStatus = "Sending..."
+        followUp?.sending = true
         Task { [weak self] in
             do {
                 try await Aircall.sendText(to: f.phone, body: f.text)
@@ -2358,12 +2349,14 @@ final class CoachModel: ObservableObject {
                 ActivityLog.add("Text sent to \(f.prospect ?? "?") at \(f.phone)")
                 // Only mark the card it was sent from (not a newer person's card).
                 guard self?.followUp?.key == f.key else { return }
-                self?.followUp?.textStatus = "Sent"
+                self?.followUp?.textStatus = nil
+                self?.followUp?.sending = false
                 self?.followUp?.textDone = true
             } catch {
                 ActivityLog.problem("Text failed: \(error.localizedDescription)")
                 guard self?.followUp?.key == f.key else { return }
                 self?.followUp?.textStatus = error.localizedDescription
+                self?.followUp?.sending = false
             }
         }
     }
@@ -2569,7 +2562,7 @@ final class CoachModel: ObservableObject {
     /// can't write them in time. Still the right person, just not personalized.
     private func instantVoicemail(for calling: String?) -> Suggestion {
         let first = Screener.firstName(calling) ?? "there"
-        let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+        let rep = Prefs.repName
         let me = rep.isEmpty ? "[your name]" : rep
         var s = Suggestion()
         let key = recordKey()
@@ -2620,7 +2613,7 @@ final class CoachModel: ObservableObject {
         }
         var t = openerStyle?.template ?? Opener.all[0].template
         if t.contains("[a ") { t = Opener.all[0].template } // needs Claude to fill in; use the plain one
-        let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+        let rep = Prefs.repName
         t = t.replacingOccurrences(of: "[first name]", with: Screener.firstName(calling) ?? "there")
             .replacingOccurrences(of: "[rep]", with: rep.isEmpty ? "[your name]" : rep)
             .replacingOccurrences(of: "[company]", with: shortCompany)
@@ -2666,7 +2659,7 @@ final class CoachModel: ObservableObject {
     /// Fills {first name}, {rep}, {company} and their [bracket] versions (any capitalization).
     private func fillTags(_ text: String, for calling: String?) -> String {
         var t = text
-        let rep = (UserDefaults.standard.string(forKey: "repName") ?? "").trimmingCharacters(in: .whitespaces)
+        let rep = Prefs.repName
         let first = Screener.firstName(calling) ?? "there"
         let tags: [(names: [String], value: String)] = [
             (["first name", "firstname", "first", "name", "prospect", "prospect name"], first),
@@ -2846,7 +2839,7 @@ final class CoachModel: ObservableObject {
     private func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
         guard id == seq, !s.skip, !s.say.isEmpty else { return }
         // Easier to read live: show the line once it's whole, not word by word (setting).
-        let wholeLine = UserDefaults.standard.object(forKey: "wholeLine") as? Bool ?? true
+        let wholeLine = Prefs.wholeLine
         if wholeLine && !s.sayComplete { return }
         if specBasis != nil {
             specHeld = (s, id) // started early: wait until they really stop talking

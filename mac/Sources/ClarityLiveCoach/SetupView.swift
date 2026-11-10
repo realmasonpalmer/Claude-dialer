@@ -8,8 +8,8 @@ struct SetupView: View {
     var onAudioCheck: () -> Void
     var onKeys: () -> Void
 
-    @AppStorage("repName") private var repName = ""
-    @AppStorage("audioCheckPassed") private var audioCheckPassed = false
+    @AppStorage(PrefKey.repName) private var repName = ""
+    @AppStorage(PrefKey.audioCheckPassed) private var audioCheckPassed = false
     @State private var showAircall = false
     @State private var showSalesforce = false
     @State private var showCalendar = false
@@ -115,9 +115,9 @@ struct SetupView: View {
 
     @MainActor static func doneCount(coach: CoachModel) -> (done: Int, total: Int) {
         let required = [
-            !(UserDefaults.standard.string(forKey: "repName") ?? "").isEmpty,
+            !Prefs.repName.isEmpty,
             Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil,
-            UserDefaults.standard.bool(forKey: "audioCheckPassed"),
+            UserDefaults.standard.bool(forKey: PrefKey.audioCheckPassed),
             (coach.callList.state != .needsChromeSetting && !coach.callList.records.isEmpty),
             Salesforce.isConnected,
             Aircall.canPlaceCalls,

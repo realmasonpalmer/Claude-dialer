@@ -48,13 +48,13 @@ final class CallList: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        lastIndex = d.object(forKey: "callListIndex") as? Int ?? -1
-        if let data = d.data(forKey: "callList"), let saved = try? JSONDecoder().decode([Record].self, from: data) {
+        lastIndex = d.object(forKey: PrefKey.callListIndex) as? Int ?? -1
+        if let data = d.data(forKey: PrefKey.callList), let saved = try? JSONDecoder().decode([Record].self, from: data) {
             records = saved
         }
-        calledDay = d.string(forKey: "calledDay") ?? ""
-        calledToday = Set(d.stringArray(forKey: "calledToday") ?? [])
-        listKey = d.data(forKey: "callListKey").flatMap { try? JSONDecoder().decode(ListKey.self, from: $0) }
+        calledDay = d.string(forKey: PrefKey.calledDay) ?? ""
+        calledToday = Set(d.stringArray(forKey: PrefKey.calledToday) ?? [])
+        listKey = d.data(forKey: PrefKey.callListKey).flatMap { try? JSONDecoder().decode(ListKey.self, from: $0) }
         resetCalledIfNewDay()
     }
 
@@ -379,11 +379,11 @@ final class CallList: ObservableObject {
 
     private func save() {
         let d = UserDefaults.standard
-        d.set(lastIndex, forKey: "callListIndex")
-        if let data = try? JSONEncoder().encode(records) { d.set(data, forKey: "callList") }
-        d.set(calledDay, forKey: "calledDay")
-        d.set(Array(calledToday), forKey: "calledToday")
-        if let listKey, let data = try? JSONEncoder().encode(listKey) { d.set(data, forKey: "callListKey") }
+        d.set(lastIndex, forKey: PrefKey.callListIndex)
+        if let data = try? JSONEncoder().encode(records) { d.set(data, forKey: PrefKey.callList) }
+        d.set(calledDay, forKey: PrefKey.calledDay)
+        d.set(Array(calledToday), forKey: PrefKey.calledToday)
+        if let listKey, let data = try? JSONEncoder().encode(listKey) { d.set(data, forKey: PrefKey.callListKey) }
     }
 }
 

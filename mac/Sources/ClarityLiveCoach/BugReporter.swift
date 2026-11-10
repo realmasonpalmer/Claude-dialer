@@ -43,8 +43,8 @@ enum BugReporter {
 
     private static func post(title: String) async -> Bool {
         guard let url = webhook else { return false }
-        let rep = UserDefaults.standard.string(forKey: "repName") ?? "?"
-        let version = String((UserDefaults.standard.string(forKey: "installedSHA") ?? "unknown").prefix(7))
+        let rep = UserDefaults.standard.string(forKey: PrefKey.repName) ?? "?"
+        let version = String((UserDefaults.standard.string(forKey: PrefKey.installedSHA) ?? "unknown").prefix(7))
         let os = ProcessInfo.processInfo.operatingSystemVersionString
         let text = """
         :rotating_light: *\(title)*

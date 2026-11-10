@@ -21,8 +21,17 @@ enum Screener {
 
     /// "This is Mason calling for Jane."
     static func line(calling: String?) -> String {
-        let rep = UserDefaults.standard.string(forKey: "repName")?.trimmed ?? ""
+        let rep = Prefs.repName
         return "This is \(rep.isEmpty ? "[your name]" : rep) calling for \(firstName(calling) ?? "[their name]")."
+    }
+
+    /// The full name from a record like: Lead "Jane Doe" -> Jane Doe. Any record type.
+    static func fullName(_ calling: String?) -> String? {
+        guard let calling, let open = calling.firstIndex(of: "\"") else { return nil }
+        let rest = calling[calling.index(after: open)...]
+        let inside = rest.lastIndex(of: "\"").map { rest[..<$0] } ?? rest
+        let name = inside.replacingOccurrences(of: "\"", with: "").trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
     }
 
     /// First name from a record like: Lead "Jane Doe". People only, not companies.

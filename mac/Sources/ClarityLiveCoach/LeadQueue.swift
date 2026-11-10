@@ -22,8 +22,8 @@ final class LeadQueue: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        calledDay = d.string(forKey: "sfCalledDay") ?? ""
-        calledToday = Set(d.stringArray(forKey: "sfCalledToday") ?? [])
+        calledDay = d.string(forKey: PrefKey.sfCalledDay) ?? ""
+        calledToday = Set(d.stringArray(forKey: PrefKey.sfCalledToday) ?? [])
         resetIfNewDay()
     }
 
@@ -37,7 +37,7 @@ final class LeadQueue: ObservableObject {
         do {
             views = try await Salesforce.listViews()
             error = nil
-            let saved = UserDefaults.standard.string(forKey: "sfListView")
+            let saved = UserDefaults.standard.string(forKey: PrefKey.sfListView)
             if let view = views.first(where: { $0.id == saved }) { await open(view) }
         } catch {
             self.error = error.localizedDescription
@@ -51,7 +51,7 @@ final class LeadQueue: ObservableObject {
             rows = try await Salesforce.rows(of: view)
             selected = view
             error = nil
-            UserDefaults.standard.set(view.id, forKey: "sfListView")
+            UserDefaults.standard.set(view.id, forKey: PrefKey.sfListView)
             // Start at the first one not called today.
             index = rows.firstIndex { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) && Cadence.isDue($0.id) } ?? 0
             await loadDetails()
@@ -66,7 +66,7 @@ final class LeadQueue: ObservableObject {
         rows = []
         details = nil
         index = 0
-        UserDefaults.standard.removeObject(forKey: "sfListView")
+        UserDefaults.standard.removeObject(forKey: PrefKey.sfListView)
     }
 
     /// Picks up changes made in Salesforce (new leads, edits), keeping the current lead.
@@ -143,7 +143,7 @@ final class LeadQueue: ObservableObject {
     }
 
     private func save() {
-        UserDefaults.standard.set(calledDay, forKey: "sfCalledDay")
-        UserDefaults.standard.set(Array(calledToday), forKey: "sfCalledToday")
+        UserDefaults.standard.set(calledDay, forKey: PrefKey.sfCalledDay)
+        UserDefaults.standard.set(Array(calledToday), forKey: PrefKey.sfCalledToday)
     }
 }

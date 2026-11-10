@@ -12,14 +12,14 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
 
     /// On by default. Off = use the Aircall desktop app or the Aircall panel in Chrome instead.
     nonisolated static var isOn: Bool {
-        get { UserDefaults.standard.object(forKey: "appPhone") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "appPhone") }
+        get { UserDefaults.standard.object(forKey: PrefKey.appPhone) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: PrefKey.appPhone) }
     }
 
     /// The phone is shown big (to sign in) or tucked away (while calling).
     /// Shown by default; remembers if the rep hides it.
-    @Published var shown = UserDefaults.standard.object(forKey: "aircallShown") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(shown, forKey: "aircallShown") }
+    @Published var shown = UserDefaults.standard.object(forKey: PrefKey.aircallShown) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(shown, forKey: PrefKey.aircallShown) }
     }
 
     let webView: WKWebView
@@ -283,9 +283,9 @@ struct AircallPhoneView: NSViewRepresentable {
 /// "Aircall phone" bar in the coach: Show opens the phone on the right, Hide tucks it away.
 struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
-    @AppStorage("nextDials") private var autoDial = true
-    @AppStorage("doubleTap") private var doubleTap = true
-    @AppStorage("aircallNumberID") private var numberID = 0
+    @AppStorage(PrefKey.nextDials) private var autoDial = true
+    @AppStorage(PrefKey.doubleTap) private var doubleTap = true
+    @AppStorage(PrefKey.aircallNumberID) private var numberID = 0
     @State private var numbers: [Aircall.Number] = []
 
     var body: some View {

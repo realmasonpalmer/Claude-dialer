@@ -260,7 +260,7 @@ final class CaptureEngine {
             // make the headset glitch (worst at hang-up). So the coach hears the rep through the
             // Mac's built-in mic, unless that's turned off in Settings or there isn't one.
             // If the built-in mic won't start, use the normal mic: never block a call over this.
-            let useBuiltIn = UserDefaults.standard.object(forKey: "coachBuiltInMic") as? Bool ?? true
+            let useBuiltIn = Prefs.builtInMic
             let onMic: (AVAudioPCMBuffer) -> Void = { buffer in
                 guard let speech = micConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: true)
@@ -292,7 +292,7 @@ final class CaptureEngine {
     /// Only the rep's mic (the call side comes straight from the Aircall phone).
     func startMicOnly(onChunk: @escaping (Bool, AVAudioPCMBuffer) -> Void) throws {
         let micConverter = self.micConverter, writers = self.writers
-        let useBuiltIn = UserDefaults.standard.object(forKey: "coachBuiltInMic") as? Bool ?? true
+        let useBuiltIn = Prefs.builtInMic
         let onMic: (AVAudioPCMBuffer) -> Void = { buffer in
             guard let speech = micConverter.convert(buffer) else { return }
             writers.write(speech, isRep: true)

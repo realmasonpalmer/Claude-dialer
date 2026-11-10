@@ -16,8 +16,8 @@ enum Salesforce {
     static var isConnected: Bool { Keychain.read(.sfRefresh) != nil && Keychain.read(.sfInstance) != nil }
 
     static var loginHost: String {
-        get { UserDefaults.standard.string(forKey: "sfLoginHost") ?? "clarityconsultingllc.my.salesforce.com" }
-        set { UserDefaults.standard.set(newValue, forKey: "sfLoginHost") }
+        get { UserDefaults.standard.string(forKey: PrefKey.sfLoginHost) ?? "clarityconsultingllc.my.salesforce.com" }
+        set { UserDefaults.standard.set(newValue, forKey: PrefKey.sfLoginHost) }
     }
 
     // MARK: Sign in
@@ -176,7 +176,11 @@ enum Salesforce {
         let subtitle: String
     }
 
+    /// List views barely change, so they're reused for a minute (every list load and count needs them).
+    private static var cachedViews: (at: Date, views: [ListView])?
+
     static func listViews() async throws -> [ListView] {
+        if let c = cachedViews, Date().timeIntervalSince(c.at) < 60 { return c.views }
         var views: [ListView] = []
         for object in ["Lead", "Contact"] {
             let json = try await get("/services/data/\(apiVersion)/sobjects/\(object)/listviews") as? [String: Any]
@@ -187,6 +191,7 @@ enum Salesforce {
                 }
             }
         }
+        cachedViews = (Date(), views)
         return views
     }
 
@@ -318,6 +323,23 @@ enum Salesforce {
         }) else { throw SFError(message: "Couldn't find that list view in Salesforce.") }
         let rows = try await allRows(of: view)
         return await withCompanyNames(rows, object: object)
+    }
+
+    /// How many people are on a list view, without loading them: the list's own query as a COUNT().
+    static func count(object: String, key: String) async throws -> Int {
+        guard let view = try await listViews().first(where: {
+            $0.object == object && ($0.id.prefix(15) == key.prefix(15) || $0.developerName == key)
+        }) else { throw SFError(message: "Couldn't find that list view in Salesforce.") }
+        let describe = try await get("/services/data/\(apiVersion)/sobjects/\(view.object)/listviews/\(view.id)/describe") as? [String: Any]
+        guard let soql = describe?["query"] as? String, let from = soql.range(of: " FROM ", options: .caseInsensitive) else {
+            return try await allRows(of: view).count
+        }
+        var rest = String(soql[from.lowerBound...])
+        if let order = rest.range(of: " ORDER BY ", options: [.caseInsensitive, .backwards]) { rest = String(rest[..<order.lowerBound]) }
+        let q = ("SELECT COUNT()" + rest).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let json = try await get("/services/data/\(apiVersion)/query?q=\(q)") as? [String: Any]
+        guard let total = json?["totalSize"] as? Int else { return try await allRows(of: view).count }
+        return min(total, 2000) // the app calls at most 2,000 people per list
     }
 
     /// "Unknown Unknown" (or blank) is a placeholder, not a real name.
