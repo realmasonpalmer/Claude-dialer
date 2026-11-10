@@ -1,4 +1,22 @@
-# Clarity Live Coach: architecture and cleanup plan (2026-11-02)
+# Clarity Live Coach: architecture and cleanup plan (2026-11-02, updated 2026-11-10)
+
+## Layout after the 2026-11-10 cleanup
+
+- `Coach.swift`: `CoachModel`'s stored properties only, plus `use`/`activate`/`onAppear`. Every job lives in an extension:
+  `CoachModel+Lines` (asking Claude, showing and holding lines), `+Leads` (record on screen, status, Next/Back, dial gate),
+  `+Call` (tick, start/end, auto redial/next), `+Audio` (capture, Deepgram, words), `+PhoneTree` (menus, bad numbers),
+  `+FollowUp` (voicemail, text/LinkedIn card, plan), `+Script` (lines straight from the campaign script).
+- `CoachPrompt.swift` (all prompts), `CoachTypes.swift` (`Suggestion`, `Prospect`, `FollowUp`, `Turn`, `StreamBox`, `LiveTranscript`).
+- `Prospect` holds the person on screen (name, page text, opener-for, voicemail-for); `meet(_:)` switches person.
+- `CoachModel.phase` is the one-word call state (Idle, Getting ready, Dialing, Counting down, On a call...), logged on change.
+- `CalledToday` is the one "called today" list for both call lists. `CalledToday.isCallable(id)` is the one "can we call them" rule.
+- `Prefs.swift`: every saved setting's name (`PrefKey`) and typed reads (`Prefs`).
+- `SalesforceChrome` keeps a background snapshot of the tab's address and title (all AppleScript on one queue);
+  `url(live: true)` / `currentRecord(live: true)` read Chrome right now, used only right before dialing or saving page text.
+- `ClaudeClient` has `idleTimeout`/`totalTimeout` (live lines: 10 s / 30 s) and `json(system:user:)`.
+- `Connections.shared` publishes Salesforce/Aircall connection state so labels update.
+- `.github/workflows/build.yml` builds the app on a Mac for every push.
+
 
 Two read-only reviews (call wiring, and UX/UI) were run on the whole app. This file is the plan. HANDOFF.md has the history.
 
