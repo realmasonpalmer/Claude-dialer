@@ -191,6 +191,7 @@ struct CoachView: View {
                 StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: true)
             }
             scriptCard
+            ScriptOutlineCard(coach: coach)
             belowCard
             if coach.statusRecordID != nil { // stays up during calls too, with the LinkedIn and text cards
                 RelationshipCard(coach: coach)
