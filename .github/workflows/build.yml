@@ -1,0 +1,16 @@
+name: Build check
+# Builds the Mac app on every push, so a change that doesn't compile is caught
+# before the app's updater picks it up.
+on:
+  push:
+    paths: ["mac/**", ".github/workflows/build.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        working-directory: mac
+        run: swift build -c release 2>&1 | grep -E "error:|warning: unre|Compiling|Build complete" | head -200; exit ${PIPESTATUS[0]}
