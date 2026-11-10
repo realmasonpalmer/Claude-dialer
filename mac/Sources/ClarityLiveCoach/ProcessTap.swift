@@ -22,7 +22,7 @@ final class ProcessTap {
             description.uuid = UUID()
             description.muteBehavior = .unmuted // the rep still hears the call
             description.isPrivate = true
-            description.name = "Clarity Live Coach"
+            description.name = "Clarity Caller"
 
             var tap = AudioObjectID(kAudioObjectUnknown)
             try check(AudioHardwareCreateProcessTap(description, &tap), "Create process tap")
@@ -36,7 +36,7 @@ final class ProcessTap {
             // A private aggregate device lets us read the tap like a microphone.
             let outputUID = try defaultOutputDeviceUID()
             let aggregate: [String: Any] = [
-                kAudioAggregateDeviceNameKey: "Clarity Live Coach Tap",
+                kAudioAggregateDeviceNameKey: "Clarity Caller Tap",
                 kAudioAggregateDeviceUIDKey: UUID().uuidString,
                 kAudioAggregateDeviceMainSubDeviceKey: outputUID,
                 kAudioAggregateDeviceIsPrivateKey: true,

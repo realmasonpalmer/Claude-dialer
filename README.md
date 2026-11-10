@@ -1,4 +1,4 @@
-# Clarity Live Coach
+# Clarity Caller
 
 A **Mac app** that sits next to Aircall and Salesforce and coaches a cold caller live.
 It is **not** a dialer, a phone system, a Salesforce plugin, or an AI that talks on calls.

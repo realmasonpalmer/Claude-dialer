@@ -76,7 +76,7 @@ enum Keychain {
         var add = base
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
-        add[kSecAttrLabel as String] = "Clarity Live Coach keys"
+        add[kSecAttrLabel as String] = "Clarity Caller keys"
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 

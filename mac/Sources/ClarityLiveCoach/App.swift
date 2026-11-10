@@ -8,7 +8,7 @@ struct ClarityLiveCoachApp: App {
     @StateObject private var campaigns = CampaignStore()
 
     var body: some Scene {
-        WindowGroup("Clarity Live Coach") {
+        WindowGroup("Clarity Caller") {
             RootView()
                 .environmentObject(proof)
                 .environmentObject(coach)
@@ -186,7 +186,7 @@ struct AudioCheckView: View {
             case .you:
                 Text("Check your headset is the input in System Settings > Sound > Input.")
             case .prospect:
-                Text("Turn on Clarity Live Coach under \"System Audio Recording Only\", then press Try again.")
+                Text("Turn on Clarity Caller under \"System Audio Recording Only\", then press Try again.")
                 HStack {
                     Button("Open settings") { model.openSettings("Privacy_ScreenCapture") }
                     Button("Try again") { model.retry() }

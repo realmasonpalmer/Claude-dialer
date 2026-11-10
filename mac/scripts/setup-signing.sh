@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One time: makes a free signing certificate on this Mac, just for Clarity Live Coach.
+# One time: makes a free signing certificate on this Mac, just for Clarity Caller.
 # With it, macOS sees every update as the same app, so it remembers your permissions
 # (microphone, call audio, Chrome, calendar, Keychain) instead of asking again.
 set -euo pipefail

@@ -1,4 +1,4 @@
-# Clarity Live Coach: architecture and cleanup plan (2026-11-02)
+# Clarity Caller: architecture and cleanup plan (2026-11-02)
 
 Two read-only reviews (call wiring, and UX/UI) were run on the whole app. This file is the plan. HANDOFF.md has the history.
 

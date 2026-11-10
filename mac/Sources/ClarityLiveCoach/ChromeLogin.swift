@@ -67,8 +67,8 @@ final class ChromeLogin {
             let isCallback = path.hasPrefix("/callback")
             let failed = path.contains("error=")
             let page = isCallback && !failed
-                ? "Signed in. You can close this tab and go back to Clarity Live Coach."
-                : "Sign-in didn't finish. Go back to Clarity Live Coach and try again."
+                ? "Signed in. You can close this tab and go back to Clarity Caller."
+                : "Sign-in didn't finish. Go back to Clarity Caller and try again."
             let html = "<html><body style='font-family:-apple-system;font-size:20px;padding:40px'>\(page)</body></html>"
             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
             connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })

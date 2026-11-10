@@ -1,4 +1,4 @@
-# Clarity Live Coach: handoff (2026-10-30)
+# Clarity Caller: handoff (2026-10-30)
 
 Read this first in a new chat. Repo: `realmasonpalmer/claude-dialer`, branch `claude/confident-gates-ji8r2l`.
 
@@ -11,9 +11,18 @@ Read this first in a new chat. Repo: `realmasonpalmer/claude-dialer`, branch `cl
 - Wants the most efficient dialer + texter + LinkedIn sender possible, with as little manual work as possible.
 - Can't compile here: this cloud session is Linux. All Swift is unverified until Mason builds on his Mac. Say so. If he pastes build errors, fix them first.
 
+## Name change (2026-11-10)
+
+The app was renamed from Clarity Live Coach to **Clarity Caller**. Only names the rep sees changed.
+These hidden names stay on purpose, so nobody loses Mac permissions, saved keys or data:
+bundle id `io.clarityconsulting.livecoach`, Keychain service, signing cert "Clarity Live Coach Signing",
+Swift target `ClarityLiveCoach`, and the data folders (`Application Support/Clarity Live Coach`,
+`Application Support/ClarityLiveCoach`, `Logs/ClarityLiveCoach`). `install.sh` deletes the old
+`/Applications/Clarity Live Coach.app` so there is only one copy.
+
 ## What the product is
 
-A native macOS app, **Clarity Live Coach** (`mac/`, Swift + SwiftUI, macOS 14.4+). A floating window that:
+A native macOS app, **Clarity Caller** (`mac/`, Swift + SwiftUI, macOS 14.4+). A floating window that:
 - hears both sides of a call (mic = rep; Core Audio process tap on Chrome or the Aircall desktop app = prospect),
 - live transcribes with Deepgram (two streams, so who-said-what is known by source),
 - asks Claude for one line to say next plus a short tip,

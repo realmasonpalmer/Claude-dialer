@@ -92,7 +92,7 @@ final class Updater: ObservableObject {
         echo "=== Update started $(date)"
         fail() {
             echo "Update failed: $1"
-            osascript -e 'display notification "The update did not finish. The app still works. Ask for help with ~/Library/Logs/ClarityLiveCoach-update.log" with title "Clarity Live Coach"'
+            osascript -e 'display notification "The update did not finish. The app still works. Ask for help with ~/Library/Logs/ClarityLiveCoach-update.log" with title "Clarity Caller"'
             exit 1
         }
         WORK="$HOME/Library/Caches/ClarityLiveCoach-update"
@@ -111,7 +111,7 @@ final class Updater: ObservableObject {
             kill \(pid) 2>/dev/null
             sleep 2
             kill -9 \(pid) 2>/dev/null
-            open "/Applications/Clarity Live Coach.app"
+            open "/Applications/Clarity Caller.app"
         fi
         echo "=== Update finished $(date)"
         """

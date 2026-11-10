@@ -1,12 +1,12 @@
 #!/bin/bash
-# One command to install (or reinstall) Clarity Live Coach on a Mac:
+# One command to install (or reinstall) Clarity Caller on a Mac:
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/confident-gates-ji8r2l/mac/scripts/get.sh)"
 set -euo pipefail
 REPO="realmasonpalmer/Claude-dialer"
 BRANCH="claude/confident-gates-ji8r2l"
 
 echo ""
-echo "Installing Clarity Live Coach..."
+echo "Installing Clarity Caller..."
 
 # 1. Apple's free developer tools (needed to build the app). Installed once.
 if ! xcode-select -p >/dev/null 2>&1; then
@@ -34,4 +34,4 @@ SHA="$(curl -fsSL "https://api.github.com/repos/$REPO/commits/$BRANCH" | sed -n 
 [ -n "$SHA" ] && defaults write io.clarityconsulting.livecoach installedSHA "$SHA"
 
 echo ""
-echo "All set. Clarity Live Coach is open. Click the gear, then Setup, and follow the 7 steps."
+echo "All set. Clarity Caller is open. Click the gear, then Setup, and follow the 7 steps."

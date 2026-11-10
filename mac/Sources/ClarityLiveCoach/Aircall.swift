@@ -261,7 +261,7 @@ struct AircallSetupView: View {
                                 working = true
                                 defer { working = false }
                                 do {
-                                    try await Aircall.sendText(to: testPhone, body: "Test from Clarity Live Coach.")
+                                    try await Aircall.sendText(to: testPhone, body: "Test from Clarity Caller.")
                                     status = "Connected. Test text sent. Check your phone."
                                 } catch {
                                     status = error.localizedDescription

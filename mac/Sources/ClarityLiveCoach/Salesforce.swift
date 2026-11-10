@@ -491,7 +491,7 @@ struct SalesforceConnectView: View {
                 DisclosureGroup("One-time setup in Salesforce (admin, 5 minutes)", isExpanded: $showSteps) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("1. Setup > External Client App Manager > New External Client App.")
-                        Text("2. Name: Clarity Live Coach. Contact email: yours.")
+                        Text("2. Name: Clarity Caller. Contact email: yours.")
                         Text("3. Check Enable OAuth. Callback URL: \(ChromeLogin.redirectURI)")
                         Text("4. Scopes: \"Manage user data via APIs (api)\" and \"Perform requests at any time (refresh_token, offline_access)\".")
                         Text("5. Check \"Require Proof Key for Code Exchange (PKCE)\". Uncheck \"Require secret for Web Server Flow\" and \"Require secret for Refresh Token Flow\".")

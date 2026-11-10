@@ -330,7 +330,7 @@ final class CallList: ObservableObject {
         case .list(let found): result = "\(found.count) records on screen, first: \(found.prefix(3).map(\.name).joined(separator: ", "))"
         }
         return """
-        Clarity Live Coach - Next debug
+        Clarity Caller - Next debug
         Tab address: \(url)
         Tab title: \(title)
         List on screen: \(result)
