@@ -19,6 +19,8 @@ struct SetupView: View {
     @State private var askWebhook = false
     @State private var webhookText = Keychain.read(.bugWebhook) ?? ""
     @State private var refresh = 0 // re-checks the steps after a setup screen closes
+    @State private var teamKeys: TeamKeysView.Mode?
+    @State private var showMore = false
 
     struct Step: Identifiable {
         let id: String
@@ -115,106 +117,154 @@ struct SetupView: View {
         ], links: [("Clarity Calendly", "https://calendly.com/clarity_consulting")]),
     ]
 
+    /// Team keys are in: Claude, Deepgram and Aircall work.
+    static var hasTeamKeys: Bool {
+        Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil && Aircall.isSetUp
+    }
+
+    /// The steps a new rep does: import team keys, audio check, Chrome. Plus Salesforce sign-in
+    /// and their Aircall line, only if the keys file couldn't cover them.
     @MainActor static func doneCount(coach: CoachModel) -> (done: Int, total: Int) {
-        let required = [
-            !Prefs.repName.isEmpty,
-            Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil,
+        var required = [
+            hasTeamKeys,
             UserDefaults.standard.bool(forKey: PrefKey.audioCheckPassed),
             (coach.callList.state != .needsChromeSetting && !coach.callList.records.isEmpty),
-            Salesforce.isConnected,
-            Aircall.canPlaceCalls,
-            coach.availability.feedInput != nil,
         ]
+        if hasTeamKeys && !Salesforce.isConnected { required.append(false) }
+        if Aircall.isSetUp && Aircall.userID == nil { required.append(false) }
+        else if Prefs.repName.isEmpty { required.append(false) }
         return (required.filter { $0 }.count, required.count)
     }
 
+    /// The main steps, in order.
     private var steps: [Step] {
         _ = refresh
-        return [
-            Step(id: "name", title: "1. Your first name",
-                 detail: repName.isEmpty ? "So openers say \"this is [you]\"." : "Openers say \"this is \(repName)\".",
-                 done: !repName.isEmpty, optional: false) { askName = true },
-            Step(id: "keys", title: "2. AI keys (Anthropic + Deepgram)",
-                 detail: "Claude writes your lines. Deepgram hears the call.",
-                 done: Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil, optional: false) {
-                dismiss(); onKeys()
-            },
-            Step(id: "audio", title: "3. Audio check",
+        var list = [
+            Step(id: "team", title: "1. Import team keys",
+                 detail: Self.hasTeamKeys ? "Claude, Deepgram, Aircall and the booking calendar are set."
+                                          : "Your team lead sends a keys file and a passcode. One step sets up everything.",
+                 done: Self.hasTeamKeys, optional: false) { teamKeys = .importKeys },
+            Step(id: "audio", title: "2. Audio check",
                  detail: "Makes sure the app hears you and the person you call.",
                  done: audioCheckPassed, optional: false) {
                 dismiss(); onAudioCheck()
             },
-            Step(id: "chrome", title: "4. Chrome setting",
+            Step(id: "chrome", title: "3. Chrome setting",
                  detail: "In Chrome: View > Developer > Allow JavaScript from Apple Events. Lets the app read your Salesforce list.",
                  done: (coach.callList.state != .needsChromeSetting && !coach.callList.records.isEmpty), optional: false) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Google Chrome.app"))
             },
-            Step(id: "salesforce", title: "5. Salesforce",
-                 detail: Salesforce.isConnected ? "Signed in. Saves Relationship Status and Lead Status." : "Sign in through Chrome. Needed to save statuses.",
-                 done: Salesforce.isConnected, optional: false) { showSalesforce = true },
-            Step(id: "aircall", title: "6. Aircall calling and texting",
+        ]
+        // Only when the keys file didn't cover them.
+        if Self.hasTeamKeys && !Salesforce.isConnected {
+            list.append(Step(id: "salesforce", title: "Sign in to Salesforce",
+                             detail: "One click: Chrome opens Salesforce, you click Allow.",
+                             done: false, optional: false) { showSalesforce = true })
+        }
+        if Aircall.isSetUp && Aircall.userID == nil {
+            list.append(Step(id: "aircall", title: "Pick yourself in Aircall",
+                             detail: "So calls ring on your line. Your first name comes from it too.",
+                             done: false, optional: false) { showAircall = true })
+        } else if repName.isEmpty {
+            list.append(Step(id: "name", title: "Your first name",
+                             detail: "So openers say \"this is [you]\".",
+                             done: false, optional: false) { askName = true })
+        }
+        return list
+    }
+
+    /// Everything else: set one thing by hand, or share keys with a new rep.
+    private var moreSteps: [Step] {
+        _ = refresh
+        return [
+            Step(id: "name", title: "Your first name",
+                 detail: repName.isEmpty ? "So openers say \"this is [you]\"." : "Openers say \"this is \(repName)\".",
+                 done: !repName.isEmpty, optional: true) { askName = true },
+            Step(id: "keys", title: "AI keys (Anthropic + Deepgram)",
+                 detail: "Claude writes your lines. Deepgram hears the call.",
+                 done: Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil, optional: true) {
+                dismiss(); onKeys()
+            },
+            Step(id: "salesforce", title: "Salesforce",
+                 detail: Salesforce.isConnected ? "Signed in. Saves Relationship Status and Lead Status."
+                                                : "Your own Salesforce (like Darren's): the guide walks you through it.",
+                 done: Salesforce.isConnected, optional: true) { showSalesforce = true },
+            Step(id: "aircall", title: "Aircall calling and texting",
                  detail: "Calls from the app and sends follow-up texts.",
-                 done: Aircall.canPlaceCalls, optional: false) { showAircall = true },
-            Step(id: "calendar", title: "7. Booking calendar",
+                 done: Aircall.canPlaceCalls, optional: true) { showAircall = true },
+            Step(id: "calendar", title: "Booking calendar",
                  detail: "The app offers real open times on the call.",
-                 done: coach.availability.feedInput != nil, optional: false) { showCalendar = true },
-            Step(id: "bugs", title: "8. Bug reports (optional)",
+                 done: coach.availability.feedInput != nil, optional: true) { showCalendar = true },
+            Step(id: "bugs", title: "Bug reports",
                  detail: BugReporter.isOn ? "On: problems are sent to your Slack bug channel." : "Sends problems to a private Slack channel so they get fixed fast.",
                  done: BugReporter.isOn, optional: true) { askWebhook = true },
+            Step(id: "export", title: "Share team keys",
+                 detail: "Save every key on this Mac into one locked file for a new rep.",
+                 done: false, optional: true) { teamKeys = .exportKeys },
         ]
+    }
+
+    private func row(_ step: Step) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(step.done ? Color.green : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(step.title).font(.callout.weight(.semibold))
+                    Text(step.detail).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button(step.id == "export" ? "Export" : step.done ? "Change" : "Set up", action: step.action)
+                    .buttonStyle(.bordered)
+                    .tint(step.done || step.optional ? nil : .accentColor)
+            }
+            if let guide = Self.guides[step.id] {
+                DisclosureGroup("How to set this up") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(guide.steps.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.callout)
+                                .fontWeight(line.hasSuffix(":") ? .semibold : .regular)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                        ForEach(Array(guide.links.enumerated()), id: \.offset) { _, link in
+                            if let url = URL(string: link.1) {
+                                Link("Open \(link.0)", destination: url).font(.callout)
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.top, -4)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 
     var body: some View {
         let list = steps
-        let required = list.filter { !$0.optional }
-        let done = required.filter(\.done).count
+        let done = list.filter(\.done).count
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Setup").font(.title2.weight(.semibold))
-                Text("\(done) of \(required.count) done. Do these once. Come back here any time to change something.")
+                Text(done == list.count ? "All set. Come back here any time to change something."
+                                        : "\(done) of \(list.count) done. Do these once.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                ForEach(list) { step in
-                    VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                            .font(.title3)
-                            .foregroundStyle(step.done ? Color.green : .secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(step.title).font(.callout.weight(.semibold))
-                            Text(step.detail).font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 8)
-                        Button(step.done ? "Change" : "Set up", action: step.action)
-                            .buttonStyle(.bordered)
-                            .tint(step.done ? nil : .accentColor)
+                ForEach(list) { row($0) }
+                DisclosureGroup(isExpanded: $showMore) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(moreSteps) { row($0) }
                     }
-                    if let guide = Self.guides[step.id] {
-                        DisclosureGroup("How to set this up") {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(Array(guide.steps.enumerated()), id: \.offset) { _, line in
-                                    Text(line)
-                                        .font(.callout)
-                                        .fontWeight(line.hasSuffix(":") ? .semibold : .regular)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                        .textSelection(.enabled)
-                                }
-                                ForEach(Array(guide.links.enumerated()), id: \.offset) { _, link in
-                                    if let url = URL(string: link.1) {
-                                        Link("Open \(link.0)", destination: url).font(.callout)
-                                    }
-                                }
-                            }
-                            .padding(.top, 6)
-                        }
-                        .font(.caption)
-                        .padding(.horizontal, 10)
-                        .padding(.top, -4)
-                    }
-                    }
-                    .padding(10)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.top, 8)
+                } label: {
+                    Text("More settings").font(.callout.weight(.semibold))
                 }
                 HStack {
                     Spacer()
@@ -224,6 +274,9 @@ struct SetupView: View {
             .padding(20)
         }
         .frame(width: 380, height: 640)
+        .sheet(item: $teamKeys, onDismiss: { refresh += 1 }) { mode in
+            TeamKeysView(mode: mode).environmentObject(coach)
+        }
         .sheet(isPresented: $showAircall, onDismiss: { refresh += 1 }) { AircallSetupView() }
         .sheet(isPresented: $showSalesforce, onDismiss: { refresh += 1 }) {
             SalesforceConnectView(onConnected: { Task { await coach.leads.start() } })

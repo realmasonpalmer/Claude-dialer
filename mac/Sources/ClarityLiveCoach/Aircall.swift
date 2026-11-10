@@ -241,7 +241,11 @@ struct AircallSetupView: View {
                         Text("Choose yourself").tag(0)
                         ForEach(users) { u in Text(u.name).tag(u.id) }
                     }
-                    .onChange(of: selectedUser) { UserDefaults.standard.set(selectedUser, forKey: PrefKey.aircallUserID) }
+                    .onChange(of: selectedUser) {
+                        UserDefaults.standard.set(selectedUser, forKey: PrefKey.aircallUserID)
+                        // Their first name for openers comes from their Aircall account, if not set yet.
+                        if let me = users.first(where: { $0.id == selectedUser }) { TeamKeys.useFirstName(of: me) }
+                    }
                     Text("Pick yourself, so Salesforce logs calls as made by you.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
