@@ -312,8 +312,10 @@ extension CoachModel {
             self.coachTask?.cancel()
             self.thinking = false
             self.seq += 1
-            self.show(Suggestion(say: "Still with me?", cue: "6 seconds of silence after your question.",
-                                 stage: "", sayComplete: true), id: self.seq, kind: .reply)
+            var nudge = Suggestion(say: "Still with me?", cue: "6 seconds of silence after your question.",
+                                   stage: "", sayComplete: true)
+            nudge.nudge = true
+            self.show(nudge, id: self.seq, kind: .reply)
             self.repWordsSinceShown = 99 // a nudge, not a script line: never hold the prospect's answer for it
         }
     }

@@ -154,6 +154,8 @@ struct CoachView: View {
     @EnvironmentObject var campaigns: CampaignStore
     @Environment(\.openWindow) private var openWindow
     @State private var showTranscript = false
+    /// Redraws when Salesforce or Aircall connects or disconnects.
+    @ObservedObject private var connections = Connections.shared
     @State private var showHelp = false
     @State private var showAircall = false
     @State private var showSetup = false
@@ -460,10 +462,16 @@ struct CoachView: View {
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Color.accentColor.opacity(0.25), in: Capsule())
             }
-            HStack {
+            HStack(spacing: 6) {
                 Text(cardLabel)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : .secondary)
+                // Which script row (or which opener) this line is, so the rep learns what works.
+                if let tag = coach.suggestion.rowTag {
+                    tagChip(tag)
+                } else if coach.kind == .opener, let name = coach.openerName {
+                    tagChip(name)
+                }
                 Spacer()
                 if coach.thinking && coach.status == .live {
                     ProgressView().controlSize(.mini)
@@ -471,15 +479,19 @@ struct CoachView: View {
                 if coach.historyIndex != nil {
                     Button("Latest") { coach.showLatest() }
                         .buttonStyle(.link).font(.caption2)
+                } else if coach.status == .live {
+                    Button("New line ⌘J") { coach.newLine() }
+                        .buttonStyle(.link).font(.caption2)
+                        .help("A different line right now")
                 }
             }
             Text(coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Add your Anthropic key: gear > Setup > AI keys." : "Getting your line ready...")
                  : coach.suggestion.say)
-                .font(.system(size: 26, weight: .semibold))
+                .font(.system(size: coach.suggestion.nudge ? 22 : 26, weight: coach.suggestion.nudge ? .medium : .semibold))
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(coach.suggestion.say.isEmpty ? .secondary : .primary)
+                .foregroundStyle(coach.suggestion.say.isEmpty || coach.suggestion.nudge ? .secondary : .primary)
                 .opacity(coach.historyIndex == nil ? 1 : 0.6)
         }
         .padding(16)
@@ -488,8 +500,18 @@ struct CoachView: View {
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
     }
 
+    private func tagChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(Color.secondary.opacity(0.15), in: Capsule())
+            .foregroundStyle(.secondary)
+    }
+
     private var cardLabel: String {
         if coach.historyIndex != nil { return "EARLIER LINE" }
+        if coach.suggestion.nudge { return "NUDGE" }
         switch coach.kind {
         case .opener: return "WHEN THEY PICK UP"
         case .screener: return "CALL SCREENER"
@@ -513,8 +535,8 @@ struct CoachView: View {
                     }
                 }
             }
-            if !coach.suggestion.cue.isEmpty {
-                Text(coach.suggestion.cue)
+            if !coach.suggestion.cueText.isEmpty {
+                Text(coach.suggestion.cueText)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -535,18 +557,20 @@ struct CoachView: View {
 
     // MARK: Real warnings only, never cut off
 
+    /// One warning at a time, the most important first. Nothing here while the bar above the
+    /// buttons already shows a warning (the Chrome setting is shown there too, so not repeated).
     @ViewBuilder private var warnings: some View {
-        if let message = updater.message, !updater.updating, message.hasPrefix("The update") || message.hasPrefix("Couldn't") {
-            Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        if let problem = coach.problem {
-            warningText(problem)
-        }
-        if coach.callList.state == .needsChromeSetting {
-            warningText("Chrome needs one setting for Next: View > Developer > Allow JavaScript from Apple Events.")
-        }
-        if let message = coach.callList.message {
-            warningText(message)
+        if coach.callMessage == nil || (coach.listDone && coach.status == .ready) {
+            if let problem = coach.problem {
+                warningText(problem)
+            } else if let message = coach.callList.message {
+                warningText(message)
+            } else if coach.callList.state == .needsChromeSetting, coach.status != .ready {
+                warningText("Chrome needs one setting for Next: View > Developer > Allow JavaScript from Apple Events.")
+            } else if let message = updater.message, !updater.updating,
+                      message.hasPrefix("The update") || message.hasPrefix("Couldn't") {
+                Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -1131,10 +1155,13 @@ struct FollowUpCard: View {
 /// Saves to Salesforce. "Not Quality Prospect", "Negative" and "Unqualified" take them off the list.
 struct RelationshipCard: View {
     @ObservedObject var coach: CoachModel
+    @ObservedObject private var connections = Connections.shared
     @State private var picked: String?
     @State private var pickedFor: String?
     /// Lead + Unqualified: Salesforce requires a reason.
     @State private var reason: String?
+    /// Folded: one line with the status and the call count. Opens on click.
+    @AppStorage(PrefKey.statusCardOpen) private var open = true
 
     private let columns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
 
@@ -1151,13 +1178,24 @@ struct RelationshipCard: View {
         let object = coach.statusObject ?? "Contact"
         let current = picked ?? coach.recordStatus
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(object == "Lead" ? "Lead Status" : "Relationship Status").font(.callout.weight(.semibold))
-                Spacer()
-                if let id = coach.statusRecordID {
-                    Text(callsLabel(id)).font(.caption).foregroundStyle(.secondary)
+            Button {
+                open.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
+                    Text(object == "Lead" ? "Lead Status" : "Relationship Status").font(.callout.weight(.semibold))
+                    if !open, let current {
+                        Text(current).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    if let id = coach.statusRecordID {
+                        Text(callsLabel(id)).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            if open {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
                 ForEach(Salesforce.statuses(object), id: \.self) { value in
                     Button {
@@ -1198,6 +1236,7 @@ struct RelationshipCard: View {
                     Text(message).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            }
             }
         }
         .padding(10)

@@ -7,6 +7,8 @@ struct DailyGoalCard: View {
     @ObservedObject var touchpoints: Touchpoints
     let activeCampaigns: [Campaign]
     @State private var due: [UUID: (people: Int, touches: Int)] = [:]
+    /// Folded: the hour's count, time left and the bar. Open: today's total and what's due.
+    @AppStorage(PrefKey.goalCardOpen) private var open = false
 
     static let perHour = 50
 
@@ -18,15 +20,23 @@ struct DailyGoalCard: View {
             let left = max(Int((hour?.end ?? now).timeIntervalSince(now)), 0)
             let hit = done >= Self.perHour
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("This hour: \(done) of \(Self.perHour)").font(.callout.weight(.semibold))
-                    Spacer()
-                    Text(String(format: "%d:%02d left", left / 60, left % 60))
-                        .font(.callout.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(hit ? Color.green : left < 600 ? Color.orange : Color.primary)
+                Button {
+                    open.toggle()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
+                        Text("This hour: \(done) of \(Self.perHour)").font(.callout.weight(.semibold))
+                        Spacer()
+                        Text(String(format: "%d:%02d left", left / 60, left % 60))
+                            .font(.callout.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(hit ? Color.green : left < 600 ? Color.orange : Color.primary)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 ProgressView(value: Double(min(done, Self.perHour)), total: Double(Self.perHour))
                     .tint(hit ? .green : .accentColor)
+                if open {
                 Text(hit ? "Goal hit for this hour" : "\(Self.perHour - done) to go")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(hit ? Color.green : Color.secondary)
@@ -35,6 +45,7 @@ struct DailyGoalCard: View {
                     .joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(10)

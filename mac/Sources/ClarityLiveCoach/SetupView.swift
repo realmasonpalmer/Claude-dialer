@@ -3,6 +3,8 @@ import SwiftUI
 /// One place for every one-time setup step, in order, with a check mark when it's done.
 /// Each "Set up" button opens that step's own screen.
 struct SetupView: View {
+    /// Redraws when Salesforce or Aircall connects or disconnects.
+    @ObservedObject private var connections = Connections.shared
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var coach: CoachModel
     var onAudioCheck: () -> Void

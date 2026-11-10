@@ -25,6 +25,18 @@ struct CampaignSelectorView: View {
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))
             .frame(minHeight: 220)
+            // Double-click a campaign to start calling it (a paused one is activated first).
+            .contextMenu(forSelectionType: UUID.self) { ids in
+                if let id = ids.first {
+                    Button("Start calling") { start(id) }
+                    Button("Edit") {
+                        store.editing = store.campaigns.first { $0.id == id }
+                        openWindow(id: "campaign-editor")
+                    }
+                }
+            } primaryAction: { ids in
+                if let id = ids.first { start(id) }
+            }
 
             HStack(spacing: 8) {
                 Button("New Campaign") { showNew = true }
@@ -48,15 +60,16 @@ struct CampaignSelectorView: View {
                 .disabled(picked == nil)
                 Button("Start calling") {
                     guard let c = picked else { return }
-                    store.selectedID = c.id // the coach switches script and opens the list
-                    dismissWindow(id: "campaign-selector")
+                    start(c.id)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(picked?.active != true)
-                .help("Pick an active campaign to call its list")
+                .help("Pick an active campaign to call its list (or double-click it)")
             }
             if let note {
                 Text(note).font(.caption).foregroundStyle(.orange)
+            } else {
+                Text("Tip: double-click a campaign to start calling it.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(20)
@@ -66,10 +79,26 @@ struct CampaignSelectorView: View {
         .onAppear { selection = selection ?? store.selectedID }
     }
 
+    /// Calls this campaign's list: activates it if it's paused (when there's room), then switches to it.
+    private func start(_ id: UUID) {
+        guard let c = store.campaigns.first(where: { $0.id == id }) else { return }
+        if !c.active, !store.setActive(id, true) {
+            note = "Up to \(CampaignStore.maxActive) campaigns can be active. Pause one first."
+            return
+        }
+        note = nil
+        store.selectedID = id // the coach switches script and opens the list
+        dismissWindow(id: "campaign-selector")
+    }
+
     private func row(_ c: Campaign) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(c.name).font(.callout.weight(.semibold))
+                // Who it's for, so campaigns are easy to tell apart.
+                if !c.persona.trimmed.isEmpty {
+                    Text(c.persona.trimmed).font(.caption).lineLimit(1)
+                }
                 Text(c.listName.isEmpty ? "No Salesforce list yet" : c.listName)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -161,7 +190,7 @@ struct NewCampaignView: View {
                     Button {
                         Task { await writeScript() }
                     } label: {
-                        Label(writing ? "Writing..." : "Write it for me", systemImage: "sparkles")
+                        Label(writing ? "Writing... \(script.split(separator: " ").count) words" : "Write it for me", systemImage: "sparkles")
                     }
                     .disabled((audience.trimmed.isEmpty && view == nil) || writing || Keychain.read(.anthropic) == nil)
                     .help("Claude writes a full script in the backbone format for the people in box 3")
@@ -169,6 +198,7 @@ struct NewCampaignView: View {
                 TextEditor(text: $script)
                     .font(.callout)
                     .frame(minHeight: 220)
+                    .disabled(writing) // it's filling in as Claude writes
                     .overlay(alignment: .topLeading) {
                         if script.isEmpty {
                             Text("Paste your script, or fill in box 3 and click \"Write it for me\". Takes about a minute.")
@@ -209,15 +239,36 @@ struct NewCampaignView: View {
         dismiss()
     }
 
-    /// Writes a full script in the cold call backbone format. The rep's "who is this for" leads;
-    /// titles and companies from the list are only a backup hint.
+    /// Writes a full script in the backbone format, shown as it's written.
     private func writeScript() async {
-        guard let key = Keychain.read(.anthropic) else { return }
         writing = true
         message = nil
         defer { writing = false }
+        do {
+            script = ""
+            let text = try await ScriptWriter.write(segment: name.trimmed.isEmpty ? (view?.label ?? "") : name.trimmed,
+                                                    audience: audience, list: view) { partial in
+                Task { @MainActor in if writing { script = partial } }
+            }
+            script = text
+            if name.trimmed.isEmpty, let v = view { name = v.label }
+        } catch {
+            message = "Couldn't write the script: \(error.localizedDescription)"
+        }
+    }
+}
+
+/// Writes a cold call script in the backbone format (`ColdCallBackbone`). The rep's "who is this for"
+/// leads; titles and companies from the Salesforce list are only a backup hint. Used by New Campaign
+/// and Edit Campaign.
+enum ScriptWriter {
+    static func write(segment: String, audience: String, list: Salesforce.ListView?,
+                      onText: @escaping (String) -> Void) async throws -> String {
+        guard let key = Keychain.read(.anthropic) else {
+            throw ClaudeClient.APIError(message: "Add your Anthropic key first (gear menu > Setup > AI keys).")
+        }
         var sample = ""
-        if let v = view {
+        if let v = list {
             let rows = (try? await Salesforce.fullList(object: v.object, key: v.id)) ?? []
             sample = rows.prefix(40).map { $0.subtitle.isEmpty ? $0.name : $0.subtitle }.joined(separator: "\n")
         }
@@ -253,17 +304,15 @@ struct NewCampaignView: View {
         """
         let user = """
         Write the script for this campaign.
-        Segment: \(name.trimmed.isEmpty ? (view?.label ?? "Not named") : name.trimmed)
+        Segment: \(segment.isEmpty ? "Not named" : segment)
         Who it's for (from the rep, this leads): \(audience.trimmed.isEmpty ? "Not given. Use the list below." : audience.trimmed)
         \(sample.isEmpty ? "" : "Titles and companies from the Salesforce list (a hint only; the rep's description wins):\n\(sample)")
         """
-        do {
-            var text = ""
-            try await client.stream(system: system, user: user) { text = $0 }
-            script = text.trimmed
-            if name.trimmed.isEmpty, let v = view { name = v.label }
-        } catch {
-            message = "Couldn't write the script: \(error.localizedDescription)"
+        var text = ""
+        try await client.stream(system: system, user: user) { partial in
+            text = partial
+            onText(partial)
         }
+        return text.trimmed
     }
 }

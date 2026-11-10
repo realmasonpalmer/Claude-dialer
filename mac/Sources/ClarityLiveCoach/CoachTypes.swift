@@ -17,6 +17,21 @@ struct Suggestion: Equatable {
     var linkedinMessage = ""
     /// Phone tree: the keys to press now (0-9, * and #), for the one-click button.
     var keys = ""
+    /// A nudge from the app ("Still with me?"), not a script line: shown softer.
+    var nudge = false
+
+    /// The script row this line came from, when the cue starts with one: "[S5 manual 2] ..." -> "S5 manual 2".
+    var rowTag: String? {
+        guard cue.hasPrefix("["), let close = cue.firstIndex(of: "]") else { return nil }
+        let tag = cue[cue.index(after: cue.startIndex)..<close].trimmingCharacters(in: .whitespaces)
+        return tag.isEmpty || tag.count > 24 ? nil : tag
+    }
+
+    /// The cue without the row tag in front.
+    var cueText: String {
+        guard rowTag != nil, let close = cue.firstIndex(of: "]") else { return cue }
+        return cue[cue.index(after: close)...].trimmingCharacters(in: .whitespaces)
+    }
 
     /// Claude answers in a tiny line format so words can show while they stream:
     ///   SAY: ...

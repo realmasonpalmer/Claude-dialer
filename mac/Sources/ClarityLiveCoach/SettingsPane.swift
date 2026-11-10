@@ -4,6 +4,8 @@ import SwiftUI
 /// Everything that used to crowd the gear menu, in one pane: how the coach behaves,
 /// the call list, tools, and updates.
 struct SettingsPane: View {
+    /// Redraws when Salesforce or Aircall connects or disconnects.
+    @ObservedObject private var connections = Connections.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var coach: CoachModel

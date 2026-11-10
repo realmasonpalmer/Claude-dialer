@@ -12,6 +12,7 @@ struct CampaignEditorView: View {
     /// Salesforce list views to pick this campaign's audience from.
     @State private var listViews: [Salesforce.ListView] = []
     @State private var loadingLists = false
+    @State private var writing = false
 
     private var isNew: Bool { !store.campaigns.contains { $0.id == draft.id } }
 
@@ -92,10 +93,29 @@ struct CampaignEditorView: View {
 
     private var script: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your script").font(.headline)
-            Text("Paste your cold call script. Any format works: bullets, paragraphs, a Google Doc copy.")
+            Text("Who is this for?").font(.headline)
+            Text("Who you're calling and what they deal with. \"Write it for me\" writes the script for them.")
+                .font(.callout).foregroundStyle(.secondary)
+            box($draft.persona, height: 70,
+                placeholder: "e.g. Owners of 5 to 20 person CPA firms. Busy in tax season. Notes typed by hand.")
+            HStack {
+                Text("Your script").font(.headline)
+                Spacer()
+                Button("Use the backbone") { draft.pastedScript = ColdCallBackbone.text }
+                    .disabled(writing)
+                Button {
+                    Task { await write() }
+                } label: {
+                    Label(writing ? "Writing... \(draft.pastedScript.split(separator: " ").count) words" : "Write it for me",
+                          systemImage: "sparkles")
+                }
+                .disabled(writing || (draft.persona.trimmed.isEmpty && draft.listViewID.isEmpty))
+                .help("Claude writes a full script in the backbone format for the people above. Replaces the script below.")
+            }
+            Text("Paste your cold call script, or write one. Any format works: bullets, paragraphs, a Google Doc copy.")
                 .font(.callout).foregroundStyle(.secondary)
             box($draft.pastedScript, height: 200, placeholder: "Paste your script here...")
+                .disabled(writing)
             HStack(spacing: 10) {
                 Button {
                     Task { await organize() }
@@ -160,6 +180,25 @@ struct CampaignEditorView: View {
             .keyboardShortcut(.defaultAction)
         }
         .padding(16)
+    }
+
+    // MARK: Claude writes the script
+
+    private func write() async {
+        writing = true
+        message = nil
+        defer { writing = false }
+        let list = listViews.first { $0.id == draft.listViewID }
+        do {
+            draft.pastedScript = ""
+            draft.pastedScript = try await ScriptWriter.write(segment: draft.name.trimmed, audience: draft.persona,
+                                                              list: list) { partial in
+                Task { @MainActor in if writing { draft.pastedScript = partial } }
+            }
+            message = "Done. Read it over, then \"Sort it into sections\" or Save."
+        } catch {
+            message = "Couldn't write the script: \(error.localizedDescription)"
+        }
     }
 
     // MARK: Claude sorts the script

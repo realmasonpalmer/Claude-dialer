@@ -216,6 +216,8 @@ final class CoachModel: ObservableObject {
     @Published var nextOffer: [Date] = []
 
     var openerStyle: Opener? { openers.rotate ? openers.current : nil }
+    /// The opener's name for the tag on the card ("Peer name drop"), when rotating openers.
+    var openerName: String? { openerStyle?.name }
 
     @Published private(set) var campaign = Campaign.clarityDiscovery
     var system = CoachPrompt.system(for: .clarityDiscovery)
