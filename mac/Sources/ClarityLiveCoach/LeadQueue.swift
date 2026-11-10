@@ -11,19 +11,16 @@ final class LeadQueue: ObservableObject {
     @Published private(set) var details: Salesforce.Details?
     @Published private(set) var loading = false
     @Published private(set) var error: String?
+    /// Called today (shared with the Chrome list, see `CalledToday`). Kept here so views update.
     @Published private(set) var calledToday: Set<String> = []
-    private var calledDay = ""
 
     var isActive: Bool { Salesforce.isConnected && selected != nil && !rows.isEmpty }
     var current: Salesforce.Row? { rows.indices.contains(index) ? rows[index] : nil }
-    var leftToCall: Int { rows.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) && Cadence.isDue($0.id) }.count }
+    var leftToCall: Int { rows.filter { CalledToday.isCallable($0.id) }.count }
     var nextRow: Salesforce.Row? { nextIndex(after: index).map { rows[$0] } }
     var canGoBack: Bool { index > 0 }
 
     init() {
-        let d = UserDefaults.standard
-        calledDay = d.string(forKey: PrefKey.sfCalledDay) ?? ""
-        calledToday = Set(d.stringArray(forKey: PrefKey.sfCalledToday) ?? [])
         resetIfNewDay()
     }
 
@@ -53,7 +50,7 @@ final class LeadQueue: ObservableObject {
             error = nil
             UserDefaults.standard.set(view.id, forKey: PrefKey.sfListView)
             // Start at the first one not called today.
-            index = rows.firstIndex { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) && Cadence.isDue($0.id) } ?? 0
+            index = rows.firstIndex { CalledToday.isCallable($0.id) } ?? 0
             await loadDetails()
         } catch {
             self.error = error.localizedDescription
@@ -113,7 +110,7 @@ final class LeadQueue: ObservableObject {
     private func nextIndex(after i: Int) -> Int? {
         var j = i + 1
         while j < rows.count {
-            if !calledToday.contains(rows[j].id) && !RemovedList.contains(rows[j].id) && !DialHistory.isMaxed(rows[j].id) && Cadence.isDue(rows[j].id) { return j }
+            if CalledToday.isCallable(rows[j].id) { return j }
             j += 1
         }
         return nil
@@ -124,26 +121,17 @@ final class LeadQueue: ObservableObject {
     func markCurrentCalled() {
         resetIfNewDay()
         guard let id = current?.id else { return }
-        calledToday.insert(id)
-        save()
+        CalledToday.add(id)
+        calledToday = CalledToday.ids
     }
 
     func clearCalledToday() {
-        calledToday = []
-        save()
+        CalledToday.clear()
+        calledToday = CalledToday.ids
     }
 
     private func resetIfNewDay() {
-        let today = Date().formatted(.iso8601.year().month().day())
-        if calledDay != today {
-            calledDay = today
-            calledToday = []
-            save()
-        }
-    }
-
-    private func save() {
-        UserDefaults.standard.set(calledDay, forKey: PrefKey.sfCalledDay)
-        UserDefaults.standard.set(Array(calledToday), forKey: PrefKey.sfCalledToday)
+        CalledToday.resetIfNewDay()
+        calledToday = CalledToday.ids
     }
 }

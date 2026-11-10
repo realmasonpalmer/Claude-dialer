@@ -240,13 +240,10 @@ extension CoachModel {
         let upcoming = callList.records.first { $0.id == callList.lastOpenedID }?.name
         // Show their opener now, before the page loads and before the phone rings.
         let kind = callList.lastOpenedID.map { $0.hasPrefix("003") ? "Contact" : "Lead" } ?? "Lead"
-        calling = upcoming.map { "\(kind) \"\($0)\"" }
+        meet(upcoming.map { "\(kind) \"\($0)\"" })
         openingID = callList.lastOpenedID
         openingSince = Date()
         ActivityLog.add("Next: opened \(calling ?? "?")")
-        recordDetails = nil
-        detailsTried = false
-        personalOpenerFor = nil
         prepareOpener()
         detailsPending = true // read their page once it loads, for a more personal line
         tabTicks = 1  // read the page on the very next tick
@@ -499,11 +496,8 @@ extension CoachModel {
             callMessage = nil // a new person: the last person's message no longer applies
         }
         detailsPending = false
-        calling = record
+        meet(record)
         if recordKey() != currentAttemptKey { currentAttemptKey = nil; lastCallAnswered = true }
-        recordDetails = nil
-        detailsTried = false
-        personalOpenerFor = nil
         prepareOpener()
         // The voicemail is written once, after their page is read (below), not twice.
         voicemailTask?.cancel()

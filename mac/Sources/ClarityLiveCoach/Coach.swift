@@ -9,6 +9,33 @@ import Foundation
 @MainActor
 final class CoachModel: ObservableObject {
     enum Status { case ready, live, paused }
+
+    /// Where the call is, in one word. Worked out from the flags below, so it's always in step
+    /// with them; views and the log read this instead of combining flags themselves.
+    enum Phase: String {
+        case idle = "Idle"
+        case gettingReady = "Getting ready"
+        case waitingForText = "Waiting for the text"
+        case countdown = "Counting down"
+        case dialing = "Dialing"
+        case live = "On a call"
+        case paused = "Paused"
+    }
+
+    var phase: Phase {
+        switch status {
+        case .live: return .live
+        case .paused: return .paused
+        case .ready: break
+        }
+        if dialing || pendingDialSince != nil { return .dialing }
+        if autoNextIn != nil { return .countdown }
+        if gettingReady != nil { return .gettingReady }
+        if waitingForText { return .waitingForText }
+        return .idle
+    }
+    /// The last phase written to the activity log.
+    var loggedPhase: Phase = .idle
     enum Kind { case opener, reply, screener, voicemail }
 
     @Published var status: Status = .ready
@@ -29,12 +56,54 @@ final class CoachModel: ObservableObject {
     @Published var latency: Double?
     @Published var problem: String?
     @Published var thinking = false
-    /// Who the rep is calling, from the Salesforce tab title (e.g. Lead "Jane Doe").
-    @Published var calling: String?
-    /// Text from the open Salesforce page, when Chrome allows it.
-    @Published var recordDetails: String?
+    /// Everything about the person on screen, in one place (see `Prospect`).
+    @Published var prospect = Prospect()
+    var calling: String? {
+        get { prospect.calling }
+        set { prospect.calling = newValue }
+    }
+    var recordDetails: String? {
+        get { prospect.details }
+        set { prospect.details = newValue }
+    }
+    var detailsTried: Bool {
+        get { prospect.detailsTried }
+        set { prospect.detailsTried = newValue }
+    }
+    var detailsPending: Bool {
+        get { prospect.detailsPending }
+        set { prospect.detailsPending = newValue }
+    }
+    var personalOpenerFor: String? {
+        get { prospect.personalOpenerFor }
+        set { prospect.personalOpenerFor = newValue }
+    }
+    var voicemailScript: Suggestion? {
+        get { prospect.voicemail }
+        set { prospect.voicemail = newValue }
+    }
+    var voicemailFor: String? {
+        get { prospect.voicemailFor }
+        set { prospect.voicemailFor = newValue }
+    }
+    var voicemailKey: String? {
+        get { prospect.voicemailKey }
+        set { prospect.voicemailKey = newValue }
+    }
+    var voicemailUsedDetails: Bool {
+        get { prospect.voicemailUsedDetails }
+        set { prospect.voicemailUsedDetails = newValue }
+    }
+
+    /// A new person is on screen: their name, and nothing yet read or written for them.
+    /// (Their voicemail is handled by the caller: it's sometimes kept for a redial.)
+    func meet(_ record: String?) {
+        calling = record
+        recordDetails = nil
+        detailsTried = false
+        personalOpenerFor = nil
+    }
     var tabTicks = 0
-    var voicemailScript: Suggestion?   // written ahead of time for this prospect
     var voicemailTask: Task<Void, Never>?
     var voicemailActive = false
     var mailboxFullShown = false
@@ -278,17 +347,8 @@ final class CoachModel: ObservableObject {
     var directCheck: Task<Void, Never>?
 
     var pendingStop: Task<Void, Never>?
-    /// The record Id the ready-made voicemail is for (matches the follow-up card's key).
-    var voicemailKey: String?
     var lastVoicemailError: String?
     var lastVoicemailTry = Date.distantPast
-    /// Who the ready-made voicemail was written for, and whether it used their Salesforce page.
-    var voicemailFor: String?
-    var voicemailUsedDetails = false
-    /// The page's details were read (or tried) for the person on screen.
-    var detailsTried = false
-    /// Who Claude's personal opener on screen is for.
-    var personalOpenerFor: String?
     var instantOpenerID = -1
     /// Why a call didn't start. Shown right above the Call button and never wiped by a new line.
     @Published var callMessage: String?
@@ -302,7 +362,6 @@ final class CoachModel: ObservableObject {
     /// What the Call button is waiting for, in a sentence (shown above the buttons).
     @Published var gettingReadyDetail: String?
     var readyTask: Task<Void, Never>?
-    var detailsPending = false
     /// The record Next just opened, until its page is showing.
     var openingID: String?
     var openingSince = Date.distantPast

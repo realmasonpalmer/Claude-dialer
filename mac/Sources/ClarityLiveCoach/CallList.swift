@@ -22,12 +22,11 @@ final class CallList: ObservableObject {
     @Published private(set) var upNextInfo: (name: String, position: Int)?
     /// Chrome won't let the app read the page (its "Allow JavaScript from Apple Events" setting is off).
     @Published private(set) var chromeBlocked = false
-    /// Records called today, by Salesforce ID.
+    /// Records called today, by Salesforce ID (shared with the Salesforce list, see `CalledToday`).
     @Published private(set) var calledToday: Set<String> = []
 
     private var lastIndex: Int
     private var lastCapture = Date.distantPast
-    private var calledDay: String
 
     enum State: Equatable {
         case needsChromeSetting
@@ -44,7 +43,7 @@ final class CallList: ObservableObject {
     }
 
     /// How many on this list haven't been called today.
-    var leftToCall: Int { records.filter { !calledToday.contains($0.id) && !RemovedList.contains($0.id) && !DialHistory.isMaxed($0.id) && Cadence.isDue($0.id) }.count }
+    var leftToCall: Int { records.filter { CalledToday.isCallable($0.id) }.count }
 
     init() {
         let d = UserDefaults.standard
@@ -52,8 +51,6 @@ final class CallList: ObservableObject {
         if let data = d.data(forKey: PrefKey.callList), let saved = try? JSONDecoder().decode([Record].self, from: data) {
             records = saved
         }
-        calledDay = d.string(forKey: PrefKey.calledDay) ?? ""
-        calledToday = Set(d.stringArray(forKey: PrefKey.calledToday) ?? [])
         listKey = d.data(forKey: PrefKey.callListKey).flatMap { try? JSONDecoder().decode(ListKey.self, from: $0) }
         resetCalledIfNewDay()
     }
@@ -209,9 +206,7 @@ final class CallList: ObservableObject {
     func upNext(after index: Int? = nil) -> (record: Record, position: Int)? {
         guard !records.isEmpty else { return nil }
         let from = index ?? currentIndex() ?? lastIndex
-        func callable(_ r: Record) -> Bool {
-            !calledToday.contains(r.id) && !RemovedList.contains(r.id) && !DialHistory.isMaxed(r.id) && Cadence.isDue(r.id)
-        }
+        func callable(_ r: Record) -> Bool { CalledToday.isCallable(r.id) }
         var i = from + 1
         while i < records.count {
             if callable(records[i]) { return (records[i], i + 1) }
@@ -349,24 +344,22 @@ final class CallList: ObservableObject {
         resetCalledIfNewDay()
         guard let i = currentIndex() else { return }
         lastIndex = i
-        calledToday.insert(records[i].id)
+        CalledToday.add(records[i].id)
+        calledToday = CalledToday.ids
         save()
         refreshUpNext()
     }
 
     func clearCalledToday() {
-        calledToday = []
+        CalledToday.clear()
+        calledToday = CalledToday.ids
         save()
         refreshUpNext()
     }
 
     private func resetCalledIfNewDay() {
-        let today = Date().formatted(.iso8601.year().month().day())
-        if calledDay != today {
-            calledDay = today
-            calledToday = []
-            save()
-        }
+        CalledToday.resetIfNewDay()
+        if calledToday != CalledToday.ids { calledToday = CalledToday.ids }
     }
 
     static func recordID(from url: String) -> String? {
@@ -381,8 +374,6 @@ final class CallList: ObservableObject {
         let d = UserDefaults.standard
         d.set(lastIndex, forKey: PrefKey.callListIndex)
         if let data = try? JSONEncoder().encode(records) { d.set(data, forKey: PrefKey.callList) }
-        d.set(calledDay, forKey: PrefKey.calledDay)
-        d.set(Array(calledToday), forKey: PrefKey.calledToday)
         if let listKey, let data = try? JSONEncoder().encode(listKey) { d.set(data, forKey: PrefKey.callListKey) }
     }
 }

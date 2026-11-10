@@ -8,6 +8,10 @@ import Foundation
 extension CoachModel {
     func tick() {
         guard active else { return }
+        if phase != loggedPhase {
+            ActivityLog.add("Phase: \(loggedPhase.rawValue) -> \(phase.rawValue)")
+            loggedPhase = phase
+        }
         let onCall = AudioProcess.anyCallApp(in: AudioProcess.others())
         // Between calls, notice which record is open so the opener uses their name.
         // Dialed from the app: start listening once the Aircall app picks up the call (or after 8 s).

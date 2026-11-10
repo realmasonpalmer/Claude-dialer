@@ -86,6 +86,30 @@ struct FollowUp: Equatable {
     }
 }
 
+// MARK: - The person on screen
+
+/// Everything the coach knows about the person on screen. Async work (page text, voicemail,
+/// opener) checks it's still for them before writing here.
+struct Prospect: Equatable {
+    /// From the Salesforce tab title, e.g. Lead "Jane Doe".
+    var calling: String?
+    /// Text from their Salesforce page, when Chrome allows it.
+    var details: String?
+    /// Their page was read (or tried).
+    var detailsTried = false
+    /// Their page is still loading: read it once it shows.
+    var detailsPending = false
+    /// Who Claude's personal opener on screen is for.
+    var personalOpenerFor: String?
+    /// Their voicemail, written ahead of time, and who it was written for.
+    var voicemail: Suggestion?
+    var voicemailFor: String?
+    /// The record Id the voicemail is for (matches the follow-up card's key).
+    var voicemailKey: String?
+    /// The voicemail was written from their Salesforce page.
+    var voicemailUsedDetails = false
+}
+
 // MARK: - Call state
 
 enum Speaker { case rep, prospect }
