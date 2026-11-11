@@ -267,6 +267,8 @@ extension CoachModel {
     }
 
     func show(_ s: Suggestion, id: Int, kind: Kind) {
+        var s = s
+        s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
         if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
         pending = nil
         shownID = id
