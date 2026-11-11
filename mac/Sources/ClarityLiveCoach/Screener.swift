@@ -111,6 +111,21 @@ enum Voicemail {
     /// True only when it's surely a recording (see `certainPhrases`), or the mailbox is full.
     static func certain(_ text: String) -> Bool { contains(text, certainPhrases) || mailboxFull(text) }
 
+    /// Sure enough it's a recording to hang up now, without waiting for "after the beep" at the end
+    /// of the greeting. Returns why (for the log), or nil. The rep hasn't spoken yet (caller checks).
+    /// - Any time: words only a machine says (`certain`).
+    /// - Early in the call, nobody screening: a voicemail phrase ("you've reached Jane's voicemail",
+    ///   "can't take your call", "leave a message"), or 18+ words with no pause for a reply,
+    ///   or "you've reached" / "not available" plus 12+ words.
+    static func hangUpReason(_ recent: String, firstWords: String, earlyInCall: Bool) -> String? {
+        if certain(recent) { return "beep words" }
+        guard earlyInCall, !Screener.detects(firstWords), !Screener.detects(recent) else { return nil }
+        if contains(recent, strong) { return "voicemail words" }
+        if longGreeting(firstWords, earlyInCall: true) { return "long greeting" }
+        if contains(recent, early), firstWords.split(separator: " ").count >= 12 { return "greeting words" }
+        return nil
+    }
+
     /// Real people answer short ("Hello?", "This is Jane"). A recording talks on and on.
     /// 18+ words before the rep says anything, early in the call = a voicemail greeting.
     static func longGreeting(_ text: String, earlyInCall: Bool) -> Bool {

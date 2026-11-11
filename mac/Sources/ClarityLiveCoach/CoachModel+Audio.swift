@@ -168,8 +168,12 @@ extension CoachModel {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
                         showVoicemail(mailboxFull: Voicemail.mailboxFull(recent))
                     }
-                    // Surely a recording, and the rep hasn't started talking: hang up and redial.
-                    if Voicemail.certain(recent), repWordsInCall < 3 { autoHangUpForRedial() }
+                    // Surely a recording, and the rep hasn't started talking: hang up now, before the beep
+                    // (redial on the 1st try; on to the next person on a no-voicemail day's last try).
+                    if repWordsInCall < 3, !screenerActive, !autoHungUpThisCall,
+                       let why = Voicemail.hangUpReason(recent, firstWords: firstWords, earlyInCall: early) {
+                        autoHangUpForRedial(why: why)
+                    }
                 } else if !voicemailActive, !screenerActive, !stagesSeen.contains("Screener"), Screener.detects(recent) {
                     showScreenerLine()
                 }

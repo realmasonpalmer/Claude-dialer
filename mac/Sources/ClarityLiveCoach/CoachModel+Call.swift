@@ -138,7 +138,7 @@ extension CoachModel {
     /// - Last try on a no-voicemail day: hang up, then on to the next person (after the text, if one is due).
     /// Clicks Aircall's hang-up button and waits until Aircall says the line is free.
     /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
-    func autoHangUpForRedial() {
+    func autoHangUpForRedial(why: String = "beep words") {
         guard autoDial, AircallPhone.isOn, !autoHangingUp, !autoHungUpThisCall,
               !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
               let key = currentAttemptKey, !RemovedList.contains(key) else { return }
@@ -147,8 +147,8 @@ extension CoachModel {
         guard redialNext || noVoicemailToday else { return } // a voicemail day's last try: leave the message
         autoHangingUp = true
         autoHungUpThisCall = true
-        ActivityLog.add(redialNext ? "Recording for sure on the 1st try for \(calling ?? "?"): hanging up to redial"
-                                   : "Recording on the last try, no voicemail today, for \(calling ?? "?"): hanging up, on to the next person")
+        ActivityLog.add(redialNext ? "Recording for sure (\(why)) on the 1st try for \(calling ?? "?"): hanging up to redial"
+                                   : "Recording (\(why)) on the last try, no voicemail today, for \(calling ?? "?"): hanging up, on to the next person")
         Task { [weak self] in
             guard let self, self.status == .live else { self?.autoHangingUp = false; return }
             var done = await AircallPhone.shared.hangUp()
