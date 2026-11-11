@@ -42,21 +42,45 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       // One feed per side. A new call's audio replaces the old one, so old calls' silence
       // never gets mixed into the new call.
       var active = { remote: null, local: null };
+      var lastLocal = null; // the mic stream, in case the phone keeps one open across calls
+      var idleTicks = 0;
+      function live(stream) {
+        try { return stream.getAudioTracks().some(function (t) { return t.readyState === 'live'; }); } catch (e) { return false; }
+      }
       function stop(side) {
         var a = active[side]; if (!a) return;
         try { a.node.onaudioprocess = null; a.src.disconnect(); a.node.disconnect(); a.silent.disconnect(); } catch (e) {}
         active[side] = null;
       }
+      // Between calls the audio context is closed, so the app never keeps the Mac's speakers open.
+      // A context left running across calls goes out of step with the speakers when the mic turns
+      // on and off (the Mac changes its sound speed for calls): sound gets high-pitched and choppy.
+      function closeIfIdle() {
+        if (active.remote || active.local || !ctx) return;
+        var old = ctx; ctx = null;
+        try { old.close(); } catch (e) {}
+      }
+      setInterval(function () {
+        ['remote', 'local'].forEach(function (side) { if (active[side] && !live(active[side].stream)) stop(side); });
+        // No call audio for 6 seconds: the call is over. Stop copying the mic too.
+        idleTicks = active.remote ? 0 : idleTicks + 1;
+        if (idleTicks >= 3) stop('local');
+        closeIfIdle();
+      }, 2000);
       function pump(stream, side) {
         try {
           stop(side);
-          if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (!ctx) {
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+            post({ side: 'info', pcm: 'audio copy started at ' + ctx.sampleRate + ' Hz' });
+          }
           if (ctx.state === 'suspended') ctx.resume();
+          idleTicks = 0;
           var src = ctx.createMediaStreamSource(stream);
           var node = ctx.createScriptProcessor(4096, 1, 1);
-          var ratio = ctx.sampleRate / 16000;
           node.onaudioprocess = function (e) {
             var input = e.inputBuffer.getChannelData(0);
+            var ratio = (e.inputBuffer.sampleRate || 48000) / 16000; // the real speed of this chunk
             var n = Math.floor(input.length / ratio);
             var out = new Int16Array(n);
             for (var i = 0; i < n; i++) { var v = input[Math.floor(i * ratio)]; v = v < -1 ? -1 : (v > 1 ? 1 : v); out[i] = v * 32767; }
@@ -66,11 +90,14 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
           };
           var silent = ctx.createGain(); silent.gain.value = 0;
           src.connect(node); node.connect(silent); silent.connect(ctx.destination);
-          var mine = { src: src, node: node, silent: silent };
+          var mine = { src: src, node: node, silent: silent, stream: stream };
           active[side] = mine;
+          if (side === 'local') lastLocal = stream;
+          // The phone kept its mic stream from the last call: copy the rep's side again.
+          if (side === 'remote' && !active.local && lastLocal && live(lastLocal)) pump(lastLocal, 'local');
           // The call ended: stop this feed.
           stream.getAudioTracks().forEach(function (t) {
-            t.addEventListener('ended', function () { if (active[side] === mine) stop(side); });
+            t.addEventListener('ended', function () { if (active[side] === mine) { stop(side); closeIfIdle(); } });
           });
         } catch (err) { post({ side: 'error', pcm: String(err) }); }
       }
