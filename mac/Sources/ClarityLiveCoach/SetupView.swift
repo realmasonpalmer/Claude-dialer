@@ -264,7 +264,11 @@ struct SetupView: View {
                     }
                     .padding(.top, 8)
                 } label: {
-                    Text("More settings").font(.callout.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Advanced settings").font(.callout.weight(.semibold))
+                        Text("Only change these if you know what you're doing.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 HStack {
                     Spacer()
