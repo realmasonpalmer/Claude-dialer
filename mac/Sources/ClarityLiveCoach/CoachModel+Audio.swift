@@ -163,6 +163,13 @@ extension CoachModel {
                           !Voicemail.recordingPrompt(recent), PhoneTree.detects(prospectSoFar + " " + text) {
                     // Work through it by default. Old behavior (disqualify + hang up) behind a setting.
                     if Prefs.hangUpPhoneTrees { markPhoneTree() } else { enterPhoneTree() }
+                } else if !voicemailActive, screenerActive || stagesSeen.contains("Screener") || Screener.detects(prospectSoFar),
+                          Voicemail.unavailableAfterScreen(recent) {
+                    // The call screener says they won't take it: same as no answer. Hang up (redial on the
+                    // 1st try, next person on a no-voicemail day). A voicemail day's last try waits for the beep.
+                    ActivityLog.add("Screener said not available for \(calling ?? "?")")
+                    showVoicemail(mailboxFull: false)
+                    autoHangUpForRedial(why: "screener said not available")
                 } else if Voicemail.detects(recent, earlyInCall: early)
                     || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {

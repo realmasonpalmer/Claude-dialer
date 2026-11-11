@@ -126,6 +126,22 @@ enum Voicemail {
         return nil
     }
 
+    /// After a call screener (Google, iPhone): the screener says the person won't take it.
+    /// Fuzzy, since the words vary and transcripts drop or mangle some:
+    /// "I'm sorry, this person is not available", "the person you're calling isn't available right now",
+    /// "sorry, they can't take your call", "this person's unavailable", "they declined".
+    /// A person (or "they") followed within a few words by a "can't take it" phrase.
+    static func unavailableAfterScreen(_ text: String) -> Bool {
+        let t = text.lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"[^a-z ]+"#, with: " ", options: .regularExpression)
+        let pattern = #"\b(person|persons|party|they|theyre|user|customer|caller)\b(\s+\w+){0,6}?\s+"#
+            + #"(not available|unavailable|isnt available|not able to (take|answer|come)|cant (take|answer|come|get)|"#
+            + #"cannot (take|answer|come|get)|unable to (take|answer|come)|not taking calls|declined|busy right now)"#
+        return t.range(of: pattern, options: .regularExpression) != nil
+    }
+
     /// Real people answer short ("Hello?", "This is Jane"). A recording talks on and on.
     /// 18+ words before the rep says anything, early in the call = a voicemail greeting.
     static func longGreeting(_ text: String, earlyInCall: Bool) -> Bool {
