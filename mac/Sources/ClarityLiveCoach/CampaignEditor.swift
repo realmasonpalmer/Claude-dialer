@@ -95,24 +95,25 @@ struct CampaignEditorView: View {
 
     private var script: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Who is this for?").font(.headline)
-            Text("Who you're calling and what they deal with. \"Write it for me\" writes the script for them.")
-                .font(.callout).foregroundStyle(.secondary)
-            box($draft.persona, height: 70,
-                placeholder: "e.g. Owners of 5 to 20 person CPA firms. Busy in tax season. Notes typed by hand.")
+            Text("Describe this call segment").font(.headline)
+            Text("Who they are, what keeps them up at night, what they want, and their story. The more real, the better the script.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
+            Button {
+                Task { await write() }
+            } label: {
+                Label(writing ? "Generating... \(draft.pastedScript.split(separator: " ").count) words" : "Generate script",
+                      systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(BrandPrimaryButton())
+            .disabled(writing || draft.persona.trimmed.isEmpty)
+            .help("Claude writes a full cold call script for this call segment. Replaces the script below.")
             HStack {
                 Text("Your script").font(.headline)
                 Spacer()
                 Button("Use the backbone") { draft.pastedScript = ColdCallBackbone.text }
                     .disabled(writing)
-                Button {
-                    Task { await write() }
-                } label: {
-                    Label(writing ? "Writing... \(draft.pastedScript.split(separator: " ").count) words" : "Write it for me",
-                          systemImage: "sparkles")
-                }
-                .disabled(writing || (draft.persona.trimmed.isEmpty && draft.listViewID.isEmpty))
-                .help("Claude writes a full script in the backbone format for the people above. Replaces the script below.")
             }
             Text("Paste your cold call script, or write one. Any format works: bullets, paragraphs, a Google Doc copy.")
                 .font(.callout).foregroundStyle(.secondary)

@@ -165,20 +165,30 @@ struct NewCampaignView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("3. Who is this for?").font(.headline)
-                Text("Who you're calling and what they deal with. Claude writes the script for them.")
-                    .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("3. Describe this call segment").font(.headline)
+                Text("Who they are, what keeps them up at night, what they want, and their story. The more real, the better the script.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $audience)
                     .font(.callout)
-                    .frame(height: 80)
+                    .frame(height: 110)
                     .overlay(alignment: .topLeading) {
                         if audience.isEmpty {
-                            Text("e.g. Owners of 5 to 20 person CPA firms. Busy in tax season. Lots of client calls, notes typed by hand, often no CRM.")
+                            Text(ScriptWriter.describeHint)
                                 .foregroundStyle(.tertiary).padding(6).allowsHitTesting(false)
                         }
                     }
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                Button {
+                    Task { await writeScript() }
+                } label: {
+                    Label(writing ? "Generating... \(script.split(separator: " ").count) words" : "Generate script",
+                          systemImage: "sparkles")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BrandPrimaryButton())
+                .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
+                .help("Claude writes a full cold call script for this call segment. Takes about a minute.")
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -187,21 +197,15 @@ struct NewCampaignView: View {
                     Spacer()
                     Button("Use the backbone") { script = ColdCallBackbone.text }
                         .help("Start from Clarity's cold call backbone as is")
-                    Button {
-                        Task { await writeScript() }
-                    } label: {
-                        Label(writing ? "Writing... \(script.split(separator: " ").count) words" : "Write it for me", systemImage: "sparkles")
-                    }
-                    .disabled((audience.trimmed.isEmpty && view == nil) || writing || Keychain.read(.anthropic) == nil)
-                    .help("Claude writes a full script in the backbone format for the people in box 3")
+                        .disabled(writing)
                 }
                 TextEditor(text: $script)
                     .font(.callout)
-                    .frame(minHeight: 220)
+                    .frame(minHeight: 200)
                     .disabled(writing) // it's filling in as Claude writes
                     .overlay(alignment: .topLeading) {
                         if script.isEmpty {
-                            Text("Paste your script, or fill in box 3 and click \"Write it for me\". Takes about a minute.")
+                            Text("Your script shows up here. Or paste your own.")
                                 .foregroundStyle(.tertiary).padding(6).allowsHitTesting(false)
                         }
                     }
@@ -262,6 +266,9 @@ struct NewCampaignView: View {
 /// leads; titles and companies from the Salesforce list are only a backup hint. Used by New Campaign
 /// and Edit Campaign.
 enum ScriptWriter {
+    /// What to put in the "Describe this call segment" box.
+    static let describeHint = "e.g. Owners of 5 to 20 person CPA firms in Portland. Swamped Jan to April. Every client call ends with someone typing notes. They want to grow without hiring, and worry about mistakes and burnout. Most started solo and built the firm on referrals."
+
     static func write(segment: String, audience: String, list: Salesforce.ListView?,
                       onText: @escaping (String) -> Void) async throws -> String {
         guard let key = Keychain.read(.anthropic) else {
@@ -273,28 +280,46 @@ enum ScriptWriter {
             sample = rows.prefix(40).map { $0.subtitle.isEmpty ? $0.name : $0.subtitle }.joined(separator: "\n")
         }
         var client = ClaudeClient(apiKey: key) // Opus
-        client.effort = "medium"
-        client.maxTokens = 24000 // a full backbone script is long
+        client.effort = "high" // the best script, not the fastest
+        client.maxTokens = 32000 // a full backbone script is long
         client.idleTimeout = 60
         client.totalTimeout = 300
         let system = """
-        You write cold call scripts for Clarity Consulting that a live call coach app reads during the call.
-        The app follows the script like a decision tree: it tracks state, walks the pick order, matches what the
-        prospect says to a row's "Sounds like", and shows that row's "Say" line word for word.
+        You are the best cold call script writer working today. You write for Clarity Consulting, a boutique
+        Salesforce partner and Anthropic Claude partner. A live call coach app reads your script during the call:
+        it tracks state, walks the pick order, matches what the prospect says to a row's "Sounds like", and shows
+        that row's "Say" line word for word. So the script must be complete and in the backbone's exact format.
 
-        Below is the backbone. Your script must match it exactly in format and level of detail:
-        the same sections in the same order (OUTPUT RULES, BANNED WORDS AND CLAIMS, TRANSCRIPT NOISE, FACTS,
-        STATE TO TRACK, PICK ORDER, GLOBAL TRIGGERS, S1 to S8, OBJECTIONS, VOICEMAIL, AFTER THE CALL), the same
-        row IDs, the same table columns separated by tabs, and about the same number of rows per section.
-        Keep OUTPUT RULES, BANNED WORDS AND CLAIMS, TRANSCRIPT NOISE, STATE TO TRACK and PICK ORDER as written.
-        Rewrite the lines for the audience you're given: their words, their world, their likely answers in
-        "Sounds like", their objections. Swap rows that don't fit them for rows that do (keep the ID style).
+        Before writing, think hard about this call segment, from what the rep wrote: their top pains (in their own
+        words), what they want this year, what they're proud of and afraid of, their day, their busy seasons,
+        what triggers them to look for help, who else they answer to, and the brush-offs they use on every
+        cold caller. Every line of the script comes from that picture. A generic line is a failed line.
 
-        Rules for every Say line: max 25 words, ends with a question unless it ends the call, plain spoken
-        English a 5th grader could read, warm and direct, no jargon, no em dashes. Outcome first (time back,
-        more selling), then the problem, then the fix. Technology last.
-        Facts: use only the FACTS section. Never invent a number, client name, price, offer or result.
-        If the audience isn't a tax or accounting firm, still use the real tax firm proof point, said as it is.
+        How great cold calls work now (use all of it):
+        - Opener: honest and calm. Say it's a cold call or give the reason right away, then ask for 30 seconds.
+          Never "how are you", never "did I catch you at a bad time".
+        - Reason: one problem people like them have, in their words, framed as what peers deal with. Not the
+          product. End with a question: is that true for them?
+        - Discovery: one short question at a time, branching on their answer. Get the problem, who it hits and
+          what it costs them, in their words. Don't over-discover: ask for the meeting once a problem is named.
+        - Objections: plan for the 12 to 15 brush-offs this segment really uses. Each answer: a few words of
+          agreement, then one curious question. Never argue. Respect a second firm no.
+        - The ask: small, specific, low risk. Two real times. A free health check with Oliver, our managing partner.
+        - Gatekeepers: sound expected, ask for help, never pitch them.
+        - Voicemail under 20 seconds, texts and LinkedIn notes in the same voice, each one a new angle.
+        - Sound like a sharp, friendly person from their world. Short words, contractions, no jargon, no hype.
+
+        Format: match the backbone below exactly: the same sections in the same order (OUTPUT RULES, BANNED
+        WORDS AND CLAIMS, TRANSCRIPT NOISE, FACTS, STATE TO TRACK, PICK ORDER, GLOBAL TRIGGERS, S1 to S8,
+        OBJECTIONS, VOICEMAIL, AFTER THE CALL), the same row ID style, table columns separated by tabs, and at
+        least as many rows per section. Keep OUTPUT RULES, BANNED WORDS AND CLAIMS, STATE TO TRACK and PICK ORDER
+        as written. Add words this segment uses to TRANSCRIPT NOISE if speech-to-text could mishear them.
+
+        Rules for every Say line: 25 words at most, ends with a question unless it ends the call, plain spoken
+        English a 5th grader could read, no em dashes. Outcome first (time back, more selling, less risk), then
+        the problem, then the fix. Technology last.
+        Facts: only the FACTS section. Never invent a number, client name, result, price or offer. The real proof
+        point is a tax firm of ten that got back about 2,000 hours a year; say it as it is.
         Use [slots] like [Name], [Firm], [SDR], [Day], [Time], [Number] the way the backbone does.
         Use [Name] for the prospect, never he or she.
         Return only the script as plain text. No markdown, no notes before or after.
@@ -303,10 +328,10 @@ enum ScriptWriter {
         \(ColdCallBackbone.text)
         """
         let user = """
-        Write the script for this campaign.
-        Segment: \(segment.isEmpty ? "Not named" : segment)
-        Who it's for (from the rep, this leads): \(audience.trimmed.isEmpty ? "Not given. Use the list below." : audience.trimmed)
-        \(sample.isEmpty ? "" : "Titles and companies from the Salesforce list (a hint only; the rep's description wins):\n\(sample)")
+        Write the script for this call segment.
+        Call segment: \(segment.isEmpty ? "Not named" : segment)
+        The rep's description (this leads): \(audience.trimmed.isEmpty ? "Not given. Use the list below." : audience.trimmed)
+        \(sample.isEmpty ? "" : "Titles and companies from the Salesforce list (a hint only; the description wins):\n\(sample)")
         """
         var text = ""
         try await client.stream(system: system, user: user) { partial in
