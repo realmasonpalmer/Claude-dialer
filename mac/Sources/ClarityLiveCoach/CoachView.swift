@@ -207,7 +207,13 @@ struct CoachView: View {
                 RelationshipCard(coach: coach)
                     .id(coach.statusRecordID) // a fresh card per person: nothing picked carries over
             }
-            if coach.followUp != nil {
+            if inTour && coach.followUp == nil {
+                // The tour points here before any voicemail: show a sample card so the spot isn't empty.
+                FollowUpCard(followUp: .constant(Optional(TourSample.followUp)), steps: TourSample.steps, canSend: true,
+                             onSend: {}, onLinkedIn: {}, onLinkedInMessage: {}, onSetupAircall: {})
+                    .allowsHitTesting(false)
+                    .tourSpot(.followUp)
+            } else if coach.followUp != nil {
                 FollowUpCard(
                     followUp: $coach.followUp,
                     isLastPerson: coach.followUp?.key != nil && coach.followUp?.key != coach.statusRecordID,
@@ -501,7 +507,8 @@ struct CoachView: View {
                         .help("A different line right now")
                 }
             }
-            Text(coach.suggestion.say.isEmpty
+            Text(inTour && coach.status == .ready ? TourSample.line
+                 : coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Add your Anthropic key: gear > Setup > AI keys." : "Getting your line ready...")
                  : coach.suggestion.say)
                 .font(lineFont)
@@ -545,7 +552,11 @@ struct CoachView: View {
             .foregroundStyle(.secondary)
     }
 
+    /// The walkthrough is showing: sample info stands in where no list is loaded yet.
+    private var inTour: Bool { tourStep != nil }
+
     private var cardLabel: String {
+        if inTour && coach.status == .ready { return "WHEN THEY PICK UP" }
         if coach.historyIndex != nil { return "EARLIER LINE" }
         if coach.suggestion.nudge { return "NUDGE" }
         switch coach.kind {
@@ -652,6 +663,14 @@ struct CoachView: View {
                 }
             }
             .controlSize(.large)
+        } else if inTour {
+            // Walkthrough: a sample person, since no list is loaded yet.
+            HStack(spacing: 8) {
+                bigButton("Call \(TourSample.name)", icon: "phone.fill") {}
+                smallButton("Call \(TourSample.next)") {}
+            }
+            .controlSize(.large)
+            .allowsHitTesting(false)
         } else if coach.leads.isActive {
             leadNavigation
         } else {

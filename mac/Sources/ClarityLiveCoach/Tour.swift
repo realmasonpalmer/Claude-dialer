@@ -204,3 +204,23 @@ private struct PillButton: ButtonStyle {
             .contentShape(Capsule())
     }
 }
+
+/// Sample info for the walkthrough, shown only while it's open (no list is loaded on a new install).
+enum TourSample {
+    static let name = "Dana Whitfield"
+    static let next = "Raj"
+    static let line = "Hi Dana, it's \(Prefs.repName.isEmpty ? "Mason" : Prefs.repName) with Clarity Consulting. I'm calling to invite you to lunch with our managing partner, Oliver. Got twenty seconds?"
+
+    static var followUp: FollowUp {
+        var f = FollowUp()
+        f.prospect = name
+        f.phone = "(503) 555-0142"
+        f.text = "Hi Dana, \(Prefs.repName.isEmpty ? "Mason" : Prefs.repName) with Clarity. Just tried you. Would lunch with Oliver work one day next week?"
+        f.linkedin = "Hi Dana, I just tried calling. Would be glad to connect."
+        f.textDue = true
+        f.linkedInDue = true
+        return f
+    }
+
+    static let steps: [(title: String, done: Bool)] = [("Call twice", true), ("Voicemail", true), ("Text", false), ("LinkedIn", false)]
+}
