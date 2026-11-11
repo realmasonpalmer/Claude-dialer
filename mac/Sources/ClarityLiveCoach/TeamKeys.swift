@@ -4,9 +4,10 @@ import CryptoKit
 import SwiftUI
 
 /// One locked file with every team key, so a new rep imports it instead of doing 8 setup steps.
-/// The file is AES-GCM encrypted with a key made from a passcode (PBKDF2-SHA256, 200,000 rounds,
-/// random salt). Without the passcode it's unreadable. It's shared privately (Slack DM, Drive),
-/// never through GitHub, and the keys go straight into the Mac's Keychain.
+/// No passcode: the file is scrambled (AES-GCM with a key built into the app) so keys never show as
+/// plain text in Slack previews or get flagged by key scanners. That's not a lock: anyone with the
+/// file and the app can use the keys, so it's shared only privately (Slack DM), never on GitHub.
+/// Older files locked with a passcode still import (the passcode is asked for only then).
 enum TeamKeys {
     /// Team-wide keys. Never anyone's personal Salesforce session unless the exporter chooses to share it.
     static let keys: [Keychain.Key] = [.deepgram, .anthropic, .calendarFeed, .aircallID, .aircallToken, .sfClientID, .bugWebhook]
@@ -39,12 +40,17 @@ enum TeamKeys {
     }
 
     static let fileExtension = "claritykeys"
-    private static let rounds = 200_000
+    /// Thrown for an older file that was locked with a passcode.
+    static let needsPasscode = Failure(message: "This file was locked with a passcode. Type it below.")
+    /// Scrambles the file so keys aren't plain text. Not a secret: the file itself must stay private.
+    private static var builtInKey: SymmetricKey {
+        SymmetricKey(data: SHA256.hash(data: Data("io.clarityconsulting.livecoach.team-keys.v2".utf8)))
+    }
 
     // MARK: Export
 
-    /// Everything to share, locked with the passcode.
-    static func export(passcode: String, includeSalesforceSignIn: Bool) throws -> Data {
+    /// Everything to share, in one scrambled file.
+    static func export(includeSalesforceSignIn: Bool) throws -> Data {
         var c = Contents()
         for key in keys + (includeSalesforceSignIn ? salesforceSession : []) {
             if let value = Keychain.read(key) { c.keys[key.rawValue] = value }
@@ -55,11 +61,9 @@ enum TeamKeys {
         c.from = Prefs.repName
         guard !c.keys.isEmpty else { throw Failure(message: "This Mac has no keys to share yet.") }
 
-        let salt = randomBytes(16)
-        let key = try deriveKey(passcode, salt: salt, rounds: rounds)
         let plain = try JSONEncoder().encode(c)
-        guard let box = try AES.GCM.seal(plain, using: key).combined else { throw Failure(message: "Couldn't lock the file.") }
-        let file = File(rounds: rounds, salt: salt.base64EncodedString(), box: box.base64EncodedString())
+        guard let box = try AES.GCM.seal(plain, using: builtInKey).combined else { throw Failure(message: "Couldn't save the file.") }
+        let file = File(version: 2, rounds: 0, salt: "", box: box.base64EncodedString())
         return try JSONEncoder().encode(file)
     }
 
@@ -67,12 +71,19 @@ enum TeamKeys {
 
     /// Unlocks the file and saves everything on this Mac. Returns what was imported.
     @discardableResult
-    static func importFile(_ data: Data, passcode: String) throws -> Contents {
+    static func importFile(_ data: Data, passcode: String? = nil) throws -> Contents {
         guard let file = try? JSONDecoder().decode(File.self, from: data), file.format == "clarity-team-keys",
               let salt = Data(base64Encoded: file.salt), let boxed = Data(base64Encoded: file.box) else {
             throw Failure(message: "That isn't a team keys file.")
         }
-        let key = try deriveKey(passcode, salt: salt, rounds: file.rounds)
+        let key: SymmetricKey
+        if file.rounds == 0 {
+            key = builtInKey
+        } else {
+            // An older file locked with a passcode.
+            guard let passcode, !passcode.isEmpty else { throw needsPasscode }
+            key = try deriveKey(passcode, salt: salt, rounds: file.rounds)
+        }
         guard let box = try? AES.GCM.SealedBox(combined: boxed), let plain = try? AES.GCM.open(box, using: key),
               let c = try? JSONDecoder().decode(Contents.self, from: plain) else {
             throw Failure(message: "That passcode doesn't match. Check it and try again.")
@@ -151,8 +162,9 @@ struct TeamKeysView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var file: URL?
+    /// Only for an older file that was locked with a passcode.
+    @State private var askPasscode = false
     @State private var passcode = ""
-    @State private var confirm = ""
     @State private var includeSignIn = true
     @State private var working = false
     @State private var message: String?
@@ -172,12 +184,21 @@ struct TeamKeysView: View {
                 Button(done ? "Done" : "Cancel") { dismiss() }
                     .keyboardShortcut(done ? .defaultAction : .cancelAction)
                 if !done {
-                    Button(mode == .importKeys ? "Import" : "Save file...") {
-                        Task { mode == .importKeys ? await runImport() : runExport() }
+                    if mode == .exportKeys {
+                        Button("Save file...") { runExport() }
+                            .buttonStyle(BrandPrimaryButton())
+                            .keyboardShortcut(.defaultAction)
+                    } else if askPasscode {
+                        Button("Import") { Task { await runImport() } }
+                            .buttonStyle(BrandPrimaryButton())
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(passcode.isEmpty || working)
+                    } else {
+                        Button("Choose file...") { if chooseFile() { Task { await runImport() } } }
+                            .buttonStyle(BrandPrimaryButton())
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(working)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!ready || working)
                 }
             }
         }
@@ -185,28 +206,21 @@ struct TeamKeysView: View {
         .frame(width: 360)
     }
 
-    private var ready: Bool {
-        mode == .importKeys ? file != nil && !passcode.isEmpty : passcode.count >= 8 && passcode == confirm
-    }
-
     private var importForm: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Your team lead sends you a keys file and a passcode. This sets up Claude, Deepgram, Salesforce, Aircall and the booking calendar in one step.")
+            Text("Pick the team keys file your team lead sent you. It sets up Claude, Deepgram, Salesforce, Aircall and the booking calendar in one step.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Button(file == nil ? "Choose the file..." : "Change file...") { chooseFile() }
-                if let file { Text(file.lastPathComponent).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            if let file { Text(file.lastPathComponent).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            if askPasscode {
+                SecureField("Passcode", text: $passcode).textFieldStyle(.roundedBorder)
             }
-            SecureField("Passcode", text: $passcode).textFieldStyle(.roundedBorder)
         }
     }
 
     private var exportForm: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Saves every key on this Mac into one locked file. Send the file and the passcode to your rep separately (for example, the file in Slack and the passcode by text). Never put it on GitHub.")
+            Text("Saves every key on this Mac into one file. Send it to your rep in a private Slack DM. Anyone with the file can use the keys, so never post it in a channel, email it around, or put it on GitHub.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            SecureField("Passcode (8 or more characters)", text: $passcode).textFieldStyle(.roundedBorder)
-            SecureField("Type it again", text: $confirm).textFieldStyle(.roundedBorder)
             Toggle("Include my Salesforce sign-in", isOn: $includeSignIn)
             Text(includeSignIn ? "Reps won't need to sign in to Salesforce. Their status saves show as you."
                                : "Each rep signs in to Salesforce once, as themselves.")
@@ -214,12 +228,15 @@ struct TeamKeysView: View {
         }
     }
 
-    private func chooseFile() {
+    /// Returns true when a file was picked.
+    private func chooseFile() -> Bool {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.level = .modalPanel // above the coach, which floats over Salesforce
-        if panel.runModal() == .OK { file = panel.url }
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        file = url
+        return true
     }
 
     private func runImport() async {
@@ -227,7 +244,7 @@ struct TeamKeysView: View {
         working = true
         defer { working = false }
         do {
-            let c = try TeamKeys.importFile(try Data(contentsOf: file), passcode: passcode)
+            let c = try TeamKeys.importFile(try Data(contentsOf: file), passcode: askPasscode ? passcode : nil)
             passcode = ""
             if let feed = c.keys[Keychain.Key.calendarFeed.rawValue] { await coach.availability.useFeed(feed) }
             await TeamKeys.matchAircallUser()
@@ -240,6 +257,9 @@ struct TeamKeysView: View {
             else if Prefs.repName.isEmpty { left.append("type your first name") }
             message = "Imported \(c.keys.count) keys." + (left.isEmpty ? " You're set." : " Last step in Setup: " + left.joined(separator: " and ") + ".")
             done = true
+        } catch let e as TeamKeys.Failure where e.message == TeamKeys.needsPasscode.message {
+            askPasscode = true
+            message = e.message
         } catch {
             message = error.localizedDescription
         }
@@ -247,14 +267,13 @@ struct TeamKeysView: View {
 
     private func runExport() {
         do {
-            let data = try TeamKeys.export(passcode: passcode, includeSalesforceSignIn: includeSignIn)
+            let data = try TeamKeys.export(includeSalesforceSignIn: includeSignIn)
             let panel = NSSavePanel()
             panel.nameFieldStringValue = "Clarity Team Keys.\(TeamKeys.fileExtension)"
             panel.level = .modalPanel
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try data.write(to: url, options: .atomic)
-            passcode = ""; confirm = ""
-            message = "Saved. Send the file and the passcode separately, never on GitHub."
+            message = "Saved. Send it in a private Slack DM only."
             done = true
             ActivityLog.add("Team keys exported")
         } catch {

@@ -7,6 +7,13 @@ struct ClarityLiveCoachApp: App {
     @StateObject private var coach = CoachModel()
     @StateObject private var campaigns = CampaignStore()
 
+    init() {
+        // The Dock shows this even if macOS still has an old (blank) icon cached for the app.
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
+            NSApplication.shared.applicationIconImage = icon
+        }
+    }
+
     var body: some Scene {
         WindowGroup("Clarity Live Coach") {
             RootView()

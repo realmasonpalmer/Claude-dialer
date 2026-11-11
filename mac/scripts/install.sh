@@ -33,6 +33,10 @@ sleep 1
 rm -rf "/Applications/Clarity Live Coach.app"
 cp -R "$APP" /Applications/
 touch "/Applications/Clarity Live Coach.app" # so the Dock and Finder pick up the icon
+# macOS caches app icons: re-register the app so Finder shows the new icon, and refresh the Dock.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "/Applications/Clarity Live Coach.app" >/dev/null 2>&1 || true
+killall Dock >/dev/null 2>&1 || true
 open "/Applications/Clarity Live Coach.app"
 echo ""
 echo "Done. Clarity Live Coach is in your Applications folder and is opening now."
