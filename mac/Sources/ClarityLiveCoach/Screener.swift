@@ -54,7 +54,7 @@ enum Voicemail {
         "leave a message", "leave your message", "leave me a message", "leave a voicemail", "leave a brief message",
         "leave your name", "message after", "after the tone", "after the beep", "at the tone", "at the beep",
         "voicemail", "voice mail", "mailbox", "record your message", "please leave", "can't take your call",
-        "cannot take your call", "not available to take your call", "can't come to the phone",
+        "cannot take your call", "can not take your call", "not available to take your call", "can't come to the phone",
         "cannot come to the phone", "get back to you as soon as", "return your call", "forwarded to an automated",
         "automated voice", "voice messaging", "is not available. please", "sorry i missed your call",
         "sorry i can't answer", "sorry i cannot answer", "missed your call",
@@ -109,7 +109,22 @@ enum Voicemail {
     static func recordingPrompt(_ text: String) -> Bool { contains(text, recordingPhrases) }
 
     /// True only when it's surely a recording (see `certainPhrases`), or the mailbox is full.
-    static func certain(_ text: String) -> Bool { contains(text, certainPhrases) || mailboxFull(text) }
+    static func certain(_ text: String) -> Bool {
+        contains(text, certainPhrases) || mailboxFull(text) || numberCantTakeCall(text)
+    }
+
+    /// The carrier's "The telephone number 205 441 3049 can't take your call now." Fuzzy: a number
+    /// (digits are dropped, so spoken or written both work), then within a few words "can't take your call".
+    static func numberCantTakeCall(_ text: String) -> Bool {
+        let t = text.lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"[^a-z ]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b"#, with: " ", options: .regularExpression)
+        let pattern = #"\b(telephone|phone|number|caller|subscriber)\b(\s+\w+){0,6}?\s+"#
+            + #"(cant|can not|cannot|unable to|isnt able to|is not able to|not able to)\s+(take|answer|accept)\s+(your|the|this)?\s*call"#
+        return t.range(of: pattern, options: .regularExpression) != nil
+    }
 
     /// Sure enough it's a recording to hang up now, without waiting for "after the beep" at the end
     /// of the greeting. Returns why (for the log), or nil. The rep hasn't spoken yet (caller checks).
