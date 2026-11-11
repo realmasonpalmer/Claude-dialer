@@ -133,16 +133,22 @@ extension CoachModel {
         }
     }
 
-    /// 1st try reached a recording (100% sure: words only a machine says) and auto-dial is on:
-    /// click Aircall's hang-up button, wait until Aircall says the line is free, then redial in 1 s.
+    /// Reached a recording (100% sure: words only a machine says) and auto-dial is on:
+    /// - 1st try: hang up, then redial in 1 s.
+    /// - Last try on a no-voicemail day: hang up, then on to the next person (after the text, if one is due).
+    /// Clicks Aircall's hang-up button and waits until Aircall says the line is free.
     /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
     func autoHangUpForRedial() {
-        guard autoDial, AircallPhone.isOn, currentAttempts < maxAttempts, !autoHangingUp, !autoHungUpThisCall,
+        guard autoDial, AircallPhone.isOn, !autoHangingUp, !autoHungUpThisCall,
               !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
-              let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return }
+              let key = currentAttemptKey, !RemovedList.contains(key) else { return }
+        let redialNext = currentAttempts < maxAttempts && !DialHistory.isMaxed(key)
+        let noVoicemailToday = Cadence.step(for: key)?.leaveVoicemail == false
+        guard redialNext || noVoicemailToday else { return } // a voicemail day's last try: leave the message
         autoHangingUp = true
         autoHungUpThisCall = true
-        ActivityLog.add("Recording for sure on the 1st try for \(calling ?? "?"): hanging up to redial")
+        ActivityLog.add(redialNext ? "Recording for sure on the 1st try for \(calling ?? "?"): hanging up to redial"
+                                   : "Recording on the last try, no voicemail today, for \(calling ?? "?"): hanging up, on to the next person")
         Task { [weak self] in
             guard let self, self.status == .live else { self?.autoHangingUp = false; return }
             var done = await AircallPhone.shared.hangUp()
@@ -157,8 +163,8 @@ extension CoachModel {
             self.autoHangingUp = false
             guard self.status == .live else { return }
             if done {
-                self.redialRightAway = true
-                self.endCall()
+                self.redialRightAway = redialNext
+                self.endCall() // last try: endCall moves on to the next person
             } else {
                 ActivityLog.problem("Auto hang-up didn't finish: the rep hangs up, redial as usual")
             }
