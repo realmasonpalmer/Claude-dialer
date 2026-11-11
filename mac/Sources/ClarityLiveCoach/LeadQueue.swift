@@ -17,6 +17,10 @@ final class LeadQueue: ObservableObject {
     var isActive: Bool { Salesforce.isConnected && selected != nil && !rows.isEmpty }
     var current: Salesforce.Row? { rows.indices.contains(index) ? rows[index] : nil }
     var leftToCall: Int { rows.filter { CalledToday.isCallable($0.id) }.count }
+    /// On the plan but not due today: they come back on a later call day.
+    var comingBackLater: Int { rows.filter { Cadence.comesBackLater($0.id) }.count }
+    /// Called today on this list.
+    var calledHere: Int { rows.filter { calledToday.contains($0.id) }.count }
     var nextRow: Salesforce.Row? { nextIndex(after: index).map { rows[$0] } }
     var canGoBack: Bool { index > 0 }
 
@@ -45,12 +49,16 @@ final class LeadQueue: ObservableObject {
         loading = true
         defer { loading = false }
         do {
-            rows = try await Salesforce.rows(of: view)
+            let loaded = try await Salesforce.rows(of: view)
+            // Follow-ups due today first (day 2, 5, 8, 16), then new people, each in list order.
+            let followUps = loaded.filter { Cadence.isFollowUp($0.id) && CalledToday.isCallable($0.id) }
+            let followUpIDs = Set(followUps.map(\.id))
+            rows = followUps + loaded.filter { !followUpIDs.contains($0.id) }
             selected = view
             error = nil
             UserDefaults.standard.set(view.id, forKey: PrefKey.sfListView)
-            // Start at the first one not called today.
-            index = rows.firstIndex { CalledToday.isCallable($0.id) } ?? 0
+            // Start at the first one due today. Nobody due: show nobody (not someone the plan skips).
+            index = rows.firstIndex { CalledToday.isCallable($0.id) } ?? rows.count
             await loadDetails()
         } catch {
             self.error = error.localizedDescription
@@ -67,9 +75,10 @@ final class LeadQueue: ObservableObject {
     }
 
     /// Picks up changes made in Salesforce (new leads, edits), keeping the current lead.
-    func reload() async {
+    /// - Parameter keepCurrent: false = go to the first person due (used when the list ran out).
+    func reload(keepCurrent: Bool = true) async {
         guard let selected else { return }
-        let currentID = current?.id
+        let currentID = keepCurrent ? current?.id : nil
         await open(selected)
         if let currentID, let i = rows.firstIndex(where: { $0.id == currentID }) {
             index = i

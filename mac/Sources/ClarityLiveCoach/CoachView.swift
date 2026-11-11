@@ -444,7 +444,7 @@ struct CoachView: View {
                 if coach.leads.loading { ProgressView().controlSize(.mini) }
                 Spacer()
                 if coach.leads.isActive {
-                    Text("\(coach.leads.index + 1) of \(coach.leads.rows.count) · \(coach.leads.leftToCall) left")
+                    Text("\(min(coach.leads.index + 1, coach.leads.rows.count)) of \(coach.leads.rows.count) · \(coach.leads.leftToCall) due today")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -607,7 +607,7 @@ struct CoachView: View {
     /// One warning at a time, the most important first. Nothing here while the bar above the
     /// buttons already shows a warning (the Chrome setting is shown there too, so not repeated).
     @ViewBuilder private var warnings: some View {
-        if coach.callMessage == nil || (coach.listDone && coach.status == .ready) {
+        if coach.callMessage == nil || (listRanOut) {
             if let problem = coach.problem {
                 warningText(problem)
             } else if let message = coach.callList.message {
@@ -810,6 +810,12 @@ struct CoachView: View {
         return name
     }
 
+    /// Nobody left to call today on this list (or a Salesforce list opened with nobody due).
+    private var listRanOut: Bool {
+        guard coach.status == .ready else { return false }
+        return coach.listDone || (coach.leads.isActive && coach.leads.current == nil && !coach.leads.loading)
+    }
+
     private var backEnabled: Bool {
         coach.status == .ready ? !coach.callList.records.isEmpty : coach.canGoBack
     }
@@ -825,11 +831,16 @@ struct CoachView: View {
     /// One message above the buttons at a time, the most important first:
     /// a call problem, the countdown, "send the text", then why Next can't move on.
     @ViewBuilder private var bottomBanner: some View {
-        if coach.listDone && coach.status == .ready {
-            let calledHere = coach.callList.records.filter { coach.callList.calledToday.contains($0.id) }.count
+        if listRanOut {
+            let calledHere = coach.leads.isActive ? coach.leads.calledHere
+                : coach.callList.records.filter { coach.callList.calledToday.contains($0.id) }.count
+            let later = coach.leads.isActive ? coach.leads.comingBackLater : coach.callList.comingBackLater
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(campaigns.selected.name) list done for today").font(.callout.weight(.semibold))
-                Text("\(calledHere) people called on this list today.").font(.caption).foregroundStyle(.secondary)
+                Text("Nobody else is due today on \(campaigns.selected.name)").font(.callout.weight(.semibold))
+                Text("\(calledHere) called today. \(later) come back on a later call day (days 2, 5, 8 and 16).")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("To keep dialing, add new leads to this list in Salesforce, or start your next list.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let next = nextCampaign {
                     Button("Start next list: \(next.name)") { switchTo(next) }
                         .buttonStyle(.borderedProminent)

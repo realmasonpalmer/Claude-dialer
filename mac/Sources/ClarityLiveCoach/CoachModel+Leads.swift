@@ -151,6 +151,7 @@ extension CoachModel {
         }
         guard status == .ready, !dialing, let d = leads.details, !d.doNotCall,
               let phone = number ?? d.callNumber else { return }
+        guard planAllowsCall(d.id) else { return }
         dialing = true
         dialError = nil
         Task { [weak self] in
@@ -192,7 +193,18 @@ extension CoachModel {
             if status != .ready { endCall() }
             Task { [weak self] in
                 guard let self else { return }
-                guard await self.leads.next() else { return }
+                var moved = await self.leads.next()
+                if !moved {
+                    // End of the list: reload it from Salesforce to pick up new people.
+                    await self.leads.reload(keepCurrent: false)
+                    moved = self.leads.current.map { CalledToday.isCallable($0.id) } ?? false
+                }
+                guard moved else {
+                    self.listDone = true // the banner says why and offers the next list
+                    ActivityLog.add("List done for today: \(self.leads.selected?.label ?? "Salesforce list")")
+                    return
+                }
+                self.listDone = false
                 // Skip Do Not Call records and records with no mobile number (up to 20 in a row).
                 var skipped = 0
                 while self.leads.details.map({ $0.doNotCall || $0.callNumber == nil }) == true, skipped < 20,
@@ -258,7 +270,8 @@ extension CoachModel {
         guard status == .ready else { return }
         followUp = nil // the last person's follow-ups are done
         if leads.isActive {
-            if autoDial { startAutoNext() } else { nextLead(dial: false) }
+            // Nobody left: Next reloads the list, or says the list is done for today.
+            if autoDial, nextLeadName != nil { startAutoNext() } else { nextLead(dial: false) }
             return
         }
         guard openNextInChrome() else {
@@ -266,6 +279,23 @@ extension CoachModel {
             return
         }
         if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 3) }
+    }
+
+    /// Follows the call plan (days 1, 2, 5, 8, 16; 2 dials a day). If this person shouldn't be
+    /// called right now, says why and returns false. Clicking Call again within 15 seconds calls anyway
+    /// (for someone who asked for a call back).
+    func planAllowsCall(_ id: String?) -> Bool {
+        guard let id, Salesforce.objectFor(id: id) != nil, let why = Cadence.whyNotNow(id) else { return true }
+        if callAnywayID == id, Date() < callAnywayUntil {
+            callAnywayID = nil
+            ActivityLog.add("Plan: called \(calling ?? id) anyway (\(why))")
+            return true
+        }
+        callAnywayID = id
+        callAnywayUntil = Date().addingTimeInterval(15)
+        callMessage = "\(why) Click Call again to call anyway."
+        ActivityLog.add("Plan: didn't call \(calling ?? id). \(why)")
+        return false
     }
 
     /// Who the current lead is, for counting tries.
@@ -279,8 +309,8 @@ extension CoachModel {
         guard status == .ready, let key = currentAttemptKey, !RemovedList.contains(key) else { return }
         cancelAutoNext()
         if leads.isActive {
-            dial()
-        } else if !dialing, !callFromPage() {
+            dial() // checks the plan
+        } else if !dialing, planAllowsCall(key), !callFromPage() {
             problem = "No phone number on this Salesforce page. Click Next."
         }
     }
@@ -290,6 +320,7 @@ extension CoachModel {
         cancelAutoNext()
         guard status == .ready, !dialing, gettingReady == nil else { return } // busy, not a missing number
         callMessage = nil
+        guard planAllowsCall(SalesforceChrome.url().flatMap(CallList.recordID)) else { return }
         gettingReady = "Getting ready..."
         ActivityLog.add("Call button: \(calling ?? "no record")")
         callWhenReady { [weak self] in self?.callMessage = "No phone number on this Salesforce page. Click Next." }

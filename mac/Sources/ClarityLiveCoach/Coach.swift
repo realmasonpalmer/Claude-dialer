@@ -367,6 +367,9 @@ final class CoachModel: ObservableObject {
     @Published var callMessage: String?
     /// Everyone due today on this list has been called: time to switch to the next list.
     @Published var listDone = false
+    /// Calling someone the plan skips today takes a 2nd click on Call within 15 seconds.
+    var callAnywayID: String?
+    var callAnywayUntil = Date.distantPast
 
     /// Who the countdown is for.
     @Published var autoNextName: String?
