@@ -13,6 +13,8 @@ struct CampaignEditorView: View {
     @State private var listViews: [Salesforce.ListView] = []
     @State private var loadingLists = false
     @State private var writing = false
+    @State private var writeStart = Date()
+    @State private var thought = ""
 
     private var isNew: Bool { !store.campaigns.contains { $0.id == draft.id } }
 
@@ -102,13 +104,19 @@ struct CampaignEditorView: View {
             Button {
                 Task { await write() }
             } label: {
-                Label(writing ? ScriptWriter.progress(draft.pastedScript) : "Generate script",
-                      systemImage: "sparkles")
-                    .frame(maxWidth: .infinity)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Label(writing ? ScriptWriter.progress(draft.pastedScript, since: writeStart, now: context.date) : "Generate script",
+                          systemImage: "sparkles")
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(BrandPrimaryButton())
             .disabled(writing || draft.persona.trimmed.isEmpty)
-            .help("Claude writes a full cold call script for this call segment, built on Clarity's cold call backbone. Replaces the script below.")
+            .help("Claude writes a full cold call script for this call segment, built on Clarity's cold call backbone. Takes 2 to 5 minutes. Replaces the script below.")
+            if writing, !thought.isEmpty {
+                Text(ScriptWriter.lastThought(thought))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
             Text("Your script").font(.headline)
             Text("Paste your cold call script, or write one. Any format works: bullets, paragraphs, a Google Doc copy.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -184,15 +192,19 @@ struct CampaignEditorView: View {
 
     private func write() async {
         writing = true
+        writeStart = Date()
+        thought = ""
         message = nil
         defer { writing = false }
         let list = listViews.first { $0.id == draft.listViewID }
         do {
             draft.pastedScript = ""
             draft.pastedScript = try await ScriptWriter.write(segment: draft.name.trimmed, audience: draft.persona,
-                                                              list: list) { partial in
+                                                              list: list, onText: { partial in
                 Task { @MainActor in if writing { draft.pastedScript = partial } }
-            }
+            }, onThinking: { partial in
+                Task { @MainActor in if writing { thought = partial } }
+            })
             message = "Done. Read it over, then \"Sort it into sections\" or Save."
         } catch {
             message = "Couldn't write the script: \(error.localizedDescription)"
