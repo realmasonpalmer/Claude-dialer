@@ -11,7 +11,6 @@ struct SettingsPane: View {
     @ObservedObject var updater: Updater
 
     @AppStorage(PrefKey.coachSpeed) private var speed = CoachSpeed.balanced.rawValue
-    @State private var showScoreboard = false
     @State private var confirmReset = false
     @State private var note: String?
 
@@ -29,12 +28,10 @@ struct SettingsPane: View {
             }
 
             section("Tools") {
-                HStack {
-                    Button(coach.lab.hasNewSuggestions ? "Script Lab (new)" : "Script Lab") {
-                        openWindow(id: "script-lab")
-                        NSApplication.shared.activate(ignoringOtherApps: true)
-                    }
-                    Button("Opener scoreboard") { showScoreboard = true }
+                // Script Lab holds the call results, script suggestions and the opener scoreboard.
+                Button(coach.lab.hasNewSuggestions ? "Script Lab and openers (new)" : "Script Lab and openers") {
+                    openWindow(id: "script-lab")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
                 }
                 HStack {
                     Menu("Get help") {
@@ -84,7 +81,6 @@ struct SettingsPane: View {
         } message: {
             Text("People taken off for too many calls or bad numbers come back on your list. This can't be undone.")
         }
-        .sheet(isPresented: $showScoreboard) { ScoreboardView(book: coach.openers) }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

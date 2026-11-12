@@ -1025,13 +1025,14 @@ struct HelpView: View {
 // MARK: - Opener scoreboard
 
 /// Your own experiment: how each opener does on your calls.
+/// Shown as a section of Script Lab.
 struct ScoreboardView: View {
     @ObservedObject var book: OpenerBook
-    @Environment(\.dismiss) private var dismiss
+    @State private var confirmReset = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Opener scoreboard").font(.title2.weight(.semibold))
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Opener scoreboard").font(.headline)
             Text("Each opener gets \(OpenerBook.warmUp) tries first. After that, openers with better scores come up more often, and the others still get an occasional try.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1063,14 +1064,11 @@ struct ScoreboardView: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                Button("Reset scores", role: .destructive) { book.reset() }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
+            Button("Reset opener scores", role: .destructive) { confirmReset = true }
+                .confirmationDialog("Reset every opener's score?", isPresented: $confirmReset) {
+                    Button("Reset", role: .destructive) { book.reset() }
+                }
         }
-        .padding(22)
-        .frame(width: 370)
     }
 
     private var ranked: [(opener: Opener, score: OpenerScore)] {
