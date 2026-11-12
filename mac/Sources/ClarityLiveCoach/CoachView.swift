@@ -330,6 +330,14 @@ struct CoachView: View {
             } label: {
                 if picked == nil { Label("All time zones", systemImage: "checkmark") } else { Text("All time zones") }
             }
+            // Only matters with all time zones: east to west, so nobody gets called before 9 there.
+            Button {
+                coach.setEastCoastFirst(!TimeZoneFilter.eastCoastFirst)
+            } label: {
+                if TimeZoneFilter.eastCoastFirst { Label("East Coast leads first", systemImage: "checkmark") }
+                else { Text("East Coast leads first") }
+            }
+            .disabled(picked != nil)
             Divider()
             ForEach(CallZone.allCases) { zone in
                 Button {
@@ -340,7 +348,7 @@ struct CoachView: View {
                 }
             }
         } label: {
-            Text(picked.map { "\($0.label) time" } ?? "All time zones")
+            Text(picked.map { "\($0.label) time" } ?? (TimeZoneFilter.eastCoastFirst ? "East Coast first" : "All time zones"))
                 .font(.caption.weight(.semibold)).lineLimit(1)
         }
         .menuStyle(.borderlessButton)

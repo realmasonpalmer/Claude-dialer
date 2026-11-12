@@ -298,6 +298,17 @@ extension CoachModel {
         Task { await leads.timeZoneChanged() }
     }
 
+    /// Call East Coast leads first (then Central, Mountain, Pacific). Works on both call lists.
+    func setEastCoastFirst(_ on: Bool) {
+        guard on != TimeZoneFilter.eastCoastFirst else { return }
+        TimeZoneFilter.eastCoastFirst = on
+        ActivityLog.add("East Coast first: \(on ? "on" : "off")")
+        cancelAutoNext()
+        leads.reorder()
+        callList.refreshUpNext()
+        objectWillChange.send()
+    }
+
     /// Follows the call plan (days 1, 2, 5, 8, 16; 2 dials a day). If this person shouldn't be
     /// called right now, says why and returns false. Clicking Call again within 15 seconds calls anyway
     /// (for someone who asked for a call back).

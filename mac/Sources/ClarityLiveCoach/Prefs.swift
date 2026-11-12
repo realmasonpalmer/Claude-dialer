@@ -6,6 +6,7 @@ enum PrefKey {
     static let seededSegments = "seededSegments"
     static let tourSeen = "tourSeen"
     static let timeZoneFilter = "timeZoneFilter"
+    static let eastCoastFirst = "eastCoastFirst"
     static let leadTimeZones = "leadTimeZones"
     static let goalCardOpen = "goalCardOpen"
     static let statusCardOpen = "statusCardOpen"

@@ -215,6 +215,15 @@ final class CallList: ObservableObject {
         let from = index ?? currentIndex() ?? lastIndex
         func callable(_ r: Record) -> Bool { CalledToday.isCallable(r.id) }
         // Follow-ups due today first (day 2, 5, 8, 16), top to bottom: they've heard from us already.
+        if TimeZoneFilter.eastCoastFirst {
+            // East Coast first: the most eastern person due, follow-ups before new people.
+            // Same time zone: the next one down from where the rep is, then from the top.
+            let around = Array(records.indices.dropFirst(max(from + 1, 0))) + Array(records.indices.prefix(max(from + 1, 0)))
+            let due = around.filter { callable(records[$0]) }
+            let pool = due.filter { Cadence.isFollowUp(records[$0].id) }
+            let pick = (pool.isEmpty ? due : pool).min { TimeZoneFilter.eastRank(records[$0].id) < TimeZoneFilter.eastRank(records[$1].id) }
+            return pick.map { (records[$0], $0 + 1) }
+        }
         if let k = records.indices.first(where: { callable(records[$0]) && Cadence.isFollowUp(records[$0].id) }) {
             return (records[k], k + 1)
         }

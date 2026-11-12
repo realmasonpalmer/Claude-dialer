@@ -53,9 +53,8 @@ final class LeadQueue: ObservableObject {
         do {
             let loaded = try await Salesforce.rows(of: view)
             // Follow-ups due today first (day 2, 5, 8, 16), then new people, each in list order.
-            let followUps = loaded.filter { Cadence.isFollowUp($0.id) && CalledToday.isCallable($0.id) }
-            let followUpIDs = Set(followUps.map(\.id))
-            rows = followUps + loaded.filter { !followUpIDs.contains($0.id) }
+            lastLoaded = loaded
+            rows = Self.order(loaded)
             selected = view
             error = nil
             UserDefaults.standard.set(view.id, forKey: PrefKey.sfListView)
@@ -86,6 +85,26 @@ final class LeadQueue: ObservableObject {
             index = i
             await loadDetails()
         }
+    }
+
+    /// The list as Salesforce sent it, before ordering (to re-order without reloading).
+    private var lastLoaded: [Salesforce.Row] = []
+
+    /// Follow-ups due today first (day 2, 5, 8, 16), then new people. With East Coast first on,
+    /// each group goes east to west.
+    private static func order(_ loaded: [Salesforce.Row]) -> [Salesforce.Row] {
+        let followUps = loaded.filter { Cadence.isFollowUp($0.id) && CalledToday.isCallable($0.id) }
+        let followUpIDs = Set(followUps.map(\.id))
+        return TimeZoneFilter.ordered(followUps, id: \.id)
+            + TimeZoneFilter.ordered(loaded.filter { !followUpIDs.contains($0.id) }, id: \.id)
+    }
+
+    /// East Coast first was turned on or off: re-order, staying on the current person.
+    func reorder() {
+        guard selected != nil, !lastLoaded.isEmpty else { return }
+        let currentID = current?.id
+        rows = Self.order(lastLoaded)
+        if let currentID, let i = rows.firstIndex(where: { $0.id == currentID }) { index = i }
     }
 
     /// The time zone filter changed. Stay on the current person if they still fit;

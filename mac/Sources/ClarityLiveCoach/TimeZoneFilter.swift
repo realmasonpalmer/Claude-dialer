@@ -206,6 +206,27 @@ enum TimeZoneFilter {
         }
     }
 
+    /// With all time zones: call the East Coast first, then Central, Mountain, Pacific, Alaska, Hawaii.
+    /// People whose record doesn't say come last. Follow-ups still come before new people.
+    static var eastCoastFirst: Bool {
+        get { d.bool(forKey: PrefKey.eastCoastFirst) }
+        set { d.set(newValue, forKey: PrefKey.eastCoastFirst) }
+    }
+
+    /// Where they go in East Coast first order (0 = Eastern; unknown last).
+    static func eastRank(_ id: String) -> Int {
+        guard let zone = zone(of: id) else { return CallZone.allCases.count }
+        return CallZone.allCases.firstIndex(of: zone) ?? CallZone.allCases.count
+    }
+
+    /// The list in East Coast first order when that's on (stable: same zone keeps list order).
+    static func ordered<T>(_ items: [T], id: (T) -> String) -> [T] {
+        guard eastCoastFirst else { return items }
+        return items.enumerated()
+            .sorted { (eastRank(id($0.element)), $0.offset) < (eastRank(id($1.element)), $1.offset) }
+            .map(\.element)
+    }
+
     /// Record Id (first 15 characters) -> time zone. "" = looked up, the record doesn't say.
     private static var zones: [String: String] = [:]
     /// Looked up since the app opened (older answers come from the saved copy).
