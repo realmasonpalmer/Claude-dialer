@@ -182,23 +182,17 @@ struct NewCampaignView: View {
                 Button {
                     Task { await writeScript() }
                 } label: {
-                    Label(writing ? "Generating... \(script.split(separator: " ").count) words" : "Generate script",
+                    Label(writing ? ScriptWriter.progress(script) : "Generate script",
                           systemImage: "sparkles")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(BrandPrimaryButton())
                 .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
-                .help("Claude writes a full cold call script for this call segment. Takes about a minute.")
+                .help("Claude writes a full cold call script for this call segment, built on Clarity's cold call backbone. Takes a minute or two.")
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("4. Script").font(.headline)
-                    Spacer()
-                    Button("Use the backbone") { script = ColdCallBackbone.text }
-                        .help("Start from Clarity's cold call backbone as is")
-                        .disabled(writing)
-                }
+                Text("4. Script").font(.headline)
                 TextEditor(text: $script)
                     .font(.callout)
                     .frame(minHeight: 200)
@@ -268,6 +262,12 @@ struct NewCampaignView: View {
 enum ScriptWriter {
     /// What to put in the "Describe this call segment" box.
     static let describeHint = "e.g. Owners of 5 to 20 person CPA firms in Portland. Swamped Jan to April. Every client call ends with someone typing notes. They want to grow without hiring, and worry about mistakes and burnout. Most started solo and built the firm on referrals."
+
+    /// The Generate button while it runs. Claude thinks through the segment before the first word.
+    static func progress(_ script: String) -> String {
+        let words = script.split(separator: " ").count
+        return words == 0 ? "Thinking through this segment..." : "Writing... \(words) words"
+    }
 
     static func write(segment: String, audience: String, list: Salesforce.ListView?,
                       onText: @escaping (String) -> Void) async throws -> String {

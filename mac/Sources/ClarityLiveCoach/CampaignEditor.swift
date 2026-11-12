@@ -102,19 +102,14 @@ struct CampaignEditorView: View {
             Button {
                 Task { await write() }
             } label: {
-                Label(writing ? "Generating... \(draft.pastedScript.split(separator: " ").count) words" : "Generate script",
+                Label(writing ? ScriptWriter.progress(draft.pastedScript) : "Generate script",
                       systemImage: "sparkles")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(BrandPrimaryButton())
             .disabled(writing || draft.persona.trimmed.isEmpty)
-            .help("Claude writes a full cold call script for this call segment. Replaces the script below.")
-            HStack {
-                Text("Your script").font(.headline)
-                Spacer()
-                Button("Use the backbone") { draft.pastedScript = ColdCallBackbone.text }
-                    .disabled(writing)
-            }
+            .help("Claude writes a full cold call script for this call segment, built on Clarity's cold call backbone. Replaces the script below.")
+            Text("Your script").font(.headline)
             Text("Paste your cold call script, or write one. Any format works: bullets, paragraphs, a Google Doc copy.")
                 .font(.callout).foregroundStyle(.secondary)
             box($draft.pastedScript, height: 200, placeholder: "Paste your script here...")
