@@ -19,6 +19,10 @@ extension CoachModel {
         guard let usable else { return }
         if RemovedList.contains(usable) || DialHistory.isMaxed(usable) { skipRemoved(usable); return }
         guard Salesforce.isConnected else { return }
+        // Their time zone, for the time zone filter (a no-op when the list already loaded it).
+        if let object = Salesforce.objectFor(id: usable) {
+            Task { await TimeZoneFilter.load(ids: [usable], object: object) }
+        }
         Task { [weak self] in
             // Only act on a real answer from Salesforce (an error is not "blank").
             let loaded: String?
@@ -279,6 +283,19 @@ extension CoachModel {
             return
         }
         if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 3) }
+    }
+
+    /// Only call people in this time zone (nil = everyone). Both call lists skip the rest.
+    func setTimeZoneFilter(_ zone: CallZone?) {
+        guard zone != TimeZoneFilter.selected else { return }
+        TimeZoneFilter.selected = zone
+        ActivityLog.add("Time zone filter: \(zone?.label ?? "all time zones")")
+        cancelAutoNext()
+        listDone = false
+        callMessage = nil
+        callList.refreshUpNext()
+        objectWillChange.send()
+        Task { await leads.timeZoneChanged() }
     }
 
     /// Follows the call plan (days 1, 2, 5, 8, 16; 2 dials a day). If this person shouldn't be

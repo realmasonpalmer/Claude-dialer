@@ -46,6 +46,8 @@ final class CallList: ObservableObject {
     var leftToCall: Int { records.filter { CalledToday.isCallable($0.id) }.count }
     /// On the plan but not due today: they come back on a later call day.
     var comingBackLater: Int { records.filter { Cadence.comesBackLater($0.id) }.count }
+    /// Due today, but in a time zone the rep isn't calling right now.
+    var heldByTimeZone: Int { TimeZoneFilter.heldBack(records.map(\.id)) }
 
     init() {
         let d = UserDefaults.standard
@@ -152,6 +154,9 @@ final class CallList: ObservableObject {
         do {
             let rows = try await Salesforce.fullList(object: key.object, key: key.view)
             guard !rows.isEmpty, listKey == key else { return false }
+            // Time zones first, so the time zone filter is right before anyone is opened.
+            await TimeZoneFilter.load(ids: rows.map(\.id), object: key.object)
+            guard listKey == key else { return false }
             let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } } ?? ""
             let currentID = lastIndex >= 0 && lastIndex < records.count ? records[lastIndex].id : nil
             let before = Set(records.map { String($0.id.prefix(15)) })

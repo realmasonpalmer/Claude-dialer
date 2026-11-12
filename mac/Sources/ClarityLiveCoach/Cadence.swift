@@ -70,6 +70,7 @@ enum Cadence {
     /// Why the plan says not to call them right now, in plain words. nil = OK to call.
     static func whyNotNow(_ id: String) -> String? {
         if RemovedList.contains(id) { return "They're off your list." }
+        if let zone = TimeZoneFilter.why(id) { return zone }
         let p = DialHistory.person(id)
         if p.pickups > 0 { return "They picked up before, so the plan is done for them." }
         if p.badNumber || p.failedConnects >= 2 { return "Their number didn't work." }
@@ -86,7 +87,7 @@ enum Cadence {
     /// Still on the plan, just not due today (resting between call days, or already called today).
     static func comesBackLater(_ id: String) -> Bool {
         guard !RemovedList.contains(id), !DialHistory.isMaxed(id), DialHistory.person(id).pickups == 0,
-              !CalledToday.isCallable(id), let s = step(for: id) else { return false }
+              !CalledToday.isCallable(id, anyTimeZone: true), let s = step(for: id) else { return false }
         // Called today on their last call day: done for good after today.
         let calledToday = DialHistory.person(id).dials.contains { cal.isDateInToday($0) }
         return !(s.isLast && calledToday)

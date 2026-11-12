@@ -32,9 +32,11 @@ enum CalledToday {
     }
 
     /// Can this person be called now? Not called today, not taken off the list, not out of tries,
-    /// and due today in the follow-up plan.
-    static func isCallable(_ id: String) -> Bool {
+    /// due today in the follow-up plan, and in the time zone being called (if one is picked).
+    /// - Parameter anyTimeZone: true = ignore the time zone filter.
+    static func isCallable(_ id: String, anyTimeZone: Bool = false) -> Bool {
         !ids.contains(id) && !RemovedList.contains(id) && !DialHistory.isMaxed(id) && Cadence.isDue(id)
+            && (anyTimeZone || TimeZoneFilter.allows(id))
     }
 
     private static var today: String { Date().formatted(.iso8601.year().month().day()) }

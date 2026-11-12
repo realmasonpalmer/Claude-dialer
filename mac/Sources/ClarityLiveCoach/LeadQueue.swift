@@ -19,6 +19,8 @@ final class LeadQueue: ObservableObject {
     var leftToCall: Int { rows.filter { CalledToday.isCallable($0.id) }.count }
     /// On the plan but not due today: they come back on a later call day.
     var comingBackLater: Int { rows.filter { Cadence.comesBackLater($0.id) }.count }
+    /// Due today, but in a time zone the rep isn't calling right now.
+    var heldByTimeZone: Int { TimeZoneFilter.heldBack(rows.map(\.id)) }
     /// Called today on this list.
     var calledHere: Int { rows.filter { calledToday.contains($0.id) }.count }
     var nextRow: Salesforce.Row? { nextIndex(after: index).map { rows[$0] } }
@@ -84,6 +86,19 @@ final class LeadQueue: ObservableObject {
             index = i
             await loadDetails()
         }
+    }
+
+    /// The time zone filter changed. Stay on the current person if they still fit;
+    /// if not, go to the first person due in the new time zone.
+    func timeZoneChanged() async {
+        guard selected != nil else { return }
+        if let current, TimeZoneFilter.allows(current.id) {
+            objectWillChange.send() // the counts changed
+            return
+        }
+        index = rows.firstIndex { CalledToday.isCallable($0.id) } ?? rows.count
+        details = nil
+        await loadDetails()
     }
 
     private func loadDetails() async {
