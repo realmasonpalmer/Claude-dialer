@@ -3,6 +3,8 @@ import SwiftUI
 /// A fold-out card that just shows the campaign script. The part you're on is bold and highlighted.
 struct ScriptOutlineCard: View {
     @ObservedObject var coach: CoachModel
+    /// The one page version of the script (redraws when Claude finishes writing it).
+    @ObservedObject private var pages = ScriptPage.shared
     @AppStorage(PrefKey.scriptOutlineOpen) private var open = false
 
     private struct Part: Identifiable {
@@ -21,8 +23,35 @@ struct ScriptOutlineCard: View {
             Part(id: "objection", title: "Objections", text: c.objections),
             Part(id: "exit", title: "When to stop", text: c.exit),
         ]
-        if !c.pastedScript.trimmed.isEmpty { list.insert(Part(id: "script", title: "Your script", text: c.pastedScript), at: 0) }
+        // A whole script was pasted or generated: show its one page version (spoken lines only,
+        // opener first), never the raw file with the tool's rules in it.
+        if !c.pastedScript.trimmed.isEmpty {
+            _ = pages.version
+            let sections = pages.sections(for: c.pastedScript)
+            if !sections.isEmpty {
+                return sections.map { Part(id: Self.stageID(for: $0.title), title: $0.title, text: $0.lines.joined(separator: "\n")) }
+            }
+            list = list.filter { !$0.text.trimmed.isEmpty }
+            if list.isEmpty {
+                let note = pages.isWriting(c.pastedScript)
+                    ? "Making your one page script. It takes a few seconds."
+                    : "Your one page script isn't ready yet. Check your keys in Set up, then open this again."
+                return [Part(id: "script", title: "Your script", text: note)]
+            }
+            return list
+        }
         return list.filter { !$0.text.trimmed.isEmpty }
+    }
+
+    /// Which call stage a section of the one page script belongs to (for the highlight).
+    private static func stageID(for title: String) -> String {
+        let t = title.uppercased()
+        if t.contains("OPENER") || t.contains("GATEKEEPER") || t.contains("VOICEMAIL") { return t.contains("OPENER") ? "opening" : "other-" + t }
+        if t.contains("QUESTION") { return "discovery" }
+        if t.contains("WHY") { return "value" }
+        if t.contains("ASK") || t.contains("CLOSE") { return t.contains("ASK") ? "closing" : "other-" + t }
+        if t.contains("IF THEY SAY") { return "objection" }
+        return "other-" + t
     }
 
     /// Which part the call is on right now.
