@@ -179,19 +179,45 @@ enum Salesforce {
     /// List views barely change, so they're reused for a minute (every list load and count needs them).
     private static var cachedViews: (at: Date, views: [ListView])?
 
+    /// Every Lead and Contact list view the rep can see, Lead lists first, A to Z.
     static func listViews() async throws -> [ListView] {
         if let c = cachedViews, Date().timeIntervalSince(c.at) < 60 { return c.views }
         var views: [ListView] = []
-        for object in ["Lead", "Contact"] {
-            let json = try await get("/services/data/\(apiVersion)/sobjects/\(object)/listviews") as? [String: Any]
-            for v in (json?["listviews"] as? [[String: Any]]) ?? [] {
-                if let id = v["id"] as? String, let label = v["label"] as? String {
+        do {
+            // One query gets all of them (the list views page below only gives 25 at a time).
+            for r in try await query("SELECT Id, Name, DeveloperName, SobjectType FROM ListView "
+                                     + "WHERE SobjectType IN ('Lead','Contact') ORDER BY SobjectType DESC, Name") {
+                if let id = r["Id"] as? String, let label = r["Name"] as? String, let object = r["SobjectType"] as? String {
                     views.append(ListView(id: id, label: label, object: object,
-                                          developerName: (v["developerName"] as? String) ?? ""))
+                                          developerName: (r["DeveloperName"] as? String) ?? ""))
                 }
             }
+        } catch {
+            ActivityLog.add("Lists: query didn't work (\(error.localizedDescription)), reading them page by page")
         }
+        if views.isEmpty { views = try await listViewsPageByPage() }
         cachedViews = (Date(), views)
+        return views
+    }
+
+    /// The list views pages, following "next page" until the end.
+    private static func listViewsPageByPage() async throws -> [ListView] {
+        var views: [ListView] = []
+        for object in ["Lead", "Contact"] {
+            var path: String? = "/services/data/\(apiVersion)/sobjects/\(object)/listviews"
+            var pages = 0
+            while let p = path, pages < 40 {
+                pages += 1
+                let json = try await get(p) as? [String: Any]
+                for v in (json?["listviews"] as? [[String: Any]]) ?? [] {
+                    if let id = v["id"] as? String, let label = v["label"] as? String {
+                        views.append(ListView(id: id, label: label, object: object,
+                                              developerName: (v["developerName"] as? String) ?? ""))
+                    }
+                }
+                path = json?["nextRecordsUrl"] as? String
+            }
+        }
         return views
     }
 

@@ -11,6 +11,7 @@ struct CampaignEditorView: View {
     @State private var showSections = false
     /// Salesforce list views to pick this campaign's audience from.
     @State private var listViews: [Salesforce.ListView] = []
+    @State private var listError: String?
     @State private var loadingLists = false
     @State private var writing = false
     @State private var filling = false
@@ -67,6 +68,11 @@ struct CampaignEditorView: View {
                     .font(.callout).foregroundStyle(.secondary)
             } else if loadingLists && listViews.isEmpty {
                 ProgressView().controlSize(.small)
+            } else if let listError, listViews.isEmpty {
+                HStack(spacing: 8) {
+                    Text(listError).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Button("Try again") { Task { await loadLists() } }
+                }
             } else {
                 Picker("", selection: Binding(
                     get: { draft.listViewID },
@@ -86,11 +92,18 @@ struct CampaignEditorView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .task {
-            guard Salesforce.isConnected, listViews.isEmpty else { return }
-            loadingLists = true
-            listViews = (try? await Salesforce.listViews()) ?? []
-            loadingLists = false
+        .task { if listViews.isEmpty { await loadLists() } }
+    }
+
+    private func loadLists() async {
+        guard Salesforce.isConnected else { return }
+        loadingLists = true
+        defer { loadingLists = false }
+        do {
+            listViews = try await Salesforce.listViews()
+            listError = listViews.isEmpty ? "No Lead or Contact lists found in Salesforce." : nil
+        } catch {
+            listError = "Couldn't load your Salesforce lists: \(error.localizedDescription)"
         }
     }
 

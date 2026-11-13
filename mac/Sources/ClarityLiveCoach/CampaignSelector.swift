@@ -157,6 +157,7 @@ struct NewCampaignView: View {
     @State private var thought = ""
     @State private var message: String?
     @State private var filling = false
+    @State private var listError: String?
     @State private var tourStep: Int?
     @AppStorage("newListTourSeen") private var newListTourSeen = false
 
@@ -181,7 +182,14 @@ struct NewCampaignView: View {
                 if !Salesforce.isConnected {
                     Text("Sign in to Salesforce first: click the gear, then Set up.").font(.callout).foregroundStyle(.secondary)
                 } else if views.isEmpty {
-                    ProgressView().controlSize(.small)
+                    if let listError {
+                        HStack(spacing: 8) {
+                            Text(listError).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                            Button("Try again") { Task { await loadLists() } }
+                        }
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
                 } else {
                     Picker("", selection: $listID) {
                         Text("Pick a list...").tag("")
@@ -270,9 +278,17 @@ struct NewCampaignView: View {
             TourOverlay(step: $tourStep, spots: spots, steps: Tour.newListSteps) { newListTourSeen = true }
         }
         .onAppear { if !newListTourSeen { tourStep = 1 } }
-        .task {
-            guard Salesforce.isConnected, views.isEmpty else { return }
-            views = (try? await Salesforce.listViews()) ?? []
+        .task { if views.isEmpty { await loadLists() } }
+    }
+
+    private func loadLists() async {
+        guard Salesforce.isConnected else { return }
+        listError = nil
+        do {
+            views = try await Salesforce.listViews()
+            if views.isEmpty { listError = "No Lead or Contact lists found in Salesforce." }
+        } catch {
+            listError = "Couldn't load your Salesforce lists: \(error.localizedDescription)"
         }
     }
 
