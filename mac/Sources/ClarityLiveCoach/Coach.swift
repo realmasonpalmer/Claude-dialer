@@ -185,6 +185,13 @@ final class CoachModel: ObservableObject {
     var lastWaitingFor = ""
 
     var noMobileSkips = 0
+    /// People in a row who weren't ready in time and were moved to the back (stops after 5).
+    var stallSkips = 0
+    /// "Sending the text in 4": seconds left before the due text goes out by itself. nil = no countdown.
+    @Published var textSendIn: Int?
+    var textTask: Task<Void, Never>?
+    /// Whose LinkedIn profile was last opened by itself, so it opens once per person.
+    var linkedInOpenedFor: String?
 
     /// After a voicemail: the text and LinkedIn note to send. Stays after the call until checked off.
     @Published var followUp: FollowUp? { didSet { followUpChanged() } }

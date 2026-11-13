@@ -7,6 +7,8 @@ import Foundation
 /// Voicemail, the text and LinkedIn card, and the follow-up plan.
 extension CoachModel {
     func followUpChanged() {
+        autoOpenLinkedIn()
+        if followUp?.textEdited == true, textSendIn != nil { stopTextCountdown() } // the rep is typing
         let done = followUp?.textDone == true
         defer { textWasDone = done }
         guard waitingForText, status == .ready else { return }
@@ -277,6 +279,15 @@ extension CoachModel {
             if let key = f.key { DialHistory.logLinkedIn(key) }
         }
         followUp?.linkedinDone = true
+    }
+
+    /// The next person just loaded and Salesforce has their LinkedIn link: open the profile in a
+    /// background Chrome tab, once per person, so it's ready when the rep looks. Never during a call.
+    private func autoOpenLinkedIn() {
+        guard Prefs.autoLinkedIn, status == .ready, let f = followUp, let key = f.key, let url = f.linkedinURL,
+              linkedInOpenedFor != key else { return }
+        linkedInOpenedFor = key
+        SalesforceChrome.openInBackground(url.absoluteString)
     }
 
     /// The "LinkedIn profile" link on the card: opens it any day, without copying or counting anything.

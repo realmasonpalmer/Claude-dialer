@@ -135,6 +135,12 @@ extension CoachModel {
                 } else {
                     RemovedList.remove(id)
                     self.statusMessage = "Saved."
+                    // Saved how it went for the person just called: on to the next one in 3 seconds.
+                    if self.status == .ready, self.autoDial, !self.waitingForText, !self.dialing, !self.shouldOfferRedial,
+                       self.currentAttemptKey.map({ $0.prefix(15) == id.prefix(15) }) == true {
+                        ActivityLog.add("Saved: on to the next person in 3 s")
+                        self.startMoveOn(after: 3)
+                    }
                 }
                 self.callList.refreshUpNext()
             } catch {
@@ -405,7 +411,23 @@ extension CoachModel {
     }
 
     /// Dials only once the script and follow-ups are for this exact person. Gives up after 25 s.
-    func callWhenReady(countdown: Int = 0, onFail: @escaping () -> Void = {}) {
+    /// The next person wasn't ready in time (page, details): move them to the back of today's list
+    /// and call the next one, so the dialing never stalls. Stops after 5 in a row.
+    func skipStalled(why: String) {
+        stallSkips += 1
+        if let id = callList.lastOpenedID { callList.passOver(id) }
+        guard stallSkips <= 5 else {
+            stallSkips = 0
+            callMessage = "5 people in a row weren't ready (\(why)). Check Chrome and Salesforce, then click Call."
+            return
+        }
+        problem = "\(Screener.firstName(calling) ?? "They") wasn't ready in time. Moved to the back of the list."
+        ActivityLog.add("Never stall: moved \(calling ?? "?") to the back (\(why))")
+        nextLead()
+    }
+
+    /// - Parameter auto: the app is dialing by itself (not the Call button): give up sooner and move on.
+    func callWhenReady(countdown: Int = 0, auto: Bool = false, onFail: @escaping () -> Void = {}) {
         readyTask?.cancel()
         readyTask = Task { [weak self] in
             let start = Date()
@@ -450,12 +472,15 @@ extension CoachModel {
                     if !self.callFromPage() { onFail() }
                     return
                 }
-                if waited > 25 {
+                let moveOn = auto && self.autoDial
+                if waited > (moveOn ? 12 : 25) {
                     self.gettingReady = nil
                     self.gettingReadyDetail = nil
-                    self.callMessage = "Didn't call: \(self.readinessGap()). Click Call to try again."
-                    ActivityLog.problem("Gate: gave up after 25 s. \(self.readinessGap())")
                     self.lastWaitingFor = ""
+                    let gap = self.readinessGap()
+                    ActivityLog.problem("Gate: gave up after \(Int(waited)) s. \(gap)")
+                    if moveOn { self.skipStalled(why: gap) }
+                    else { self.callMessage = "Didn't call: \(gap). Click Call to try again." }
                     return
                 }
                 let name = Screener.firstName(self.calling) ?? "the next person"
@@ -496,6 +521,7 @@ extension CoachModel {
                     guard let self else { return }
                     self.dialing = false
                     self.callList.markCurrentCalled()
+                    self.stallSkips = 0
                     if self.status == .ready { self.pendingDialSince = Date() } // the call may already be live
                 } catch {
                     self?.dialing = false
@@ -511,7 +537,7 @@ extension CoachModel {
     }
 
     /// Waits for the lead's Salesforce page to load, then clicks its Mobile number (Aircall in Salesforce dials).
-    func dialFromSalesforcePage(expecting id: String?, countdown: Int = 0) {
+    func dialFromSalesforcePage(expecting id: String?, countdown: Int = 0, retried: Bool = false) {
         readyTask?.cancel()
         // Kept in readyTask, so Wait, Next and Call cancel it like everything else.
         readyTask = Task { [weak self] in
@@ -524,15 +550,22 @@ extension CoachModel {
                 if SalesforceChrome.dialNumber() != nil {
                     // Page loaded and has a Mobile or Phone: dial once their script and follow-ups are ready.
                     self.noMobileSkips = 0
-                    self.callWhenReady(countdown: countdown) { [weak self] in self?.callMessage = "No phone number on this Salesforce page. Click Next." }
+                    self.callWhenReady(countdown: countdown, auto: true) { [weak self] in self?.callMessage = "No phone number on this Salesforce page. Click Next." }
                     return
                 }
             }
             guard let self, !Task.isCancelled else { return }
             guard pageOpened else {
-                // The page never opened: don't skip anyone, just say so.
-                self.callMessage = "Their Salesforce page didn't open. Click Call when it's showing."
-                ActivityLog.problem("Next: page for \(id ?? "?") didn't open in 8 s")
+                ActivityLog.problem("Next: page for \(id ?? "?") didn't open in 8 s\(retried ? " (2nd try)" : "")")
+                // Open it again by its address, once. Still nothing: move them to the back and keep dialing.
+                if !retried, let id, let record = self.callList.records.first(where: { $0.id == id }),
+                   SalesforceChrome.open(record.url) {
+                    self.dialFromSalesforcePage(expecting: id, countdown: countdown, retried: true)
+                } else if self.autoDial {
+                    self.skipStalled(why: "their Salesforce page didn't open")
+                } else {
+                    self.callMessage = "Their Salesforce page didn't open. Click Call when it's showing."
+                }
                 return
             }
             // The page shows no number. Salesforce itself may still have one (the field isn't on this
@@ -543,7 +576,7 @@ extension CoachModel {
                 if numbers.checked, numbers.mobile != nil || numbers.phone != nil {
                     KnownNumbers.set(key, mobile: numbers.mobile, phone: numbers.phone)
                     self.noMobileSkips = 0
-                    self.callWhenReady(countdown: countdown) { [weak self] in self?.callMessage = "Couldn't start the call. Click Call." }
+                    self.callWhenReady(countdown: countdown, auto: true) { [weak self] in self?.callMessage = "Couldn't start the call. Click Call." }
                     return
                 }
             }

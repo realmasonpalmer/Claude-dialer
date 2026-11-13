@@ -139,7 +139,11 @@ extension CoachModel {
                 afterHangUp { [weak self] in self?.startNextSequence() }
             } else {
                 waitingForText = true
+                startTextCountdown() // sends it by itself in 5 seconds, unless the rep edits or skips
             }
+        } else if lastCallAnswered, autoDial, currentAttemptKey != nil {
+            // A real talk just ended: 10 seconds to save how it went, then the next person. Wait stops it.
+            afterHangUp { [weak self] in self?.startMoveOn(after: 10) }
         } else if moveOn {
             afterHangUp { [weak self] in self?.startNextSequence() }
         }
@@ -219,8 +223,59 @@ extension CoachModel {
         }
     }
 
+    /// Counts down, then moves to the next person (and calls them). Used after a real talk and
+    /// after "How did it go?" is saved. Wait stops it.
+    func startMoveOn(after seconds: Int) {
+        guard status == .ready else { return }
+        autoNextTask?.cancel()
+        autoNextName = nextLeadName
+        autoNextTask = Task { [weak self] in
+            for left in stride(from: seconds, through: 1, by: -1) {
+                self?.autoNextIn = left
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                if self.status != .ready { self.cancelAutoNext(); return }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.autoNextIn = nil
+            self.startNextSequence()
+        }
+    }
+
+    /// A text is due: wait for its words, count down 5 seconds, then send it. Editing the text,
+    /// Edit or Skip stops the countdown (the rep then sends it by hand).
+    func startTextCountdown() {
+        textTask?.cancel()
+        guard autoDial, Aircall.isSetUp else { return }
+        textTask = Task { [weak self] in
+            var waited = 0
+            while let self, !Task.isCancelled, self.waitingForText, self.followUp?.text.isEmpty ?? true, waited < 20 {
+                try? await Task.sleep(for: .milliseconds(500))
+                waited += 1
+            }
+            for left in stride(from: 5, through: 1, by: -1) {
+                guard let self, !Task.isCancelled, self.waitingForText, self.status == .ready,
+                      self.followUp?.textEdited != true else { self?.textSendIn = nil; return }
+                self.textSendIn = left
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guard let self, !Task.isCancelled, self.waitingForText, self.status == .ready,
+                  self.followUp?.textEdited != true else { self?.textSendIn = nil; return }
+            self.textSendIn = nil
+            ActivityLog.add("Text: sending by itself after the countdown")
+            self.sendFollowUpText()
+        }
+    }
+
+    func stopTextCountdown() {
+        textTask?.cancel()
+        textTask = nil
+        textSendIn = nil
+    }
+
     /// The rep clicked Wait (or moved on by hand).
     func cancelAutoNext() {
+        stopTextCountdown()
         hangUpGen += 1
         waitingForText = false
         autoNextName = nil

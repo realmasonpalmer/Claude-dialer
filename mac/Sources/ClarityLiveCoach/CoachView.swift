@@ -197,6 +197,11 @@ struct CoachView: View {
     private let showTouchpoints = true // always on
     @AppStorage(PrefKey.nextDials) private var nextDials = true
     @State private var listViewCache: [Salesforce.ListView] = []
+    /// "Starting TAX FIRMS in 4": the next list starts by itself when this one is done.
+    @State private var nextListIn: Int?
+    @State private var nextListTask: Task<Void, Never>?
+    /// Lists started by themselves in a row with no call made (stops a loop when every list is done).
+    @State private var listHops = 0
     private let appPhone = true // always: the Aircall phone is inside the coach
 
     // One visual system: blue = actions, green = listening, amber = real warnings.
@@ -321,6 +326,11 @@ struct CoachView: View {
         .onChange(of: coach.status) { _, status in
             syncScriptToList()
             if status != .ready { tourStep = nil } // never during a call
+            if status == .live { listHops = 0 }
+        }
+        // This list is done: start the next list that's on, by itself.
+        .onChange(of: listRanOut) { _, done in
+            if done { startNextListCountdown() } else { stopNextListCountdown() }
         }
         .onChange(of: campaigns.campaigns) { _, _ in campaigns.ensureSelectedActive(); syncScriptToList() }
         .sheet(isPresented: $showHelp) { HelpView() }
@@ -600,6 +610,40 @@ struct CoachView: View {
             guard SalesforceChrome.url(live: true) == nil else { return } // a Salesforce tab is already open
             NSWorkspace.shared.open([url], withApplicationAt: chrome, configuration: NSWorkspace.OpenConfiguration())
             ActivityLog.add("Opened \(c.listName.isEmpty ? "the call list" : c.listName) in Chrome (no Salesforce tab was open)")
+        }
+    }
+
+    private func stopNextListCountdown() {
+        nextListTask?.cancel()
+        nextListTask = nil
+        nextListIn = nil
+    }
+
+    /// Counts down 5 seconds, switches to the next list that's on, waits for its people to load,
+    /// then starts calling. Only with "Call the next person for me" on, and at most once around the lists.
+    private func startNextListCountdown() {
+        stopNextListCountdown()
+        guard coach.autoDial, !coach.leads.isActive, tourStep == nil, let next = nextCampaign,
+              listHops < campaigns.activeCampaigns.count else { return }
+        nextListTask = Task { @MainActor in
+            for left in stride(from: 5, through: 1, by: -1) {
+                nextListIn = left
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                if coach.status != .ready { nextListIn = nil; return }
+            }
+            nextListIn = nil
+            listHops += 1
+            ActivityLog.add("List done: starting the next list by itself: \(next.name)")
+            switchTo(next)
+            for _ in 0..<40 { // up to 20 seconds for the new list's people to load
+                try? await Task.sleep(for: .milliseconds(500))
+                if Task.isCancelled || coach.status != .ready { return }
+                if campaigns.selected.id == next.id, coach.nextLeadName != nil {
+                    coach.startNextSequence()
+                    return
+                }
+            }
         }
     }
 
@@ -1066,7 +1110,15 @@ struct CoachView: View {
                 Text("Want to keep going? Add people to this list in Salesforce, or start your next list.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let next = nextCampaign {
-                    Button("Start next list: \(next.name)") { switchTo(next) }
+                    if let left = nextListIn {
+                        HStack(spacing: 8) {
+                            Image(systemName: "timer")
+                            Text("Starting \(next.name) in \(left)").font(.callout.weight(.semibold))
+                            Spacer(minLength: 0)
+                            Button("Stay here") { stopNextListCountdown() }
+                        }
+                    }
+                    Button("Start next list: \(next.name)") { stopNextListCountdown(); switchTo(next) }
                         .buttonStyle(.borderedProminent)
                 } else {
                     Text("Pick another call list at the top.")
@@ -1107,9 +1159,17 @@ struct CoachView: View {
             }
         } else if coach.waitingForText {
             HStack(spacing: 8) {
-                Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+                if let left = coach.textSendIn {
+                    Image(systemName: "timer")
+                    Text("Sending the text in \(left)").font(.callout.weight(.semibold))
+                    Spacer(minLength: 0)
+                    Button("Edit") { coach.stopTextCountdown() }
+                        .help("Stop the countdown so you can change the text. Then click Send text.")
+                } else {
+                    Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
+                        .font(.callout).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
                 Button("Skip text") { coach.startNextSequence() }
             }
             .padding(10)

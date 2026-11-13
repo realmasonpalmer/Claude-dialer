@@ -231,6 +231,12 @@ final class CallList: ObservableObject {
         return best.map { (records[$0.index], $0.index + 1) }
     }
 
+    /// Moves someone to the back for today (they weren't ready in time).
+    func passOver(_ id: String) {
+        passedOver.insert(id)
+        refreshUpNext()
+    }
+
     /// People the rep moved past today without calling (so Next doesn't keep bringing them back).
     private var passedOver: Set<String> = []
     private var passedDay = ""
@@ -429,6 +435,33 @@ enum SalesforceChrome {
 
     private static var chromeRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty
+    }
+
+    // MARK: LinkedIn in the background
+
+    /// Shows a LinkedIn profile without leaving the Salesforce tab: reuses a LinkedIn tab if one is
+    /// open, else opens a new tab and switches right back.
+    static func openInBackground(_ url: String) {
+        guard chromeRunning, !url.contains("\""), !url.contains("\\") else { return }
+        let script = """
+        tell application "Google Chrome"
+            if (count of windows) is 0 then return "none"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    if (URL of t) contains "linkedin.com" then
+                        set URL of t to "\(url)"
+                        return "reused"
+                    end if
+                end repeat
+            end repeat
+            set w to front window
+            set keep to active tab index of w
+            make new tab at end of tabs of w with properties {URL:"\(url)"}
+            set active tab index of w to keep
+            return "new"
+        end tell
+        """
+        queue.async { _ = NSAppleScript(source: script)?.executeAndReturnError(nil) }
     }
 
     // MARK: Video meetings in Chrome
