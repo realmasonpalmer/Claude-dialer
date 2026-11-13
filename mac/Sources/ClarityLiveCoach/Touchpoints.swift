@@ -146,7 +146,7 @@ struct TouchpointsCard: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                    Text(open ? "Touchpoints" : "\(t.total(in: period)) touchpoints \(period.rawValue.lowercased()) · \(dials) calls · \(meetings) meetings")
+                    Text(open ? "My numbers" : "My numbers \(period.rawValue.lowercased()): \(dials) calls · \(meetings) meetings")
                         .font(.callout.weight(.semibold))
                     Spacer(minLength: 0)
                 }
@@ -157,7 +157,7 @@ struct TouchpointsCard: View {
             HStack {
                 // Compare campaigns: each list + script on its own.
                 Picker("", selection: $touchpoints.showCampaign) {
-                    Text("All call segments").tag(String?.none)
+                    Text("All call lists").tag(String?.none)
                     ForEach(touchpoints.campaignNames, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
                 .labelsHidden()
@@ -171,7 +171,7 @@ struct TouchpointsCard: View {
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(t.total(in: period))").font(.title.weight(.semibold)).monospacedDigit()
-                Text("total touchpoints").font(.callout).foregroundStyle(.secondary)
+                Text("calls, texts and notes").font(.callout).foregroundStyle(.secondary)
             }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
                 GridRow { stat("Calls", dials); stat("Picked up", pickups) }
@@ -183,10 +183,10 @@ struct TouchpointsCard: View {
             if meetings > 0 {
                 Text("\(dials / max(meetings, 1)) calls per meeting").font(.caption).foregroundStyle(.secondary)
             }
-            Button("Reset today") { confirmReset = true }
+            Button("Set today back to zero") { confirmReset = true }
                 .buttonStyle(.link).font(.caption)
-                .confirmationDialog("Reset today's touchpoints to zero?", isPresented: $confirmReset) {
-                    Button("Reset today", role: .destructive) { touchpoints.resetToday() }
+                .confirmationDialog("Set today's numbers back to zero?", isPresented: $confirmReset) {
+                    Button("Set to zero", role: .destructive) { touchpoints.resetToday() }
                     Button("Cancel", role: .cancel) {}
                 }
             }

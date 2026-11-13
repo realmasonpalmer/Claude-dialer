@@ -14,8 +14,8 @@ struct CampaignSelectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Call Segments").font(.title2.weight(.semibold))
-            Text("Up to \(CampaignStore.maxActive) active at a time. Each one has its own Salesforce list and script.")
+            Text("Call lists").font(.title2.weight(.semibold))
+            Text("A call list is people to call, plus what to say to them. You can have \(CampaignStore.maxActive) turned on at a time.")
                 .font(.callout).foregroundStyle(.secondary)
 
             List(selection: $selection) {
@@ -39,13 +39,13 @@ struct CampaignSelectorView: View {
             }
 
             HStack(spacing: 8) {
-                Button("New Call Segment") { showNew = true }
-                Button("Activate") {
+                Button("New call list") { showNew = true }
+                Button("Turn on") {
                     guard let id = selection else { return }
-                    note = store.setActive(id, true) ? nil : "Up to \(CampaignStore.maxActive) call segments can be active. Pause one first."
+                    note = store.setActive(id, true) ? nil : "Only \(CampaignStore.maxActive) call lists can be on. Turn one off first."
                 }
                 .disabled(picked == nil || picked?.active == true)
-                Button("Pause") {
+                Button("Turn off") {
                     guard let id = selection else { return }
                     store.setActive(id, false)
                     note = nil
@@ -64,12 +64,12 @@ struct CampaignSelectorView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(picked?.active != true)
-                .help("Pick an active call segment to call its list (or double-click it)")
+                .help("Pick a call list that is on, then click here. Or double-click it.")
             }
             if let note {
                 Text(note).font(.caption).foregroundStyle(.orange)
             } else {
-                Text("Tip: double-click a call segment to start calling it.").font(.caption).foregroundStyle(.secondary)
+                Text("Tip: double-click a call list to start calling it.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(20)
@@ -83,7 +83,7 @@ struct CampaignSelectorView: View {
     private func start(_ id: UUID) {
         guard let c = store.campaigns.first(where: { $0.id == id }) else { return }
         if !c.active, !store.setActive(id, true) {
-            note = "Up to \(CampaignStore.maxActive) call segments can be active. Pause one first."
+            note = "Only \(CampaignStore.maxActive) call lists can be on. Turn one off first."
             return
         }
         note = nil
@@ -105,7 +105,7 @@ struct CampaignSelectorView: View {
             Spacer()
             Text(c.listViewID.isEmpty ? "–" : "\(c.listSize) people")
                 .font(.callout).monospacedDigit().foregroundStyle(.secondary)
-            Text(c.active ? "Active" : "Paused")
+            Text(c.active ? "On" : "Off")
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background((c.active ? Color.green : Color.secondary).opacity(0.18), in: Capsule())
@@ -145,17 +145,17 @@ struct NewCampaignView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New Call Segment").font(.title2.weight(.semibold))
+            Text("New call list").font(.title2.weight(.semibold))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("1. Call Segment name").font(.headline)
+                Text("1. Name").font(.headline)
                 TextField("e.g. Tax firm partners", text: $name).textFieldStyle(.roundedBorder)
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("2. Salesforce list").font(.headline)
+                Text("2. Who to call (a Salesforce list)").font(.headline)
                 if !Salesforce.isConnected {
-                    Text("Sign in to Salesforce first (gear > Setup > Salesforce).").font(.callout).foregroundStyle(.secondary)
+                    Text("Sign in to Salesforce first: click the gear, then Set up.").font(.callout).foregroundStyle(.secondary)
                 } else if views.isEmpty {
                     ProgressView().controlSize(.small)
                 } else {
@@ -168,7 +168,7 @@ struct NewCampaignView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("3. Describe this call segment").font(.headline)
+                Text("3. Who are these people?").font(.headline)
                 Text("Who they are, what keeps them up at night, what they want, and their story. The more real, the better the script.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $audience)
@@ -192,7 +192,7 @@ struct NewCampaignView: View {
                 }
                 .buttonStyle(BrandPrimaryButton())
                 .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
-                .help("Claude writes a full cold call script for this call segment, built on Clarity's cold call backbone. Takes 2 to 5 minutes.")
+                .help("Claude writes the whole script for these people. Takes 2 to 5 minutes.")
                 if writing, !thought.isEmpty {
                     Text(ScriptWriter.lastThought(thought))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -200,7 +200,7 @@ struct NewCampaignView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("4. Script").font(.headline)
+                Text("4. What to say (the script)").font(.headline)
                 TextEditor(text: $script)
                     .font(.callout)
                     .frame(minHeight: 200)
@@ -281,7 +281,7 @@ enum ScriptWriter {
         let words = script.split(separator: " ").count
         let s = max(0, Int(now.timeIntervalSince(start)))
         let time = s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s"
-        return words == 0 ? "Thinking through this segment... \(time)" : "Writing... \(words) words · \(time)"
+        return words == 0 ? "Thinking about these people... \(time)" : "Writing... \(words) words · \(time)"
     }
 
     /// The last line of Claude's thinking summary, short enough for one line under the button.

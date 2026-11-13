@@ -24,21 +24,21 @@ struct ClarityLiveCoachApp: App {
         }
         .windowResizability(.contentSize)
 
-        Window("Script Lab", id: "script-lab") {
+        Window("What's Working", id: "script-lab") {
             ScriptLabView(lab: coach.lab, openers: coach.openers)
                 .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 620, height: 780)
 
-        Window("Call Segments", id: "campaign-selector") {
+        Window("Call Lists", id: "campaign-selector") {
             CampaignSelectorView()
                 .brandWindow()
                 .environmentObject(campaigns)
         }
         .defaultSize(width: 620, height: 480)
 
-        Window("Call Segment", id: "campaign-editor") {
+        Window("Call List", id: "campaign-editor") {
             CampaignEditorView()
                 .brandWindow()
                 .environmentObject(campaigns)

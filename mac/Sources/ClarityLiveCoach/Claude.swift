@@ -111,9 +111,9 @@ enum CoachSpeed: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .best: return "Best lines (Opus)"
-        case .balanced: return "Balanced (Sonnet, no thinking)"
-        case .fastest: return "Fastest (Haiku, no thinking)"
+        case .best: return "Best lines (a bit slower)"
+        case .balanced: return "Fast (best for most people)"
+        case .fastest: return "Fastest"
         }
     }
 

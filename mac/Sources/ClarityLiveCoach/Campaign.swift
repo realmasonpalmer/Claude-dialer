@@ -4,7 +4,7 @@ import Foundation
 /// Every field is optional except the name. Claude reads the intent, not just the words.
 struct Campaign: Codable, Identifiable, Equatable {
     var id = UUID()
-    var name = "New call segment"
+    var name = "New call list"
     var objective = ""
     var pastedScript = ""
     var company = ""
@@ -33,7 +33,7 @@ struct Campaign: Codable, Identifiable, Equatable {
     /// (for scripts like the lunch invite, where a pitch opener doesn't fit).
     var ownOpener = false
 
-    init(id: UUID = UUID(), name: String = "New call segment", objective: String = "", pastedScript: String = "",
+    init(id: UUID = UUID(), name: String = "New call list", objective: String = "", pastedScript: String = "",
          company: String = "", offer: String = "", idealCustomer: String = "", persona: String = "",
          opening: String = "", discovery: String = "", qualification: String = "", objections: String = "",
          transitions: String = "", closing: String = "", success: String = "", exit: String = "", version: Int = 1) {
@@ -49,7 +49,7 @@ struct Campaign: Codable, Identifiable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) -> String { (try? c.decodeIfPresent(String.self, forKey: key)) ?? "" }
         id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
-        name = text(.name).isEmpty ? "Untitled call segment" : text(.name)
+        name = text(.name).isEmpty ? "Untitled call list" : text(.name)
         objective = text(.objective); pastedScript = text(.pastedScript)
         company = text(.company); offer = text(.offer); idealCustomer = text(.idealCustomer); persona = text(.persona)
         opening = text(.opening); discovery = text(.discovery); qualification = text(.qualification)

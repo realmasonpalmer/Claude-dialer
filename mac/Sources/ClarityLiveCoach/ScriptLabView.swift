@@ -20,7 +20,7 @@ struct ScriptLabView: View {
                 } else {
                     numbers
                     funnel
-                    table("Openers", stats.openers)
+                    table("First lines", stats.openers)
                     table("Objections", stats.objections)
                     if stats.versions.count > 1 { table("Script versions", stats.versions) }
                 }
@@ -41,7 +41,7 @@ struct ScriptLabView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Script Lab").font(.title2.weight(.semibold))
+            Text("What's working").font(.title2.weight(.semibold))
             Text("\(campaign.name) · version \(campaign.version)").foregroundStyle(.secondary)
             Text("How calls are scored: \(CallScore.explanation)")
                 .font(.caption).foregroundStyle(.secondary)
@@ -105,8 +105,8 @@ struct ScriptLabView: View {
     private var suggestionsSection: some View {
         let mine = lab.suggestions(for: campaign)
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Suggested improvements").font(.headline)
-            Text("Claude checks your results every \(CallLab.autoEvery) calls (first after \(CallLab.minimumCalls)) and suggests up to 3 changes, each with the numbers behind it. Nothing changes until you click Apply.")
+            Text("Ideas to make your script better").font(.headline)
+            Text("After \(CallLab.minimumCalls) answered calls, Claude suggests up to 3 better lines. It checks again every \(CallLab.autoEvery) calls. Nothing changes until you click Use this.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -148,9 +148,9 @@ struct ScriptLabView: View {
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
                 .textSelection(.enabled)
             HStack {
-                Button("Apply to script") { lab.apply(s, to: campaigns) }
+                Button("Use this") { lab.apply(s, to: campaigns) }
                     .buttonStyle(.borderedProminent)
-                Button("Dismiss") { lab.dismiss(s) }
+                Button("No thanks") { lab.dismiss(s) }
             }
         }
         .padding(14)

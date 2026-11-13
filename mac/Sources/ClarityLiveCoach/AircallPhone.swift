@@ -368,8 +368,6 @@ struct AircallPhoneView: NSViewRepresentable {
 /// "Aircall phone" bar in the coach: Show opens the phone on the right, Hide tucks it away.
 struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
-    @AppStorage(PrefKey.nextDials) private var autoDial = true
-    @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     @AppStorage(PrefKey.aircallNumberID) private var numberID = 0
     @State private var numbers: [Aircall.Number] = []
 
@@ -386,16 +384,9 @@ struct AircallPhonePanel: View {
                 Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }.buttonStyle(BrandQuietButton()).fixedSize()
             }
             HStack(spacing: 12) {
-                Toggle("Auto-dial", isOn: $autoDial)
-                    .toggleStyle(.checkbox)
-                    .fixedSize()
-                    .help("On: after you send the text, the next person loads and is called after a 5 second countdown.")
-                Toggle("Double tap", isOn: $doubleTap)
-                    .toggleStyle(.checkbox)
-                    .fixedSize()
-                    .help("On: if they don't pick up, the app calls them a 2nd time. Off: one call per lead, then the next person.")
-                Spacer(minLength: 8)
+                // "Call the next person for me" and "Call each person twice" live in gear > Settings.
                 if !numbers.isEmpty {
+                    Text("Calls go out from").font(.caption).foregroundStyle(.secondary).fixedSize()
                     // The app dials through Aircall's system, so it needs to be told which line to use.
                     Picker("From", selection: $numberID) {
                         if !numbers.contains(where: { $0.id == numberID }) { Text("Pick number").tag(0) }
@@ -405,6 +396,7 @@ struct AircallPhonePanel: View {
                     .frame(maxWidth: 200)
                     .help("Calls and texts go out from this Aircall number")
                 }
+                Spacer(minLength: 0)
             }
         }
         .task { numbers = (try? await Aircall.numbers()) ?? [] }
@@ -420,7 +412,7 @@ struct AircallPhoneSide: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if phone.shown {
-                Text("Sign in once. Then set yourself to Available. Calls ring here.")
+                Text("Sign in one time. Then set yourself to Available. Your calls ring here.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             AircallPhoneView(phone: phone)

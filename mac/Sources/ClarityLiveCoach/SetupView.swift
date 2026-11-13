@@ -41,7 +41,7 @@ struct SetupView: View {
         "name": Guide(steps: [
             "Click Set up.",
             "Type your first name the way you say it on calls (for example: Mason).",
-            "Click Save. Openers now say \"this is Mason from Clarity.\"",
+            "Click Save. Your first line now says \"this is Mason from Clarity.\"",
         ], links: []),
         "keys": Guide(steps: [
             "Anthropic (Claude writes your lines):",
@@ -63,7 +63,7 @@ struct SetupView: View {
             "3. When macOS asks about System Audio Recording, click Open System Settings and turn on Clarity Live Coach. Then come back.",
             "4. Follow the check on screen: say a sentence, then play a short sound or test call so the app hears the other side.",
             "5. Both meters should move. If one doesn't: System Settings, then Privacy & Security, then Microphone and Screen & System Audio Recording, and make sure Clarity Live Coach is on.",
-            "With Bluetooth headphones the coach hears you through the Mac's built-in mic (Settings and tools, then Audio). That's on purpose.",
+            "With Bluetooth headphones the coach hears you through the Mac's built-in mic. That's on purpose.",
         ], links: [("Privacy settings", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")]),
         "chrome": Guide(steps: [
             "1. Open Google Chrome.",
@@ -105,7 +105,7 @@ struct SetupView: View {
             "3. Click Incoming Webhooks, turn it On, then Add New Webhook to Workspace. Pick #live-coach-bugs and click Allow.",
             "4. Copy the Webhook URL (starts with https://hooks.slack.com/services/).",
             "5. Click Set up here, paste it and click Save.",
-            "6. Test it: gear > Settings and tools > Send bug report. A message shows in the channel.",
+            "6. Test it: click the gear, then Settings, then Get help, then Send a problem report. A message shows in the channel.",
             "Each teammate pastes the same link, so everyone's reports land in one place.",
         ], links: [("Slack app directory", "https://api.slack.com/apps")]),
         "calendar": Guide(steps: [
@@ -150,7 +150,7 @@ struct SetupView: View {
                 dismiss(); onAudioCheck()
             },
             Step(id: "chrome", title: "3. Chrome setting",
-                 detail: "In Chrome: View > Developer > Allow JavaScript from Apple Events. Lets the app read your Salesforce list.",
+                 detail: "In Chrome, at the very top of your screen: 1. Click View. 2. Click Developer. 3. Click Allow JavaScript from Apple Events. This lets the app read your list.",
                  done: (coach.callList.state != .needsChromeSetting && !coach.callList.records.isEmpty), optional: false) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Google Chrome.app"))
             },
@@ -167,7 +167,7 @@ struct SetupView: View {
                              done: false, optional: false) { showAircall = true })
         } else if repName.isEmpty {
             list.append(Step(id: "name", title: "Your first name",
-                             detail: "So openers say \"this is [you]\".",
+                             detail: "So your first line says \"this is [you]\".",
                              done: false, optional: false) { askName = true })
         }
         return list
@@ -178,7 +178,7 @@ struct SetupView: View {
         _ = refresh
         return [
             Step(id: "name", title: "Your first name",
-                 detail: repName.isEmpty ? "So openers say \"this is [you]\"." : "Openers say \"this is \(repName)\".",
+                 detail: repName.isEmpty ? "So your first line says \"this is [you]\"." : "Your first line says \"this is \(repName)\".",
                  done: !repName.isEmpty, optional: true) { askName = true },
             Step(id: "keys", title: "AI keys (Anthropic + Deepgram)",
                  detail: "Claude writes your lines. Deepgram hears the call.",
@@ -252,7 +252,7 @@ struct SetupView: View {
         let done = list.filter(\.done).count
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Setup").font(.title2.weight(.semibold))
+                Text("Set up").font(.title2.weight(.semibold))
                 Text(done == list.count ? "All set. Come back here any time to change something."
                                         : "\(done) of \(list.count) done. Do these once.")
                     .font(.callout).foregroundStyle(.secondary)

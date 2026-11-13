@@ -47,12 +47,12 @@ struct CampaignEditorView: View {
 
     private var basics: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(isNew ? "New call segment" : "Edit call segment").font(.title2.weight(.semibold))
-            field("Call Segment name", text: $draft.name, placeholder: "e.g. Q4 RevOps outreach")
+            Text(isNew ? "New call list" : "Edit call list").font(.title2.weight(.semibold))
+            field("Name", text: $draft.name, placeholder: "e.g. Tax firm owners")
             field("Goal of these calls", text: $draft.objective,
                   placeholder: "e.g. Book a 30 minute meeting, or transfer to Mason")
-            Toggle("Open with this script's own first line", isOn: $draft.ownOpener)
-                .help("Off: the app rotates your proven openers. On: it uses the opener in this script.")
+            Toggle("Use my script's first line", isOn: $draft.ownOpener)
+                .help("Off: the app picks a first line that has worked well. On: it uses the first line in this script.")
             listPicker
         }
     }
@@ -60,9 +60,9 @@ struct CampaignEditorView: View {
     /// Who this campaign calls: a Salesforce list view. Picking the campaign opens this list.
     private var listPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Salesforce list to call").font(.headline)
+            Text("Who to call (a Salesforce list)").font(.headline)
             if !Salesforce.isConnected {
-                Text("Sign in to Salesforce first (gear > Setup > Salesforce), then pick the list here.")
+                Text("Sign in to Salesforce first: click the gear, then Set up. Then pick the list here.")
                     .font(.callout).foregroundStyle(.secondary)
             } else if loadingLists && listViews.isEmpty {
                 ProgressView().controlSize(.small)
@@ -77,11 +77,11 @@ struct CampaignEditorView: View {
                         }
                     }
                 )) {
-                    Text("None (use whatever list is open in Chrome)").tag("")
+                    Text("None (use the list open in Chrome)").tag("")
                     ForEach(listViews) { Text($0.title).tag($0.id) }
                 }
                 .labelsHidden()
-                Text("Picking this call segment opens this list in Chrome and calls everyone on it who's due today.")
+                Text("When you pick this call list, these people open in Chrome. The app calls everyone who is due today.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -97,7 +97,7 @@ struct CampaignEditorView: View {
 
     private var script: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Describe this call segment").font(.headline)
+            Text("Who are these people?").font(.headline)
             Text("Who they are, what keeps them up at night, what they want, and their story. The more real, the better the script.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
@@ -112,7 +112,7 @@ struct CampaignEditorView: View {
             }
             .buttonStyle(BrandPrimaryButton())
             .disabled(writing || draft.persona.trimmed.isEmpty)
-            .help("Claude writes a full cold call script for this call segment, built on Clarity's cold call backbone. Takes 2 to 5 minutes. Replaces the script below.")
+            .help("Claude writes the whole script for these people. Takes 2 to 5 minutes. It replaces the script below.")
             if writing, !thought.isEmpty {
                 Text(ScriptWriter.lastThought(thought))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -126,7 +126,7 @@ struct CampaignEditorView: View {
                 Button {
                     Task { await organize() }
                 } label: {
-                    Label("Sort it into sections for me", systemImage: "sparkles")
+                    Label("Tidy up my script", systemImage: "sparkles")
                 }
                 .disabled(draft.pastedScript.trimmed.isEmpty || organizing)
                 if organizing {
@@ -158,7 +158,7 @@ struct CampaignEditorView: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sections").font(.headline)
-                Text("Optional. Fine-tune what the coach follows.").font(.callout).foregroundStyle(.secondary)
+                Text("You can skip this. Change any part of the script here.").font(.callout).foregroundStyle(.secondary)
             }
         }
     }
@@ -177,7 +177,7 @@ struct CampaignEditorView: View {
             Button("Cancel") { dismissWindow(id: "campaign-editor") }
                 .keyboardShortcut(.cancelAction)
             Button("Save and use") {
-                if draft.name.trimmed.isEmpty { draft.name = "Untitled call segment" }
+                if draft.name.trimmed.isEmpty { draft.name = "Untitled call list" }
                 store.save(draft)
                 store.selectedID = draft.id
                 dismissWindow(id: "campaign-editor")
@@ -231,7 +231,7 @@ struct CampaignEditorView: View {
                 }
             }
             if draft.objective.trimmed.isEmpty, let goal = result["objective"]?.trimmed { draft.objective = goal }
-            if ["New call segment", "New segment", "New campaign"].contains(draft.name) || draft.name.trimmed.isEmpty, let name = result["name"]?.trimmed, !name.isEmpty {
+            if ["New call list", "New call segment", "New segment", "New campaign"].contains(draft.name) || draft.name.trimmed.isEmpty, let name = result["name"]?.trimmed, !name.isEmpty {
                 draft.name = name
             }
             showSections = true

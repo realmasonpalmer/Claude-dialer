@@ -44,7 +44,7 @@ struct ScriptOutlineCard: View {
             Button { open.toggle() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                    Text("Script").font(.callout.weight(.semibold))
+                    Text("My script").font(.callout.weight(.semibold))
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
@@ -65,7 +65,7 @@ struct ScriptOutlineCard: View {
                     .background(here ? Brand.blue.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 }
                 if parts.isEmpty {
-                    Text("No script written for this call segment yet.").font(.caption).foregroundStyle(.secondary)
+                    Text("This call list has no script yet. Click its name at the top, then Edit.").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }

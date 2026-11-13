@@ -192,7 +192,9 @@ struct CoachView: View {
     private var coachColumn: some View {
         VStack(alignment: .leading, spacing: gap) {
             topBar
+            nowBar
             // The middle scrolls if it's ever taller than the screen; the top bar and the buttons stay put.
+            ScrollViewReader { scroller in
             ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: gap) {
             // The Chrome list is the default. This header only shows if a Salesforce list was picked in Settings and tools.
@@ -200,19 +202,20 @@ struct CoachView: View {
             if coach.status != .ready {
                 StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: true)
             }
-            scriptCard.tourSpot(.line)
-            ScriptOutlineCard(coach: coach)
+            scriptCard.tourScrollSpot(.line)
+            ScriptOutlineCard(coach: coach).tourScrollSpot(.script)
             belowCard
             if coach.statusRecordID != nil { // stays up during calls too, with the LinkedIn and text cards
                 RelationshipCard(coach: coach)
                     .id(coach.statusRecordID) // a fresh card per person: nothing picked carries over
+                    .tourScrollSpot(.status)
             }
             if inTour && coach.followUp == nil {
                 // The tour points here before any voicemail: show a sample card so the spot isn't empty.
                 FollowUpCard(followUp: .constant(Optional(TourSample.followUp)), steps: TourSample.steps, canSend: true,
                              onSend: {}, onLinkedIn: {}, onLinkedInMessage: {}, onSetupAircall: {})
                     .allowsHitTesting(false)
-                    .tourSpot(.followUp)
+                    .tourScrollSpot(.followUp)
             } else if coach.followUp != nil {
                 FollowUpCard(
                     followUp: $coach.followUp,
@@ -224,21 +227,27 @@ struct CoachView: View {
                     onLinkedInMessage: { coach.openLinkedIn(message: true) },
                     onSetupAircall: { showAircall = true }
                 )
-                .tourSpot(.followUp)
+                .tourScrollSpot(.followUp)
             }
             if coach.status == .ready {
                 DailyGoalCard(touchpoints: coach.touchpoints, activeCampaigns: campaigns.activeCampaigns)
-                    .tourSpot(.goal)
+                    .tourScrollSpot(.goal)
             }
             if showTouchpoints && coach.status == .ready {
-                TouchpointsCard(touchpoints: coach.touchpoints)
+                TouchpointsCard(touchpoints: coach.touchpoints).tourScrollSpot(.numbers)
             }
             warnings
             }
             }
             .scrollBounceBehavior(.basedOnSize)
+            // The tour: bring the part it's pointing at into view.
+            .onChange(of: tourStep) { _, step in
+                guard let step, step >= 1, step <= Tour.steps.count else { return }
+                withAnimation { scroller.scrollTo(Tour.steps[step - 1].spot.rawValue, anchor: .center) }
+            }
+            }
             Spacer(minLength: 0)
-            if appPhone { AircallPhonePanel() }
+            if appPhone { AircallPhonePanel().tourSpot(.phone) }
             bottomBanner
             navigation.tourSpot(.call)
         }
@@ -292,6 +301,45 @@ struct CoachView: View {
         .animation(.easeInOut(duration: 0.2), value: coach.status)
     }
 
+    // MARK: What's happening now
+
+    /// One plain line that always says what's happening and what to do next.
+    private var nowLine: (text: String, color: Color) {
+        switch coach.phase {
+        case .live:
+            switch coach.kind {
+            case .voicemail: return ("Voicemail. Wait for the beep, then read the message.", warning)
+            case .screener: return ("A robot answered. Say the line below.", warning)
+            default: return ("On a call. Read the big line out loud.", listening)
+            }
+        case .paused: return ("Paused. The app is not listening.", warning)
+        case .dialing: return ("Calling. Get ready to talk.", Brand.blue)
+        case .countdown: return ("Calling the next person soon. Click Wait to stop.", Brand.blue)
+        case .gettingReady: return ("Getting the next person ready.", Brand.blue)
+        case .waitingForText: return ("Send the text below. Then the next person loads.", Brand.blue)
+        case .idle: break
+        }
+        if listRanOut { return ("All done for today on this list.", listening) }
+        if !coach.leads.isActive && coach.callList.records.isEmpty {
+            let setup = SetupView.doneCount(coach: coach)
+            return setup.done < setup.total
+                ? ("Start here: click the gear, then Set up.", warning)
+                : ("Open your list in Salesforce, in Chrome.", warning)
+        }
+        if coach.shouldOfferRedial { return ("No answer. Click Redial to try one more time.", Brand.blue) }
+        return ("Ready. Click Call.", listening)
+    }
+
+    private var nowBar: some View {
+        let now = nowLine
+        return HStack(spacing: 6) {
+            Circle().fill(now.color).frame(width: 7, height: 7)
+            Text(now.text).font(.caption.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+    }
+
     // MARK: Top: campaign, status, settings
 
     private var topBar: some View {
@@ -313,10 +361,11 @@ struct CoachView: View {
                 Button("Update") { updater.update() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .tourSpot(.update)
                     .help("A new version is ready. Click to install it (about 2 minutes, no Terminal).")
             }
-            timeZoneMenu
             campaignMenu.tourSpot(.segment)
+            timeZoneMenu.tourSpot(.zone)
             settingsMenu.tourSpot(.gear)
         }
     }
@@ -334,8 +383,8 @@ struct CoachView: View {
             Button {
                 coach.setEastCoastFirst(!TimeZoneFilter.eastCoastFirst)
             } label: {
-                if TimeZoneFilter.eastCoastFirst { Label("East Coast leads first", systemImage: "checkmark") }
-                else { Text("East Coast leads first") }
+                if TimeZoneFilter.eastCoastFirst { Label("Start in the East, go West", systemImage: "checkmark") }
+                else { Text("Start in the East, go West") }
             }
             .disabled(picked != nil)
             Divider()
@@ -348,30 +397,32 @@ struct CoachView: View {
                 }
             }
         } label: {
-            Text(picked.map { "\($0.label) time" } ?? (TimeZoneFilter.eastCoastFirst ? "East Coast first" : "All time zones"))
+            Label(picked.map { "\($0.label) time" } ?? (TimeZoneFilter.eastCoastFirst ? "East first" : "All time zones"),
+                  systemImage: "globe.americas.fill")
+                .labelStyle(.titleAndIcon)
                 .font(.caption.weight(.semibold)).lineLimit(1)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(coach.status != .ready)
         .help(picked == nil
-              ? "Only call people in one time zone"
+              ? "Where to call: pick one time zone, or start in the East and go West"
               : "Only calling people in \(picked?.label ?? "") time. People with no state or US number in Salesforce stay on the list.")
     }
 
     /// "Setup (5 of 7 done)" until everything is set up.
     private var setupLabel: String {
         let c = SetupView.doneCount(coach: coach)
-        return c.done == c.total ? "Setup and integrations..." : "Setup (\(c.done) of \(c.total) done)..."
+        return c.done == c.total ? "Set up..." : "Set up (\(c.done) of \(c.total) done)..."
     }
 
     /// Three items only. Everything else lives in the Setup and Settings panes.
     private var settingsMenu: some View {
         Menu {
             Button(setupLabel) { showSetup = true }
-            Button("Settings and tools...") { showSettings = true }
-            Button("How to use") { showHelp = true }
-            Button("Take the tour") { tourStep = 0 }
+            Button("Settings...") { showSettings = true }
+            Button("Help") { showHelp = true }
+            Button("Show me around") { tourStep = 0 }
                 .disabled(coach.status != .ready)
         } label: {
             Image(systemName: "gearshape")
@@ -383,14 +434,14 @@ struct CoachView: View {
     /// Pick a campaign, or create and edit one. Locked during a call.
     private var campaignMenu: some View {
         Menu {
-            Button("Call Segments...") {
+            Button("All call lists...") {
                 openWindow(id: "campaign-selector")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             }
             Divider()
             // Only the active campaigns (up to 3): pick one to call its list.
             if campaigns.activeCampaigns.isEmpty {
-                Text("No active call segments. Open Call Segments... to activate up to 3.")
+                Text("No call lists are turned on. Click All call lists... to turn one on.")
             }
             ForEach(campaigns.activeCampaigns) { campaign in
                 Button {
@@ -404,14 +455,16 @@ struct CoachView: View {
                 }
             }
             Divider()
-            Button("Edit this call segment...") { edit(campaigns.selected) }
+            Button("Edit this call list...") { edit(campaigns.selected) }
         } label: {
-            Text(campaigns.selected.name).font(.caption.weight(.semibold)).lineLimit(1)
+            Label(campaigns.selected.name, systemImage: "person.2.fill")
+                .labelStyle(.titleAndIcon)
+                .font(.caption.weight(.semibold)).lineLimit(1)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(coach.status != .ready)
-        .help(coach.status == .ready ? "Choose or edit a call segment" : "Finish the call to switch call segments")
+        .help(coach.status == .ready ? "Who to call: pick a call list (people to call, plus what to say)" : "Finish the call to switch call lists")
     }
 
     /// Picks the active campaign whose Salesforce list is the one open in Chrome (between calls only).
@@ -472,8 +525,8 @@ struct CoachView: View {
                         Button(view.title) { Task { await coach.leads.open(view) } }
                     }
                     Divider()
-                    Button("Reload list") { Task { await coach.leads.reload() } }
-                    Button("Use the list open in Chrome instead") { coach.leads.close() }
+                    Button("Get new people from Salesforce") { Task { await coach.leads.reload() } }
+                    Button("Use my Chrome list") { coach.leads.close() }
                 } label: {
                     Text(coach.leads.selected?.label ?? "Pick a list").font(.caption.weight(.semibold))
                 }
@@ -483,7 +536,7 @@ struct CoachView: View {
                 if coach.leads.loading { ProgressView().controlSize(.mini) }
                 Spacer()
                 if coach.leads.isActive {
-                    Text("\(min(coach.leads.index + 1, coach.leads.rows.count)) of \(coach.leads.rows.count) · \(coach.leads.leftToCall) due today")
+                    Text("\(min(coach.leads.index + 1, coach.leads.rows.count)) of \(coach.leads.rows.count) · \(coach.leads.leftToCall) to call today")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -507,7 +560,7 @@ struct CoachView: View {
             } else if let error = coach.leads.error {
                 warningText(error)
             } else if coach.leads.selected == nil && !coach.leads.loading {
-                Text("Pick a Salesforce list above to start calling.").font(.caption).foregroundStyle(.secondary)
+                Text("Step 1: click \"Pick a list\" above and choose who to call.").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -542,14 +595,14 @@ struct CoachView: View {
                     Button("Latest") { coach.showLatest() }
                         .buttonStyle(.link).font(.caption2)
                 } else if coach.status == .live {
-                    Button("New line ⌘J") { coach.newLine() }
+                    Button("Different line ⌘J") { coach.newLine() }
                         .buttonStyle(.link).font(.caption2)
-                        .help("A different line right now")
+                        .help("Don't like this line? Get a new one right now.")
                 }
             }
             Text(inTour && coach.status == .ready ? TourSample.line
                  : coach.suggestion.say.isEmpty
-                 ? (Keychain.read(.anthropic) == nil ? "Add your Anthropic key: gear > Setup > AI keys." : "Getting your line ready...")
+                 ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, to add your keys." : "Getting your line ready...")
                  : coach.suggestion.say)
                 .font(lineFont)
                 .lineSpacing(2)
@@ -598,10 +651,10 @@ struct CoachView: View {
     private var cardLabel: String {
         if inTour && coach.status == .ready { return "WHEN THEY PICK UP" }
         if coach.historyIndex != nil { return "EARLIER LINE" }
-        if coach.suggestion.nudge { return "NUDGE" }
+        if coach.suggestion.nudge { return "IF IT GOES QUIET" }
         switch coach.kind {
         case .opener: return "WHEN THEY PICK UP"
-        case .screener: return "CALL SCREENER"
+        case .screener: return "A ROBOT ANSWERED · SAY THIS"
         case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
         case .reply: return "SAY THIS"
         }
@@ -653,7 +706,7 @@ struct CoachView: View {
             } else if let message = coach.callList.message {
                 warningText(message)
             } else if coach.callList.state == .needsChromeSetting, coach.status != .ready {
-                warningText("Chrome needs one setting for Next: View > Developer > Allow JavaScript from Apple Events.")
+                warningText("Chrome needs one setting. At the top of your screen: click View, then Developer, then Allow JavaScript from Apple Events.")
             } else if let message = updater.message, !updater.updating,
                       message.hasPrefix("The update") || message.hasPrefix("Couldn't") {
                 Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -696,10 +749,10 @@ struct CoachView: View {
                 } label: {
                     Label("End call", systemImage: "phone.down.fill").frame(maxWidth: .infinity)
                 }
-                .help("The call is over but the app didn't notice? Click here. (Command-E)")
+                .help("Is the call over, but the app is still listening? Click here. (Command-E)")
                 if coach.status == .live {
                     Button("Voicemail") { coach.markVoicemail() }
-                        .help("It's a voicemail and the app missed it: show the voicemail now")
+                        .help("Is it a voicemail, and the app missed it? Click here to see your message.")
                 }
             }
             .controlSize(.large)
@@ -732,7 +785,7 @@ struct CoachView: View {
                 }
                 .buttonStyle(BrandQuietButton())
                 .disabled(!coach.leads.canGoBack)
-                .help("Previous lead")
+                .help("Go back to the person before")
 
                 let first = coach.leads.details.map { $0.firstName ?? $0.name } ?? ""
                 let nextName = coach.leads.nextRow?.name
@@ -795,7 +848,7 @@ struct CoachView: View {
     private var callTitle: String {
         guard let d = coach.leads.details else { return "Loading..." }
         if d.doNotCall { return "Do Not Call" }
-        if !Aircall.canPlaceCalls { return "Set up Aircall calling first" }
+        if !Aircall.canPlaceCalls { return "Set up Aircall first (gear)" }
         return d.callNumber != nil ? "Call \(d.name)" : "No phone number"
     }
 
@@ -810,7 +863,7 @@ struct CoachView: View {
             }
             .buttonStyle(BrandQuietButton())
             .disabled(!backEnabled)
-            .help(coach.status == .ready ? "Previous lead" : "Show the line before this one")
+            .help(coach.status == .ready ? "Go back to the person before" : "Show the line before this one")
 
             if coach.status == .ready && coach.calling != nil && coach.currentAttemptKey == nil {
                 // A lead is open in Salesforce and not called yet: call their Mobile right from here.
@@ -876,24 +929,25 @@ struct CoachView: View {
                 : coach.callList.records.filter { coach.callList.calledToday.contains($0.id) }.count
             let later = coach.leads.isActive ? coach.leads.comingBackLater : coach.callList.comingBackLater
             VStack(alignment: .leading, spacing: 8) {
-                Text("Nobody else is due today on \(campaigns.selected.name)").font(.callout.weight(.semibold))
-                Text("\(calledHere) called today. \(later) come back on a later call day (days 2, 5, 8 and 16).")
+                Text("You called everyone for today on \(campaigns.selected.name). Nice work.").font(.callout.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(calledHere) called today. \(later) more come back on another day. We call each person on 5 days: day 1, 2, 5, 8 and 16.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let zone = TimeZoneFilter.selected {
                     let held = coach.leads.isActive ? coach.leads.heldByTimeZone : coach.callList.heldByTimeZone
-                    Text("You're only calling \(zone.label) time. \(held) more are due today in other time zones.")
+                    Text("You're only calling \(zone.label) time. \(held) more people are waiting in other time zones.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if held > 0 {
                         Button("Call all time zones") { coach.setTimeZoneFilter(nil) }
                     }
                 }
-                Text("To keep dialing, add new leads to this list in Salesforce, or start your next list.")
+                Text("Want to keep going? Add people to this list in Salesforce, or start your next list.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let next = nextCampaign {
                     Button("Start next list: \(next.name)") { switchTo(next) }
                         .buttonStyle(.borderedProminent)
                 } else {
-                    Text("Pick another call segment at the top, or link a list to one (call segment menu).")
+                    Text("Pick another call list at the top.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -937,9 +991,9 @@ struct CoachView: View {
     private var nextHint: String? {
         guard coach.status == .ready else { return nil }
         switch coach.callList.state {
-        case .needsList: return "Open your lead list in Salesforce (in Chrome) so Next knows who's next."
-        case .needsChromeSetting: return "Chrome needs one setting: View > Developer > Allow JavaScript from Apple Events."
-        case .endOfList: return "Everyone the app can see has been called. Next loads more from your list."
+        case .needsList: return "Open your list in Salesforce, in Chrome. Then the app knows who to call next."
+        case .needsChromeSetting: return "Chrome needs one setting. At the top of your screen: click View, then Developer, then Allow JavaScript from Apple Events."
+        case .endOfList: return "You called everyone the app can see. Click Next to load more people."
         case .ready: return nil
         }
     }
@@ -987,28 +1041,40 @@ struct HelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("How to use").font(.title2.weight(.semibold))
-                section("Getting set up", [
-                    "Gear > Setup: do each step once (name, keys, audio, Chrome, Salesforce, Aircall, calendar).",
-                    "Aircall phone (bottom of the coach): click Show, sign in once, set yourself Available, click Hide.",
-                    "Open your lead list in Salesforce in Chrome. The app learns it by itself.",
+                Text("Help").font(.title2.weight(.semibold))
+                Text("New here? Click the gear, then \"Show me around\". It points at every button.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                section("1. Get ready (one time)", [
+                    "Click the gear, then Set up. Do each step. Each one turns green when it's done.",
+                    "Aircall phone (at the bottom): click Show, sign in, set yourself to Available, then click Hide.",
+                    "Open your list in Salesforce, in Chrome. The app reads it by itself.",
                 ])
-                section("Calling", [
-                    "Click the big Call button. The app checks that the opener, voicemail and follow-ups are for that person, then calls their Mobile (or Phone, if there's no Mobile).",
-                    "Read the big line. Say it in your own words.",
-                    "Tell them the call is transcribed. Some states require it.",
+                section("2. Pick who to call", [
+                    "At the top, click the call list name. A call list is people to call, plus what to say.",
+                    "Next to it, pick a time zone. Or pick \"Start in the East, go West\".",
                 ])
-                section("After each call", [
-                    "1st try, no answer: the app calls them again in 3 seconds (Auto-dial on). Click Wait to stop it.",
-                    "Voicemail: leave the message on screen.",
-                    "Then, top to bottom: update their status, send the LinkedIn note or message, then send the text.",
-                    "Sending the text loads the next person. Once their info checks out, it calls them in 3 seconds.",
-                    "Bad numbers and calls that don't connect are skipped by themselves.",
+                section("3. Make a call", [
+                    "Click the big Call button. The app calls their Mobile. If there's no Mobile, it calls their Phone.",
+                    "Read the big line out loud. It changes each time they talk.",
+                    "Tell them the call is being written down. Some states require it.",
+                    "The app knows when the call ends. If it misses, click End call.",
                 ])
-                section("Next and Back", [
-                    "Between calls: Next opens the next person. Back opens the one before.",
-                    "During a call: Next gives you the line for the next step. Back shows the line before.",
-                    "Auto-dial (checkbox next to Aircall phone): off means Next and the text only load the next person.",
+                section("4. After the call", [
+                    "No answer the first time: the app calls them one more time. Click Wait to stop it.",
+                    "Voicemail: read the message on the screen after the beep.",
+                    "Then go top to bottom: say how it went, send the LinkedIn note, then send the text.",
+                    "Sending the text loads the next person. Then the app calls them after a short countdown.",
+                    "Bad numbers are skipped for you.",
+                ])
+                section("5. The plan for each person", [
+                    "We call each person on 5 days: day 1, 2, 5, 8 and 16. Two calls each day.",
+                    "They get a voicemail on day 1. Texts go out on days 1, 2 and 16.",
+                    "If they pick up, the plan stops for them.",
+                ])
+                section("6. Settings", [
+                    "Gear, then Settings: turn \"Call the next person for me\" and \"Call each person twice\" on or off.",
+                    "Gear, then Settings, then What's working: see which lines work best.",
+                    "Something broken? Gear, then Settings, then Get help, then Send a problem report.",
                 ])
                 HStack {
                     Spacer()
@@ -1017,7 +1083,7 @@ struct HelpView: View {
             }
             .padding(16)
         }
-        .frame(width: 370, height: 480)
+        .frame(width: 370, height: 560)
     }
 
     private func section(_ title: String, _ lines: [String]) -> some View {
@@ -1040,14 +1106,14 @@ struct ScoreboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Opener scoreboard").font(.headline)
-            Text("Each opener gets \(OpenerBook.warmUp) tries first. After that, openers with better scores come up more often, and the others still get an occasional try.")
+            Text("Which first line works best").font(.headline)
+            Text("Each first line gets \(OpenerBook.warmUp) tries. After that, the app uses the best ones more often.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
                 GridRow {
-                    Text("Opener").bold()
+                    Text("First line").bold()
                     Text("Calls").bold()
                     Text("Avg score").bold()
                     Text("Goal").bold()
@@ -1072,8 +1138,8 @@ struct ScoreboardView: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button("Reset opener scores", role: .destructive) { confirmReset = true }
-                .confirmationDialog("Reset every opener's score?", isPresented: $confirmReset) {
+            Button("Erase these scores", role: .destructive) { confirmReset = true }
+                .confirmationDialog("Erase every first line's score?", isPresented: $confirmReset) {
                     Button("Reset", role: .destructive) { book.reset() }
                 }
         }
@@ -1203,7 +1269,7 @@ struct FollowUpCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !f.textDue && !f.textDone && !f.linkedInDue {
-                    Text("Nothing to send today. Texts go out on days 1, 2 and 16; the LinkedIn request on day 1.")
+                    Text("Nothing to send today. Texts go out on days 1, 2 and 16. The LinkedIn note goes out on day 1.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -1303,7 +1369,8 @@ struct RelationshipCard: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                    Text(object == "Lead" ? "Lead Status" : "Relationship Status").font(.callout.weight(.semibold))
+                    Text("How did it go?").font(.callout.weight(.semibold))
+                        .help(object == "Lead" ? "Saves to Lead Status in Salesforce" : "Saves to Relationship Status in Salesforce")
                     if !open, let current {
                         Text(current).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -1340,7 +1407,7 @@ struct RelationshipCard: View {
                 .font(.callout)
             }
             if let picked, Salesforce.removedStatuses.contains(picked), picked != coach.recordStatus {
-                Text("Saving this takes them off your list.").font(.caption).foregroundStyle(.secondary)
+                Text("Save this and we stop calling them.").font(.caption).foregroundStyle(.secondary)
             }
             HStack(spacing: 8) {
                 Button(coach.savingStatus ? "Saving..." : "Save") {
@@ -1350,7 +1417,7 @@ struct RelationshipCard: View {
                 .disabled(picked == nil || picked == coach.recordStatus || coach.savingStatus || !Salesforce.isConnected
                           || (object == "Lead" && picked == "Unqualified" && reason == nil))
                 if !Salesforce.isConnected {
-                    Text("Sign in to Salesforce to save: gear > Setup > Salesforce.").font(.caption).foregroundStyle(.secondary)
+                    Text("To save, sign in to Salesforce: click the gear, then Set up.").font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let message = coach.statusMessage {
                     Text(message).font(.caption).foregroundStyle(.secondary)
