@@ -25,7 +25,7 @@ struct ClarityLiveCoachApp: App {
         .windowResizability(.contentSize)
 
         Window("Script Lab", id: "script-lab") {
-            ScriptLabView(lab: coach.lab)
+            ScriptLabView(lab: coach.lab, openers: coach.openers)
                 .brandWindow()
                 .environmentObject(campaigns)
         }

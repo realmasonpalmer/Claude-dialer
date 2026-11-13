@@ -137,6 +137,8 @@ struct NewCampaignView: View {
     @State private var script = ""
     @State private var views: [Salesforce.ListView] = []
     @State private var writing = false
+    @State private var writeStart = Date()
+    @State private var thought = ""
     @State private var message: String?
 
     private var view: Salesforce.ListView? { views.first { $0.id == listID } }
@@ -182,23 +184,23 @@ struct NewCampaignView: View {
                 Button {
                     Task { await writeScript() }
                 } label: {
-                    Label(writing ? "Generating... \(script.split(separator: " ").count) words" : "Generate script",
-                          systemImage: "sparkles")
-                        .frame(maxWidth: .infinity)
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Label(writing ? ScriptWriter.progress(script, since: writeStart, now: context.date) : "Generate script",
+                              systemImage: "sparkles")
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(BrandPrimaryButton())
                 .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
-                .help("Claude writes a full cold call script for this call segment. Takes about a minute.")
+                .help("Claude writes a full cold call script for this call segment, built on Clarity's cold call backbone. Takes 2 to 5 minutes.")
+                if writing, !thought.isEmpty {
+                    Text(ScriptWriter.lastThought(thought))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("4. Script").font(.headline)
-                    Spacer()
-                    Button("Use the backbone") { script = ColdCallBackbone.text }
-                        .help("Start from Clarity's cold call backbone as is")
-                        .disabled(writing)
-                }
+                Text("4. Script").font(.headline)
                 TextEditor(text: $script)
                     .font(.callout)
                     .frame(minHeight: 200)
@@ -246,14 +248,18 @@ struct NewCampaignView: View {
     /// Writes a full script in the backbone format, shown as it's written.
     private func writeScript() async {
         writing = true
+        writeStart = Date()
+        thought = ""
         message = nil
         defer { writing = false }
         do {
             script = ""
             let text = try await ScriptWriter.write(segment: name.trimmed.isEmpty ? (view?.label ?? "") : name.trimmed,
-                                                    audience: audience, list: view) { partial in
+                                                    audience: audience, list: view, onText: { partial in
                 Task { @MainActor in if writing { script = partial } }
-            }
+            }, onThinking: { partial in
+                Task { @MainActor in if writing { thought = partial } }
+            })
             script = text
             if name.trimmed.isEmpty, let v = view { name = v.label }
         } catch {
@@ -269,8 +275,26 @@ enum ScriptWriter {
     /// What to put in the "Describe this call segment" box.
     static let describeHint = "e.g. Owners of 5 to 20 person CPA firms in Portland. Swamped Jan to April. Every client call ends with someone typing notes. They want to grow without hiring, and worry about mistakes and burnout. Most started solo and built the firm on referrals."
 
+    /// The Generate button while it runs. Claude thinks through the segment before the first word
+    /// (often 1 to 3 minutes), so the seconds show it's still working.
+    static func progress(_ script: String, since start: Date, now: Date = Date()) -> String {
+        let words = script.split(separator: " ").count
+        let s = max(0, Int(now.timeIntervalSince(start)))
+        let time = s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s"
+        return words == 0 ? "Thinking through this segment... \(time)" : "Writing... \(words) words · \(time)"
+    }
+
+    /// The last line of Claude's thinking summary, short enough for one line under the button.
+    static func lastThought(_ thinking: String) -> String {
+        let lines = thinking.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "*#")) }
+            .filter { !$0.isEmpty }
+        return String((lines.last ?? "").prefix(140))
+    }
+
     static func write(segment: String, audience: String, list: Salesforce.ListView?,
-                      onText: @escaping (String) -> Void) async throws -> String {
+                      onText: @escaping (String) -> Void,
+                      onThinking: ((String) -> Void)? = nil) async throws -> String {
         guard let key = Keychain.read(.anthropic) else {
             throw ClaudeClient.APIError(message: "Add your Anthropic key first (gear menu > Setup > AI keys).")
         }
@@ -283,7 +307,8 @@ enum ScriptWriter {
         client.effort = "high" // the best script, not the fastest
         client.maxTokens = 32000 // a full backbone script is long
         client.idleTimeout = 60
-        client.totalTimeout = 300
+        client.totalTimeout = 420 // high effort can think for several minutes first
+        client.thinking = ["type": "adaptive", "display": "summarized"] // so the rep sees it working
         let year = Calendar.current.component(.year, from: Date())
         let system = """
         You are a world-class cold call script writer, using the best \(year) cold calling techniques, openers
@@ -341,10 +366,10 @@ enum ScriptWriter {
         \(sample.isEmpty ? "" : "Titles and companies from the Salesforce list (a hint only; the description wins):\n\(sample)")
         """
         var text = ""
-        try await client.stream(system: system, user: user) { partial in
+        try await client.stream(system: system, user: user, onText: { partial in
             text = partial
             onText(partial)
-        }
+        }, onThinking: onThinking)
         return text.trimmed
     }
 }

@@ -5,6 +5,8 @@ import Foundation
 enum PrefKey {
     static let seededSegments = "seededSegments"
     static let tourSeen = "tourSeen"
+    static let timeZoneFilter = "timeZoneFilter"
+    static let leadTimeZones = "leadTimeZones"
     static let goalCardOpen = "goalCardOpen"
     static let statusCardOpen = "statusCardOpen"
     static let aircallNumberID = "aircallNumberID"

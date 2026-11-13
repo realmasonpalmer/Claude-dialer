@@ -68,7 +68,8 @@ extension CoachModel {
         let first = Screener.firstName(calling) ?? "there"
         let tags: [(names: [String], value: String)] = [
             (["first name", "firstname", "first", "name", "prospect", "prospect name"], first),
-            (["rep", "rep name", "your name", "my name", "rep first name"], rep.isEmpty ? "[your name]" : rep),
+            (["rep", "rep name", "your name", "my name", "rep first name", "sdr", "sdr name", "caller", "caller name"],
+             rep.isEmpty ? "[your name]" : rep),
             (["company", "your company", "rep company"], shortCompany),
         ]
         for (names, value) in tags {

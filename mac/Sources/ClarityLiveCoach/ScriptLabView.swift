@@ -3,6 +3,7 @@ import SwiftUI
 /// Results and evidence-based script suggestions for the selected campaign.
 struct ScriptLabView: View {
     @ObservedObject var lab: CallLab
+    let openers: OpenerBook
     @EnvironmentObject var campaigns: CampaignStore
     @State private var confirmClear = false
 
@@ -23,6 +24,7 @@ struct ScriptLabView: View {
                     table("Objections", stats.objections)
                     if stats.versions.count > 1 { table("Script versions", stats.versions) }
                 }
+                ScoreboardView(book: openers)
                 suggestionsSection
                 privacy
             }

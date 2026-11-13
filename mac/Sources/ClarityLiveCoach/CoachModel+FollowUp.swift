@@ -174,6 +174,10 @@ extension CoachModel {
         guard var f = followUp, f.key == nil || voicemailKey == nil || f.key == voicemailKey else { return }
         var s = written
         applyScriptMessages(&s, for: calling)
+        // Claude sometimes copies the script's slots ([SDR], {first name}): fill them.
+        s.textMessage = fillTags(s.textMessage, for: calling)
+        s.linkedin = fillTags(s.linkedin, for: calling)
+        s.linkedinMessage = fillTags(s.linkedinMessage, for: calling)
         if (f.text.isEmpty || (replace && !f.textDone && !f.textEdited)), !s.textMessage.isEmpty { f.text = s.textMessage }
         if (f.linkedin.isEmpty || (replace && !f.linkedinDone)), !s.linkedin.isEmpty { f.linkedin = s.linkedin }
         if (f.linkedinMessage.isEmpty || (replace && !f.linkedinMessageDone)), !s.linkedinMessage.isEmpty { f.linkedinMessage = s.linkedinMessage }
@@ -183,6 +187,13 @@ extension CoachModel {
     /// Sends the follow-up text through Aircall and checks it off.
     func sendFollowUpText() {
         guard let f = followUp, !f.text.isEmpty, !f.sending else { return }
+        // Never send a blank slot like [SDR] or [your name].
+        if let slot = f.text.range(of: #"\[[^\]]{1,30}\]|\{[^}]{1,30}\}"#, options: .regularExpression) {
+            followUp?.textStatus = Prefs.repName.isEmpty
+                ? "Add your first name first (Setup > Your first name). Then fix \(f.text[slot]) in the text."
+                : "Fill in \(f.text[slot]) in the text first."
+            return
+        }
         if let key = f.key, DialHistory.textedToday(key) {
             followUp?.textStatus = "Already texted today. Not sent again."
             followUp?.textDone = true

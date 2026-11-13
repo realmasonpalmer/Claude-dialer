@@ -133,16 +133,22 @@ extension CoachModel {
         }
     }
 
-    /// 1st try reached a recording (100% sure: words only a machine says) and auto-dial is on:
-    /// click Aircall's hang-up button, wait until Aircall says the line is free, then redial in 1 s.
+    /// Reached a recording (100% sure: words only a machine says) and auto-dial is on:
+    /// - 1st try: hang up, then redial in 1 s.
+    /// - Last try on a no-voicemail day: hang up, then on to the next person (after the text, if one is due).
+    /// Clicks Aircall's hang-up button and waits until Aircall says the line is free.
     /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
-    func autoHangUpForRedial() {
-        guard autoDial, AircallPhone.isOn, currentAttempts < maxAttempts, !autoHangingUp, !autoHungUpThisCall,
+    func autoHangUpForRedial(why: String = "beep words") {
+        guard autoDial, AircallPhone.isOn, !autoHangingUp, !autoHungUpThisCall,
               !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
-              let key = currentAttemptKey, !DialHistory.isMaxed(key), !RemovedList.contains(key) else { return }
+              let key = currentAttemptKey, !RemovedList.contains(key) else { return }
+        let redialNext = currentAttempts < maxAttempts && !DialHistory.isMaxed(key)
+        let noVoicemailToday = Cadence.step(for: key)?.leaveVoicemail == false
+        guard redialNext || noVoicemailToday else { return } // a voicemail day's last try: leave the message
         autoHangingUp = true
         autoHungUpThisCall = true
-        ActivityLog.add("Recording for sure on the 1st try for \(calling ?? "?"): hanging up to redial")
+        ActivityLog.add(redialNext ? "Recording for sure (\(why)) on the 1st try for \(calling ?? "?"): hanging up to redial"
+                                   : "Recording (\(why)) on the last try, no voicemail today, for \(calling ?? "?"): hanging up, on to the next person")
         Task { [weak self] in
             guard let self, self.status == .live else { self?.autoHangingUp = false; return }
             var done = await AircallPhone.shared.hangUp()
@@ -157,8 +163,8 @@ extension CoachModel {
             self.autoHangingUp = false
             guard self.status == .live else { return }
             if done {
-                self.redialRightAway = true
-                self.endCall()
+                self.redialRightAway = redialNext
+                self.endCall() // last try: endCall moves on to the next person
             } else {
                 ActivityLog.problem("Auto hang-up didn't finish: the rep hangs up, redial as usual")
             }
@@ -314,31 +320,49 @@ extension CoachModel {
         lastWordsAt = nil
     }
 
+    /// Stages that only happen with the actual prospect, not a front desk or assistant.
+    static let prospectStages: Set<String> = ["Discovery", "Value", "Objection", "Closing", "Goal reached"]
+
     /// Counts the call that just ended. Picked up = a real person talked (not voicemail, not
     /// only a screener). Conversation = they kept talking: 3+ turns, or 45+ seconds after pickup.
     func logTouchpoints(answered: Bool) {
         if sawVoicemail { touchpoints.log(.voicemail) }
         guard answered else { return }
         touchpoints.log(.pickup)
-        if let key = currentAttemptKey {
-            DialHistory.logPickup(key)
-            // A real person answered: check "Picked Up Cold Call" in Salesforce.
-            if Salesforce.isConnected {
-                let who = calling ?? key
-                Task {
-                    do {
-                        try await Salesforce.markPickedUp(key)
-                        ActivityLog.add("Picked Up Cold Call checked for \(who)")
-                    } catch {
-                        ActivityLog.problem("Couldn't check Picked Up Cold Call: \(error.localizedDescription)")
-                    }
-                }
-            }
-        }
         let prospectTurns = turns.filter { $0.speaker == .prospect }.count
         let talked = firstProspectAt.map { Date().timeIntervalSince($0) } ?? 0
-        if prospectTurns >= 3 || talked >= 45 { touchpoints.log(.conversation) }
+        let conversation = prospectTurns >= 3 || talked >= 45
+        if conversation { touchpoints.log(.conversation) }
         if goalHit { touchpoints.log(.meeting) }
+        // Only a front desk or assistant talked: not the prospect. Keep them on the plan, no checkbox.
+        let gatekeeperOnly = stagesSeen.contains("Gatekeeper") && stagesSeen.isDisjoint(with: Self.prospectStages)
+        guard let key = currentAttemptKey, !gatekeeperOnly else {
+            if gatekeeperOnly { ActivityLog.add("Front desk only for \(calling ?? "?"): stays on the plan, Picked Up Cold Call not checked") }
+            return
+        }
+        DialHistory.logPickup(key) // the prospect picked up: the call plan stops for them
+        // A real conversation with the prospect: check "Picked Up Cold Call" in Salesforce.
+        guard conversation else {
+            ActivityLog.add("Short pickup for \(calling ?? key) (\(prospectTurns) turns, \(Int(talked)) s): Picked Up Cold Call not checked")
+            return
+        }
+        guard Salesforce.objectFor(id: key) != nil else {
+            ActivityLog.problem("Couldn't check Picked Up Cold Call for \(calling ?? key): no Salesforce record on screen")
+            return
+        }
+        guard Salesforce.isConnected else {
+            ActivityLog.problem("Couldn't check Picked Up Cold Call: Salesforce isn't connected")
+            return
+        }
+        let who = calling ?? key
+        Task {
+            do {
+                try await Salesforce.markPickedUp(key)
+                ActivityLog.add("Picked Up Cold Call checked for \(who)")
+            } catch {
+                ActivityLog.problem("Couldn't check Picked Up Cold Call for \(who): \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Clears everything about this prospect and gets the next opener ready.

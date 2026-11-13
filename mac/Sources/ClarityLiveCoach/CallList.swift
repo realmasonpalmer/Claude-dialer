@@ -44,6 +44,10 @@ final class CallList: ObservableObject {
 
     /// How many on this list haven't been called today.
     var leftToCall: Int { records.filter { CalledToday.isCallable($0.id) }.count }
+    /// On the plan but not due today: they come back on a later call day.
+    var comingBackLater: Int { records.filter { Cadence.comesBackLater($0.id) }.count }
+    /// Due today, but in a time zone the rep isn't calling right now.
+    var heldByTimeZone: Int { TimeZoneFilter.heldBack(records.map(\.id)) }
 
     init() {
         let d = UserDefaults.standard
@@ -150,6 +154,9 @@ final class CallList: ObservableObject {
         do {
             let rows = try await Salesforce.fullList(object: key.object, key: key.view)
             guard !rows.isEmpty, listKey == key else { return false }
+            // Time zones first, so the time zone filter is right before anyone is opened.
+            await TimeZoneFilter.load(ids: rows.map(\.id), object: key.object)
+            guard listKey == key else { return false }
             let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } } ?? ""
             let currentID = lastIndex >= 0 && lastIndex < records.count ? records[lastIndex].id : nil
             let before = Set(records.map { String($0.id.prefix(15)) })
@@ -207,6 +214,11 @@ final class CallList: ObservableObject {
         guard !records.isEmpty else { return nil }
         let from = index ?? currentIndex() ?? lastIndex
         func callable(_ r: Record) -> Bool { CalledToday.isCallable(r.id) }
+        // Follow-ups due today first (day 2, 5, 8, 16), top to bottom: they've heard from us already.
+        if let k = records.indices.first(where: { callable(records[$0]) && Cadence.isFollowUp(records[$0].id) }) {
+            return (records[k], k + 1)
+        }
+        // Then new people, from where the rep is.
         var i = from + 1
         while i < records.count {
             if callable(records[i]) { return (records[i], i + 1) }
@@ -277,7 +289,7 @@ final class CallList: ObservableObject {
             return false
         }
         guard let (record, position) = upNext() else {
-            message = "Everyone left on this list has been called today."
+            message = "Nobody else on this list is due today."
             return false
         }
         return open(record, at: position - 1)

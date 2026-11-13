@@ -315,9 +315,40 @@ struct CoachView: View {
                     .controlSize(.small)
                     .help("A new version is ready. Click to install it (about 2 minutes, no Terminal).")
             }
+            timeZoneMenu
             campaignMenu.tourSpot(.segment)
             settingsMenu.tourSpot(.gear)
         }
+    }
+
+    /// Only call people in one time zone. "All time zones" turns it off.
+    private var timeZoneMenu: some View {
+        let picked = TimeZoneFilter.selected
+        return Menu {
+            Button {
+                coach.setTimeZoneFilter(nil)
+            } label: {
+                if picked == nil { Label("All time zones", systemImage: "checkmark") } else { Text("All time zones") }
+            }
+            Divider()
+            ForEach(CallZone.allCases) { zone in
+                Button {
+                    coach.setTimeZoneFilter(zone)
+                } label: {
+                    let title = "\(zone.label) · \(zone.timeNow) there now"
+                    if picked == zone { Label(title, systemImage: "checkmark") } else { Text(title) }
+                }
+            }
+        } label: {
+            Text(picked.map { "\($0.label) time" } ?? "All time zones")
+                .font(.caption.weight(.semibold)).lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(coach.status != .ready)
+        .help(picked == nil
+              ? "Only call people in one time zone"
+              : "Only calling people in \(picked?.label ?? "") time. People with no state or US number in Salesforce stay on the list.")
     }
 
     /// "Setup (5 of 7 done)" until everything is set up.
@@ -444,14 +475,15 @@ struct CoachView: View {
                 if coach.leads.loading { ProgressView().controlSize(.mini) }
                 Spacer()
                 if coach.leads.isActive {
-                    Text("\(coach.leads.index + 1) of \(coach.leads.rows.count) · \(coach.leads.leftToCall) left")
+                    Text("\(min(coach.leads.index + 1, coach.leads.rows.count)) of \(coach.leads.rows.count) · \(coach.leads.leftToCall) due today")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             if let d = coach.leads.details {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(d.name).font(.headline).lineLimit(1)
-                    Text([d.title, d.company].compactMap { $0 }.joined(separator: " · "))
+                    Text([d.title, d.company, TimeZoneFilter.zone(of: d.id).map { "\($0.label) time" }]
+                        .compactMap { $0 }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 0)
                     if let url = Salesforce.recordURL(d.id) {
@@ -607,7 +639,7 @@ struct CoachView: View {
     /// One warning at a time, the most important first. Nothing here while the bar above the
     /// buttons already shows a warning (the Chrome setting is shown there too, so not repeated).
     @ViewBuilder private var warnings: some View {
-        if coach.callMessage == nil || (coach.listDone && coach.status == .ready) {
+        if coach.callMessage == nil || (listRanOut) {
             if let problem = coach.problem {
                 warningText(problem)
             } else if let message = coach.callList.message {
@@ -810,6 +842,12 @@ struct CoachView: View {
         return name
     }
 
+    /// Nobody left to call today on this list (or a Salesforce list opened with nobody due).
+    private var listRanOut: Bool {
+        guard coach.status == .ready else { return false }
+        return coach.listDone || (coach.leads.isActive && coach.leads.current == nil && !coach.leads.loading)
+    }
+
     private var backEnabled: Bool {
         coach.status == .ready ? !coach.callList.records.isEmpty : coach.canGoBack
     }
@@ -825,11 +863,24 @@ struct CoachView: View {
     /// One message above the buttons at a time, the most important first:
     /// a call problem, the countdown, "send the text", then why Next can't move on.
     @ViewBuilder private var bottomBanner: some View {
-        if coach.listDone && coach.status == .ready {
-            let calledHere = coach.callList.records.filter { coach.callList.calledToday.contains($0.id) }.count
+        if listRanOut {
+            let calledHere = coach.leads.isActive ? coach.leads.calledHere
+                : coach.callList.records.filter { coach.callList.calledToday.contains($0.id) }.count
+            let later = coach.leads.isActive ? coach.leads.comingBackLater : coach.callList.comingBackLater
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(campaigns.selected.name) list done for today").font(.callout.weight(.semibold))
-                Text("\(calledHere) people called on this list today.").font(.caption).foregroundStyle(.secondary)
+                Text("Nobody else is due today on \(campaigns.selected.name)").font(.callout.weight(.semibold))
+                Text("\(calledHere) called today. \(later) come back on a later call day (days 2, 5, 8 and 16).")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let zone = TimeZoneFilter.selected {
+                    let held = coach.leads.isActive ? coach.leads.heldByTimeZone : coach.callList.heldByTimeZone
+                    Text("You're only calling \(zone.label) time. \(held) more are due today in other time zones.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if held > 0 {
+                        Button("Call all time zones") { coach.setTimeZoneFilter(nil) }
+                    }
+                }
+                Text("To keep dialing, add new leads to this list in Salesforce, or start your next list.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let next = nextCampaign {
                     Button("Start next list: \(next.name)") { switchTo(next) }
                         .buttonStyle(.borderedProminent)
@@ -974,13 +1025,14 @@ struct HelpView: View {
 // MARK: - Opener scoreboard
 
 /// Your own experiment: how each opener does on your calls.
+/// Shown as a section of Script Lab.
 struct ScoreboardView: View {
     @ObservedObject var book: OpenerBook
-    @Environment(\.dismiss) private var dismiss
+    @State private var confirmReset = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Opener scoreboard").font(.title2.weight(.semibold))
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Opener scoreboard").font(.headline)
             Text("Each opener gets \(OpenerBook.warmUp) tries first. After that, openers with better scores come up more often, and the others still get an occasional try.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1012,14 +1064,11 @@ struct ScoreboardView: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                Button("Reset scores", role: .destructive) { book.reset() }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
+            Button("Reset opener scores", role: .destructive) { confirmReset = true }
+                .confirmationDialog("Reset every opener's score?", isPresented: $confirmReset) {
+                    Button("Reset", role: .destructive) { book.reset() }
+                }
         }
-        .padding(22)
-        .frame(width: 370)
     }
 
     private var ranked: [(opener: Opener, score: OpenerScore)] {

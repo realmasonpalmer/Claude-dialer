@@ -210,9 +210,12 @@ enum Salesforce {
                 .filter { $0.allSatisfy { $0.isLetter || $0.isNumber } }
             guard !ids.isEmpty else { continue }
             let list = ids.map { "'\($0)'" }.joined(separator: ",")
-            let fields = "Id, MobilePhone, Phone, DoNotCall" + (isContact ? ", Relationship_Status__c" : ", Status")
+            let fields = "Id, MobilePhone, Phone, DoNotCall" + (isContact
+                ? ", Relationship_Status__c, MailingState, MailingCountry, Account.BillingState"
+                : ", Status, State, Country")
             for r in try await query("SELECT \(fields) FROM \(view.object) WHERE Id IN (\(list))") {
                 guard let id = r["Id"] as? String else { continue }
+                TimeZoneFilter.learn(r) // state and phone say which time zone they're in
                 let mobile = (r["MobilePhone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
                 let phone = (r["Phone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
                 if mobile.isEmpty && phone.isEmpty {
@@ -225,6 +228,7 @@ enum Salesforce {
                 }
             }
         }
+        TimeZoneFilter.save()
         if !noMobile.isEmpty { try? await markNotQualityProspect(contactIDs: noMobile) }
         // List views give 18-character Ids; match on the first 15 to be safe.
         let keep = Set(callable.map { String($0.prefix(15)) })

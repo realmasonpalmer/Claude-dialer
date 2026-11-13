@@ -163,13 +163,24 @@ extension CoachModel {
                           !Voicemail.recordingPrompt(recent), PhoneTree.detects(prospectSoFar + " " + text) {
                     // Work through it by default. Old behavior (disqualify + hang up) behind a setting.
                     if Prefs.hangUpPhoneTrees { markPhoneTree() } else { enterPhoneTree() }
+                } else if !voicemailActive, screenerActive || stagesSeen.contains("Screener") || Screener.detects(prospectSoFar),
+                          Voicemail.unavailableAfterScreen(recent) || Voicemail.numberCantTakeCall(recent) {
+                    // The call screener says they won't take it: same as no answer. Hang up (redial on the
+                    // 1st try, next person on a no-voicemail day). A voicemail day's last try waits for the beep.
+                    ActivityLog.add("Screener said not available for \(calling ?? "?")")
+                    showVoicemail(mailboxFull: false)
+                    autoHangUpForRedial(why: "screener said not available")
                 } else if Voicemail.detects(recent, earlyInCall: early)
                     || (!screenerActive && !Screener.detects(firstWords) && Voicemail.longGreeting(firstWords, earlyInCall: early)) {
                     if !voicemailActive || (Voicemail.mailboxFull(recent) && !mailboxFullShown) {
                         showVoicemail(mailboxFull: Voicemail.mailboxFull(recent))
                     }
-                    // Surely a recording, and the rep hasn't started talking: hang up and redial.
-                    if Voicemail.certain(recent), repWordsInCall < 3 { autoHangUpForRedial() }
+                    // Surely a recording, and the rep hasn't started talking: hang up now, before the beep
+                    // (redial on the 1st try; on to the next person on a no-voicemail day's last try).
+                    if repWordsInCall < 3, !screenerActive, !autoHungUpThisCall,
+                       let why = Voicemail.hangUpReason(recent, firstWords: firstWords, earlyInCall: early) {
+                        autoHangUpForRedial(why: why)
+                    }
                 } else if !voicemailActive, !screenerActive, !stagesSeen.contains("Screener"), Screener.detects(recent) {
                     showScreenerLine()
                 }

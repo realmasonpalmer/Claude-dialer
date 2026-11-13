@@ -54,7 +54,7 @@ enum Voicemail {
         "leave a message", "leave your message", "leave me a message", "leave a voicemail", "leave a brief message",
         "leave your name", "message after", "after the tone", "after the beep", "at the tone", "at the beep",
         "voicemail", "voice mail", "mailbox", "record your message", "please leave", "can't take your call",
-        "cannot take your call", "not available to take your call", "can't come to the phone",
+        "cannot take your call", "can not take your call", "not available to take your call", "can't come to the phone",
         "cannot come to the phone", "get back to you as soon as", "return your call", "forwarded to an automated",
         "automated voice", "voice messaging", "is not available. please", "sorry i missed your call",
         "sorry i can't answer", "sorry i cannot answer", "missed your call",
@@ -109,7 +109,53 @@ enum Voicemail {
     static func recordingPrompt(_ text: String) -> Bool { contains(text, recordingPhrases) }
 
     /// True only when it's surely a recording (see `certainPhrases`), or the mailbox is full.
-    static func certain(_ text: String) -> Bool { contains(text, certainPhrases) || mailboxFull(text) }
+    static func certain(_ text: String) -> Bool {
+        contains(text, certainPhrases) || mailboxFull(text) || numberCantTakeCall(text)
+    }
+
+    /// The carrier's "The telephone number 205 441 3049 can't take your call now." Fuzzy: a number
+    /// (digits are dropped, so spoken or written both work), then within a few words "can't take your call".
+    static func numberCantTakeCall(_ text: String) -> Bool {
+        let t = text.lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"[^a-z ]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b"#, with: " ", options: .regularExpression)
+        let pattern = #"\b(telephone|phone|number|caller|subscriber)\b(\s+\w+){0,6}?\s+"#
+            + #"(cant|can not|cannot|unable to|isnt able to|is not able to|not able to)\s+(take|answer|accept)\s+(your|the|this)?\s*call"#
+        return t.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    /// Sure enough it's a recording to hang up now, without waiting for "after the beep" at the end
+    /// of the greeting. Returns why (for the log), or nil. The rep hasn't spoken yet (caller checks).
+    /// - Any time: words only a machine says (`certain`).
+    /// - Early in the call, nobody screening: a voicemail phrase ("you've reached Jane's voicemail",
+    ///   "can't take your call", "leave a message"), or 18+ words with no pause for a reply,
+    ///   or "you've reached" / "not available" plus 12+ words.
+    static func hangUpReason(_ recent: String, firstWords: String, earlyInCall: Bool) -> String? {
+        if certain(recent) { return "beep words" }
+        guard earlyInCall, !Screener.detects(firstWords), !Screener.detects(recent) else { return nil }
+        if contains(recent, strong) { return "voicemail words" }
+        if longGreeting(firstWords, earlyInCall: true) { return "long greeting" }
+        if contains(recent, early), firstWords.split(separator: " ").count >= 12 { return "greeting words" }
+        return nil
+    }
+
+    /// After a call screener (Google, iPhone): the screener says the person won't take it.
+    /// Fuzzy, since the words vary and transcripts drop or mangle some:
+    /// "I'm sorry, this person is not available", "the person you're calling isn't available right now",
+    /// "sorry, they can't take your call", "this person's unavailable", "they declined".
+    /// A person (or "they") followed within a few words by a "can't take it" phrase.
+    static func unavailableAfterScreen(_ text: String) -> Bool {
+        let t = text.lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"[^a-z ]+"#, with: " ", options: .regularExpression)
+        let pattern = #"\b(person|persons|party|they|theyre|user|customer|caller)\b(\s+\w+){0,6}?\s+"#
+            + #"(not available|unavailable|isnt available|not able to (take|answer|come)|cant (take|answer|come|get)|"#
+            + #"cannot (take|answer|come|get)|unable to (take|answer|come)|not taking calls|declined|busy right now)"#
+        return t.range(of: pattern, options: .regularExpression) != nil
+    }
 
     /// Real people answer short ("Hello?", "This is Jane"). A recording talks on and on.
     /// 18+ words before the rep says anything, early in the call = a voicemail greeting.

@@ -136,11 +136,14 @@ struct AudioProcess: Identifiable, Hashable {
 }
 
 func defaultOutputDeviceUID() throws -> String {
-    let device = try readProperty(
-        AudioObjectID(kAudioObjectSystemObject),
-        kAudioHardwarePropertyDefaultSystemOutputDevice,
-        AudioDeviceID(kAudioObjectUnknown)
-    )
+    // Where calls and music play (not the "alert sounds" device, which can be a different one:
+    // tying the tap to the wrong device makes that device's sound glitch).
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    var device = (try? readProperty(system, kAudioHardwarePropertyDefaultOutputDevice, AudioDeviceID(kAudioObjectUnknown)))
+        ?? AudioDeviceID(kAudioObjectUnknown)
+    if device == kAudioObjectUnknown {
+        device = try readProperty(system, kAudioHardwarePropertyDefaultSystemOutputDevice, AudioDeviceID(kAudioObjectUnknown))
+    }
     return try readString(device, kAudioDevicePropertyDeviceUID)
 }
 
