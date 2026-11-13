@@ -56,8 +56,6 @@ struct CampaignEditorView: View {
             field("Name", text: $draft.name, placeholder: "e.g. Tax firm owners")
             field("Goal of these calls", text: $draft.objective,
                   placeholder: "e.g. Book a 30 minute meeting, or transfer to Mason")
-            Toggle("Use my script's first line", isOn: $draft.ownOpener)
-                .help("Off: the app picks a first line that has worked well. On: it uses the first line in this script.")
             listPicker
         }
     }
