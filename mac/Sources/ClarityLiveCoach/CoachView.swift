@@ -343,30 +343,60 @@ struct CoachView: View {
     // MARK: Top: campaign, status, settings
 
     private var topBar: some View {
-        HStack(spacing: 8) {
-            // No status, Voicemail or End call buttons here (the app handles those by itself).
-            // Command-E still ends a call; Settings and tools has both buttons.
-            Spacer()
+        VStack(alignment: .leading, spacing: 8) {
+            // One row for the three menus. The call list name is the part that gives way when the
+            // name is long, so the time zone and gear never get squeezed.
+            HStack(spacing: 8) {
+                campaignMenu.tourSpot(.segment)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                timeZoneMenu.tourSpot(.zone).layoutPriority(1)
+                settingsMenu.tourSpot(.gear).layoutPriority(1)
+            }
+            // Updates get their own row, so the button always has room. It checks by itself every
+            // 2 minutes and when the app is opened.
+            updateBar
+        }
+        // No status, Voicemail or End call buttons here (the app handles those by itself).
+        // Command-E still ends a call; Settings has both buttons.
+        .background(
             Button("") { coach.endCall() }
                 .keyboardShortcut("e", modifiers: .command)
                 .opacity(0).frame(width: 0, height: 0)
                 .allowsHitTesting(false)
-            // Updates live only here. It checks by itself every 2 minutes and when the app is opened.
-            if updater.updating {
-                Button("Updating...") {}
-                    .controlSize(.small)
-                    .disabled(true)
-                    .help("Keep working. The app closes and reopens by itself in about 2 minutes.")
-            } else if updater.updateAvailable && coach.status == .ready {
-                Button("Update") { updater.update() }
+        )
+    }
+
+    /// The walkthrough is on its "Stay up to date" step: show a sample bar if there's no real update.
+    private var tourShowsUpdate: Bool {
+        guard let step = tourStep, step >= 1, step <= Tour.steps.count else { return false }
+        return Tour.steps[step - 1].spot == .update
+    }
+
+    @ViewBuilder private var updateBar: some View {
+        if updater.updating {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Updating. The app restarts by itself in about 2 minutes. Keep working.")
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .background(Brand.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+        } else if (updater.updateAvailable && coach.status == .ready) || tourShowsUpdate {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(Brand.blue)
+                Text("A new version is ready.").font(.caption.weight(.semibold))
+                Spacer(minLength: 8)
+                Button("Update now") { updater.update() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .tourSpot(.update)
-                    .help("A new version is ready. Click to install it (about 2 minutes, no Terminal).")
+                    .fixedSize()
+                    .disabled(!updater.updateAvailable)
+                    .help("Installs the new version. Takes about 2 minutes. No Terminal.")
             }
-            campaignMenu.tourSpot(.segment)
-            timeZoneMenu.tourSpot(.zone)
-            settingsMenu.tourSpot(.gear)
+            .padding(8)
+            .background(Brand.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+            .tourSpot(.update)
         }
     }
 
@@ -459,10 +489,9 @@ struct CoachView: View {
         } label: {
             Label(campaigns.selected.name, systemImage: "person.2.fill")
                 .labelStyle(.titleAndIcon)
-                .font(.caption.weight(.semibold)).lineLimit(1)
+                .font(.caption.weight(.semibold)).lineLimit(1).truncationMode(.tail)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
         .disabled(coach.status != .ready)
         .help(coach.status == .ready ? "Who to call: pick a call list (people to call, plus what to say)" : "Finish the call to switch call lists")
     }
@@ -706,7 +735,11 @@ struct CoachView: View {
             } else if let message = coach.callList.message {
                 warningText(message)
             } else if coach.callList.state == .needsChromeSetting, coach.status != .ready {
-                warningText("Chrome needs one setting. At the top of your screen: click View, then Developer, then Allow JavaScript from Apple Events.")
+                VStack(alignment: .leading, spacing: 4) {
+                    warningText("Chrome needs one setting. At the top of your screen: click View, then Developer, then Allow JavaScript from Apple Events.")
+                    Button("Show me with pictures") { showSetup = true }
+                        .buttonStyle(.link).font(.caption)
+                }
             } else if let message = updater.message, !updater.updating,
                       message.hasPrefix("The update") || message.hasPrefix("Couldn't") {
                 Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

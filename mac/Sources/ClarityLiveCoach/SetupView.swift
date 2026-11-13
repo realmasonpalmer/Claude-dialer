@@ -150,7 +150,7 @@ struct SetupView: View {
                 dismiss(); onAudioCheck()
             },
             Step(id: "chrome", title: "3. Chrome setting",
-                 detail: "In Chrome, at the very top of your screen: 1. Click View. 2. Click Developer. 3. Click Allow JavaScript from Apple Events. This lets the app read your list.",
+                 detail: "In Chrome's top menu: View, then Developer, then Allow JavaScript from Apple Events. This lets the app read your list. Click \"Show me how\" for pictures.",
                  done: (coach.callList.state != .needsChromeSetting && !coach.callList.records.isEmpty), optional: false) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Google Chrome.app"))
             },
@@ -219,6 +219,14 @@ struct SetupView: View {
                 Button(step.id == "export" ? "Export" : step.done ? "Change" : "Set up", action: step.action)
                     .buttonStyle(.bordered)
                     .tint(step.done || step.optional ? nil : Brand.blue)
+            }
+            if step.id == "chrome" {
+                DisclosureGroup("Show me how") {
+                    ChromeSettingGuide().padding(.top, 6)
+                }
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.top, -4)
             }
             if let guide = Self.guides[step.id] {
                 DisclosureGroup("How to set this up") {
