@@ -8,6 +8,7 @@ import Foundation
 extension CoachModel {
     func tick() {
         guard active else { return }
+        checkBlock()
         if phase != loggedPhase {
             ActivityLog.add("Phase: \(loggedPhase.rawValue) -> \(phase.rawValue)")
             loggedPhase = phase
@@ -332,6 +333,48 @@ extension CoachModel {
         startCall()
     }
 
+    // MARK: Block timer: 50 minutes of calling, then a 10 minute break
+
+    static let blockLength: TimeInterval = 50 * 60
+    static let breakLength: TimeInterval = 10 * 60
+
+    func startBlock() {
+        blockStartedAt = Date()
+        breakUntil = nil
+        ActivityLog.add("Block: 50 minutes started")
+    }
+
+    func stopBlock() {
+        if breakUntil != nil { autoDial = autoDialBeforeBreak }
+        blockStartedAt = nil
+        breakUntil = nil
+    }
+
+    /// The block ran out (and no call is on): break time. The break ran out: back to calling.
+    func checkBlock() {
+        if let until = breakUntil {
+            if Date() >= until { endBreak() }
+            return
+        }
+        guard let start = blockStartedAt, status == .ready, !dialing,
+              Date().timeIntervalSince(start) >= Self.blockLength else { return }
+        autoDialBeforeBreak = autoDial
+        autoDial = false
+        cancelAutoNext()
+        breakUntil = Date().addingTimeInterval(Self.breakLength)
+        NSSound(named: "Glass")?.play()
+        ActivityLog.add("Block: done. 10 minute break")
+    }
+
+    /// Skip break, or the break is over: auto dial back on, new block, next call.
+    func endBreak() {
+        autoDial = autoDialBeforeBreak
+        breakUntil = nil
+        blockStartedAt = Date()
+        ActivityLog.add("Block: break over, calling again")
+        if autoDial { startNextSequence() }
+    }
+
     func startCall() {
         problem = nil
         redialRightAway = false
@@ -354,6 +397,8 @@ extension CoachModel {
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
         status = .live
+        streak = Date().timeIntervalSince(lastDialAt) < 180 ? streak + 1 : 1
+        lastDialAt = Date()
         prewarmNext() // get the next person ready while this call rings
         quietTicks = 0
         availability.refresh() // fresh free times for this call
@@ -397,6 +442,7 @@ extension CoachModel {
         if sawVoicemail { touchpoints.log(.voicemail) }
         guard answered else { return }
         touchpoints.log(.pickup)
+        NSSound(named: "Tink")?.play() // a soft sound: someone picked up
         let prospectTurns = turns.filter { $0.speaker == .prospect }.count
         let talked = firstProspectAt.map { Date().timeIntervalSince($0) } ?? 0
         let conversation = prospectTurns >= 3 || talked >= 45

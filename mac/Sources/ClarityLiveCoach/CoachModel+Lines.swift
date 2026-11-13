@@ -302,6 +302,7 @@ extension CoachModel {
             goalHit = true
             meetingThisWeek = touchpoints.meetingsThisWeek() + 1 // logged when the call ends
             meetingMoments += 1
+            NSSound(named: "Hero")?.play()
         }
         if s.stage == "Voicemail" { sawVoicemail = true }
     }

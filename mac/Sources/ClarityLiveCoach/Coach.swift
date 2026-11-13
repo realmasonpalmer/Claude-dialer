@@ -185,6 +185,13 @@ final class CoachModel: ObservableObject {
     var lastWaitingFor = ""
 
     var noMobileSkips = 0
+    /// Calls in a row with no break longer than 3 minutes.
+    @Published var streak = 0
+    var lastDialAt = Date.distantPast
+    /// A 50 minute calling block, then a 10 minute break. nil = no block running.
+    @Published var blockStartedAt: Date?
+    @Published var breakUntil: Date?
+    var autoDialBeforeBreak = true
     /// Voicemail and follow-ups written ahead of time for the next person, by record Id (15 characters).
     var prewarmed: [String: (calling: String, voicemail: Suggestion, at: Date)] = [:]
     var prewarmingKey: String?

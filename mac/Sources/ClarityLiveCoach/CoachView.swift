@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 
 /// Decides which screen to show: audio check (first run), keys (once), then the coach.
@@ -200,6 +201,8 @@ struct CoachView: View {
     /// Off (default): the essential view: the person, the line, the follow-up and the buttons.
     /// On: everything (script, numbers, rings, transcript, stage bar).
     @AppStorage("showMore") private var showMore = false
+    /// The longest a running countdown started at, for the bar's length.
+    @State private var countdownMax = 1
     private var showAll: Bool { showMore || tourStep != nil } // the tour points at everything
     /// "Starting TAX FIRMS in 4": the next list starts by itself when this one is done.
     @State private var nextListIn: Int?
@@ -231,6 +234,7 @@ struct CoachView: View {
         VStack(alignment: .leading, spacing: gap) {
             topBar
             nowBar
+            readyCheck
             // The middle scrolls if it's ever taller than the screen; the top bar and the buttons stay put.
             ScrollViewReader { scroller in
             ScrollView(.vertical, showsIndicators: false) {
@@ -376,6 +380,48 @@ struct CoachView: View {
         return ("Ready. Click Call.", listening)
     }
 
+    /// "Ready to dial": a light for each thing calling needs. Only shows while something isn't ready;
+    /// clicking an orange light opens the place to fix it.
+    private var preflight: [(name: String, ok: Bool, fix: () -> Void)] {
+        let aircallURL = AircallPhone.shared.webView.url?.absoluteString.lowercased() ?? ""
+        let signedIn = !["login", "signin", "sign-in", "sign_in"].contains { aircallURL.contains($0) }
+        return [
+            (Aircall.canPlaceCalls && signedIn ? "Aircall" : "Aircall: sign in", Aircall.canPlaceCalls && signedIn,
+             { showAircall = true }),
+            ("Mic", AVCaptureDevice.authorizationStatus(for: .audio) == .authorized, {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                    NSWorkspace.shared.open(url)
+                }
+            }),
+            ("Salesforce", Salesforce.isConnected, { showSetup = true }),
+            ("Chrome", coach.leads.isActive || !coach.callList.chromeBlocked, { showSetup = true }),
+            ("List", coach.leads.isActive || !coach.callList.records.isEmpty, { openList(of: campaigns.selected) }),
+        ]
+    }
+
+    @ViewBuilder private var readyCheck: some View {
+        let items = preflight
+        if coach.status == .ready, items.contains(where: { !$0.ok }) {
+            HStack(spacing: 10) {
+                Text("Ready to dial:").font(.caption2.weight(.semibold))
+                ForEach(items.indices, id: \.self) { i in
+                    Button { items[i].fix() } label: {
+                        HStack(spacing: 3) {
+                            Circle().fill(items[i].ok ? Color.green : Color.orange).frame(width: 7, height: 7)
+                            Text(items[i].name).font(.caption2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(items[i].ok)
+                    .help(items[i].ok ? "\(items[i].name) is ready" : "Click to fix: \(items[i].name)")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .brandCard(radius: 8)
+        }
+    }
+
     private var nowBar: some View {
         let now = nowLine
         let plan = coach.status == .ready ? (coach.leads.isActive ? coach.leads.summary : coach.callList.summary) : nil
@@ -390,6 +436,21 @@ struct CoachView: View {
                     .help(showMore ? "Back to just the person, the line and the buttons"
                                    : "Also show your script, your numbers, the hour rings and the transcript")
             }
+            HStack(spacing: 10) {
+                if coach.streak >= 3 { Text("🔥 \(coach.streak) in a row").font(.caption2.weight(.semibold)) }
+                if let start = coach.blockStartedAt, coach.breakUntil == nil {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        let left = max(0, Int(CoachModel.blockLength - context.date.timeIntervalSince(start)))
+                        Text(String(format: "Block: %d:%02d left", left / 60, left % 60)).font(.caption2.monospacedDigit())
+                    }
+                    Button("Stop") { coach.stopBlock() }.buttonStyle(.link).font(.caption2)
+                } else if coach.breakUntil == nil, coach.status == .ready {
+                    Button("Start a 50 min block") { coach.startBlock() }.buttonStyle(.link).font(.caption2)
+                        .help("50 minutes of calling, then a 10 minute break")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 13)
             if let plan {
                 Text(plan).font(.caption2).foregroundStyle(.secondary)
                     .padding(.leading, 13)
@@ -887,16 +948,31 @@ struct CoachView: View {
 
     /// After a 2nd-try voicemail: "Calling Jane in 4", with a button to stay.
     private func autoNextBar(_ left: Int) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "timer")
-            Text("Calling \(coach.autoNextName ?? coach.nextLeadName ?? "next person") in \(left)")
-                .font(.callout.weight(.semibold))
-            Spacer(minLength: 0)
-            Button("Wait") { coach.cancelAutoNext() }
-                .controlSize(.large)
+        countdownBar("Calling \(coach.autoNextName ?? coach.nextLeadName ?? "next person") in \(left)", left: left) {
+            coach.cancelAutoNext()
+        }
+    }
+
+    /// The one countdown bar: what's about to happen, a shrinking bar, and Pause (or the space bar).
+    private func countdownBar(_ title: String, left: Int, pause: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "timer")
+                Text(title).font(.callout.weight(.semibold))
+                Spacer(minLength: 0)
+                Button("Pause") { pause() }
+                    .keyboardShortcut(.space, modifiers: [])
+                    .controlSize(.large)
+                    .help("Stop the countdown (space bar)")
+            }
+            ProgressView(value: Double(left), total: Double(max(countdownMax, left)))
+                .tint(Brand.blue)
+                .animation(.linear(duration: 1), value: left)
         }
         .padding(10)
         .brandCard(radius: 10)
+        .onAppear { countdownMax = left }
+        .onChange(of: left) { old, new in if new > old { countdownMax = new } }
     }
 
     // MARK: Navigation: always here, always the same two buttons
@@ -1095,7 +1171,19 @@ struct CoachView: View {
     /// One message above the buttons at a time, the most important first:
     /// a call problem, the countdown, "send the text", then why Next can't move on.
     @ViewBuilder private var bottomBanner: some View {
-        if listRanOut {
+        if let until = coach.breakUntil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let left = max(0, Int(until.timeIntervalSince(context.date)))
+                HStack(spacing: 8) {
+                    Image(systemName: "cup.and.saucer.fill")
+                    Text(String(format: "Break: %d:%02d left. Nice block.", left / 60, left % 60)).font(.callout.weight(.semibold))
+                    Spacer(minLength: 0)
+                    Button("Skip break") { coach.endBreak() }.controlSize(.large)
+                }
+                .padding(10)
+                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
+        } else if listRanOut {
             let why = CalledToday.breakdown(coach.leads.isActive ? coach.leads.rows.map(\.id) : coach.callList.records.map(\.id))
             VStack(alignment: .leading, spacing: 8) {
                 Text(why.calledToday > 0 ? "Nobody left to call right now on \(campaigns.selected.name). Nice work."
@@ -1122,12 +1210,7 @@ struct CoachView: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let next = nextCampaign {
                     if let left = nextListIn {
-                        HStack(spacing: 8) {
-                            Image(systemName: "timer")
-                            Text("Starting \(next.name) in \(left)").font(.callout.weight(.semibold))
-                            Spacer(minLength: 0)
-                            Button("Stay here") { stopNextListCountdown() }
-                        }
+                        countdownBar("Starting \(next.name) in \(left)", left: left) { stopNextListCountdown() }
                     }
                     Button("Start next list: \(next.name)") { stopNextListCountdown(); switchTo(next) }
                         .buttonStyle(.borderedProminent)
@@ -1169,22 +1252,21 @@ struct CoachView: View {
                 Text(detail).font(.callout).fixedSize(horizontal: false, vertical: true)
             }
         } else if coach.waitingForText {
-            HStack(spacing: 8) {
-                if let left = coach.textSendIn {
-                    Image(systemName: "timer")
-                    Text("Sending the text in \(left)").font(.callout.weight(.semibold))
-                    Spacer(minLength: 0)
-                    Button("Edit") { coach.stopTextCountdown() }
-                        .help("Stop the countdown so you can change the text. Then click Send text.")
-                } else {
-                    Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
-                        .font(.callout).fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
+            if let left = coach.textSendIn {
+                VStack(alignment: .leading, spacing: 6) {
+                    countdownBar("Sending the text in \(left)", left: left) { coach.stopTextCountdown() }
+                    Button("Skip text") { coach.startNextSequence() }.buttonStyle(.link).font(.caption)
                 }
+            } else {
+            HStack(spacing: 8) {
+                Text(coach.autoDial ? "Send the text. Then the next person loads and the call starts." : "Send the text. Then the next person loads.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
                 Button("Skip text") { coach.startNextSequence() }
             }
             .padding(10)
             .brandCard(radius: 10)
+            }
         } else if let hint = nextHint, !coach.leads.isActive {
             Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
