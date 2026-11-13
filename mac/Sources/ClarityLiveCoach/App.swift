@@ -22,7 +22,8 @@ struct ClarityLiveCoachApp: App {
                 .environmentObject(campaigns)
                 .onAppear { keepWindowsOnTop() } // float above Salesforce
         }
-        .windowResizability(.contentSize)
+        // Drag the edges or click the green button to make it bigger. Never smaller than the coach needs.
+        .windowResizability(.contentMinSize)
 
         Window("What's Working", id: "script-lab") {
             ScriptLabView(lab: coach.lab, openers: coach.openers)

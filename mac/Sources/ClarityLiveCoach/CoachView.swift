@@ -27,7 +27,7 @@ struct RootView: View {
                     }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil,
                        // Never trap a new rep here: they can finish it later from Set up.
                        onSkip: { audioCheckSkipped = true; proof.testAgain(); screen = .coach })
-                    .frame(width: 380)
+                    .frame(minWidth: 380, maxWidth: .infinity)
                     .onAppear { proof.onAppear() }
                     if appPhone { AircallPhoneSide() }
                 }
@@ -47,12 +47,28 @@ struct RootView: View {
                 )
             }
         }
-        // Wider, not taller, when the Aircall phone is open on the right.
-        .frame(width: showPhone ? 380 + AircallPhoneSide.width : 380)
-        // Never taller than the screen, counting the title bar.
-        .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
+        // The window opens at the coach's size (taller than wide, with the Aircall phone on the right
+        // when it's showing) and can be dragged or zoomed bigger. It never gets smaller than this width.
+        .frame(minWidth: minWindowWidth, idealWidth: minWindowWidth, maxWidth: .infinity,
+               minHeight: 440, idealHeight: (NSScreen.main?.visibleFrame.height ?? 900) - 72, maxHeight: .infinity)
+        // Show or hide the phone: the window grows or shrinks by the phone's width.
+        .onChange(of: showPhone) { _, shown in
+            let change = AircallPhoneSide.width - 1
+            DispatchQueue.main.async {
+                guard let window = NSApp.windows.first(where: { $0.title == "Clarity Live Coach" && $0.isVisible }) else { return }
+                var frame = window.frame
+                frame.size.width = max(381, frame.size.width + (shown ? change : -change))
+                if let screen = window.screen?.visibleFrame, frame.maxX > screen.maxX {
+                    frame.origin.x = max(screen.minX, screen.maxX - frame.width) // keep it on the screen
+                }
+                window.setFrame(frame, display: true, animate: true)
+            }
+        }
         .brandWindow()
     }
+
+    /// The least width the coach needs: the column, plus the Aircall phone when it's showing.
+    private var minWindowWidth: CGFloat { 380 + (showPhone ? AircallPhoneSide.width : 1) }
 
     private var showPhone: Bool {
         let current = screen ?? firstScreen
@@ -191,14 +207,15 @@ struct CoachView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Exactly the screen's height (minus the title bar): the middle scrolls, nothing gets cut off.
-            coachColumn.frame(width: 380, height: (NSScreen.main?.visibleFrame.height ?? 900) - 72)
+            // As wide and tall as the window: the middle scrolls, nothing gets cut off.
+            coachColumn.frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
                 .overlayPreferenceValue(TourSpotKey.self) { spots in
                     TourOverlay(step: $tourStep, spots: spots) { tourSeen = true }
                 }
             // The Aircall phone sits to the right. Hidden = 1 point wide, but still running.
             if appPhone { AircallPhoneSide() }
         }
+        .frame(maxHeight: .infinity)
     }
 
     private var coachColumn: some View {
@@ -356,13 +373,23 @@ struct CoachView: View {
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // One row for the three menus. The call list name is the part that gives way when the
-            // name is long, so the time zone and gear never get squeezed.
-            HStack(spacing: 8) {
-                campaignMenu.tourSpot(.segment)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                timeZoneMenu.tourSpot(.zone).layoutPriority(1)
-                settingsMenu.tourSpot(.gear).layoutPriority(1)
+            // One row for the three menus when they fit. If the window is narrow they wrap to two rows,
+            // so nothing is ever pushed off the edge.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    campaignMenu.tourSpot(.segment)
+                    Spacer(minLength: 0)
+                    timeZoneMenu.tourSpot(.zone)
+                    settingsMenu.tourSpot(.gear)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        campaignMenu.tourSpot(.segment)
+                        Spacer(minLength: 0)
+                        settingsMenu.tourSpot(.gear)
+                    }
+                    timeZoneMenu.tourSpot(.zone)
+                }
             }
             // Updates get their own row, so the button always has room. It checks by itself every
             // 2 minutes and when the app is opened.
@@ -376,6 +403,11 @@ struct CoachView: View {
                 .opacity(0).frame(width: 0, height: 0)
                 .allowsHitTesting(false)
         )
+    }
+
+    /// A long call list name shortened with "..." so the menu is never wider than the bar.
+    private static func short(_ name: String, max: Int = 26) -> String {
+        name.count > max ? String(name.prefix(max - 1)).trimmingCharacters(in: .whitespaces) + "…" : name
     }
 
     /// The walkthrough is on its "Stay up to date" step: show a sample bar if there's no real update.
@@ -499,7 +531,7 @@ struct CoachView: View {
             Divider()
             Button("Edit this call list...") { edit(campaigns.selected) }
         } label: {
-            Label(campaigns.selected.name, systemImage: "person.2.fill")
+            Label(Self.short(campaigns.selected.name), systemImage: "person.2.fill")
                 .labelStyle(.titleAndIcon)
                 .font(.caption.weight(.semibold)).lineLimit(1).truncationMode(.tail)
         }

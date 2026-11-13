@@ -215,6 +215,7 @@ struct TeamKeysView: View {
         }
         .padding(20)
         .frame(width: firstRun ? nil : 360)
+        .frame(maxWidth: firstRun ? 480 : nil)
     }
 
     private var title: String {
