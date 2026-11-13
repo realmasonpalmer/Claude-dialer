@@ -13,7 +13,7 @@ struct SettingsPane: View {
     @AppStorage(PrefKey.coachSpeed) private var speed = CoachSpeed.balanced.rawValue
     @AppStorage(PrefKey.nextDials) private var autoDial = true
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
-    @AppStorage(PrefKey.autoLinkedIn) private var autoLinkedIn = true
+    @AppStorage(PrefKey.autoLinkedIn) private var autoLinkedIn = false
     @State private var confirmReset = false
     @State private var note: String?
 

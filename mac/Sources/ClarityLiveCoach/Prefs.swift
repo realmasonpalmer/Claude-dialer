@@ -9,7 +9,7 @@ enum PrefKey {
     static let sfCallDays = "sfCallDays"
     static let sfPickedUp = "sfPickedUp"
     static let sfNoNumber = "sfNoNumber"
-    static let autoLinkedIn = "autoLinkedIn"
+    static let autoLinkedIn = "autoLinkedInOff"
     static let eastCoastFirst = "eastCoastFirst"
     static let leadTimeZones = "leadTimeZones"
     static let goalCardOpen = "goalCardOpen"
@@ -67,7 +67,7 @@ enum Prefs {
         set { d.set(newValue, forKey: PrefKey.nextDials) }
     }
     /// When the next person loads, open their LinkedIn profile in a background Chrome tab.
-    static var autoLinkedIn: Bool { d.object(forKey: PrefKey.autoLinkedIn) as? Bool ?? true }
+    static var autoLinkedIn: Bool { d.object(forKey: PrefKey.autoLinkedIn) as? Bool ?? false }
     /// Call each person twice in a row when the first try isn't answered.
     static var doubleTap: Bool {
         get { d.object(forKey: PrefKey.doubleTap) as? Bool ?? true }
