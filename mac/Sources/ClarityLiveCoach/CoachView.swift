@@ -1560,6 +1560,15 @@ struct RelationshipCard: View {
     @State private var reason: String?
     /// Folded: one line with the status and the call count. Opens on click.
     @AppStorage(PrefKey.statusCardOpen) private var open = true
+    /// The full list of statuses (folded: just the 3 one-click buttons).
+    @State private var showAllStatuses = false
+
+    /// The 3 one-click outcomes: button name and what it saves, for a Lead or a Contact.
+    private func quickOutcomes(_ object: String) -> [(label: String, value: String)] {
+        object == "Lead"
+            ? [("Interested", "Interested"), ("Not now", "Nurturing"), ("Not a fit", "Unqualified")]
+            : [("Interested", "Engaged"), ("Not now", "No Relationship"), ("Not a fit", "Not Quality Prospect")]
+    }
 
     private let columns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
 
@@ -1595,6 +1604,26 @@ struct RelationshipCard: View {
             }
             .buttonStyle(.plain)
             if open {
+            // One click saves and moves on. "Not a fit" also takes them off the list.
+            HStack(spacing: 8) {
+                ForEach(quickOutcomes(object), id: \.label) { o in
+                    Button {
+                        picked = o.value
+                        pickedFor = coach.statusRecordID
+                        coach.saveStatus(o.value, unqualifiedReason: o.value == "Unqualified" ? "Non-Responsive" : nil)
+                    } label: {
+                        Text(o.label).font(.callout.weight(.semibold)).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .tint(current == o.value ? Brand.blue : nil)
+                    .disabled(coach.savingStatus || !Salesforce.isConnected)
+                    .help("Saves \(o.value) in Salesforce")
+                }
+            }
+            Button(showAllStatuses ? "Fewer choices" : "More choices") { showAllStatuses.toggle() }
+                .buttonStyle(.link).font(.caption)
+            if showAllStatuses {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
                 ForEach(Salesforce.statuses(object), id: \.self) { value in
                     Button {
@@ -1628,13 +1657,14 @@ struct RelationshipCard: View {
                 .buttonStyle(.bordered)
                 .disabled(picked == nil || picked == coach.recordStatus || coach.savingStatus || !Salesforce.isConnected
                           || (object == "Lead" && picked == "Unqualified" && reason == nil))
-                if !Salesforce.isConnected {
-                    Text("To save, sign in to Salesforce: click the gear, then Set up.").font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if let message = coach.statusMessage {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            }
+            }
+            if !Salesforce.isConnected {
+                Text("To save, sign in to Salesforce: click the gear, then Set up.").font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let message = coach.statusMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             }
         }
