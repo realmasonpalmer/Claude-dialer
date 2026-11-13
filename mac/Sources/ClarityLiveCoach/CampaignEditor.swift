@@ -13,6 +13,7 @@ struct CampaignEditorView: View {
     @State private var listViews: [Salesforce.ListView] = []
     @State private var loadingLists = false
     @State private var writing = false
+    @State private var filling = false
     @State private var writeStart = Date()
     @State private var thought = ""
 
@@ -97,10 +98,19 @@ struct CampaignEditorView: View {
 
     private var script: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Who are these people?").font(.headline)
-            Text("Who they are, what keeps them up at night, what they want, and their story. The more real, the better the script.")
+            HStack(spacing: 8) {
+                Text("Who are these people?").font(.headline)
+                Spacer()
+                if filling { ProgressView().controlSize(.small) }
+                Button("Fill from Salesforce") { Task { await fillFromSalesforce() } }
+                    .disabled(draft.listViewID.isEmpty || filling || writing)
+                    .help("Reads the titles, levels, industries, company sizes and states of the people on this call list's Salesforce list.")
+            }
+            Text("Who they are, what keeps them up at night, what they want, and their story. Click Fill from Salesforce to start with their real titles, then add the rest.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
+                // A list picked and the box still empty: describe the list's people right away.
+                .onChange(of: draft.listViewID) { _, _ in Task { await fillFromSalesforce(auto: true) } }
             Button {
                 Task { await write() }
             } label: {
@@ -189,6 +199,24 @@ struct CampaignEditorView: View {
     }
 
     // MARK: Claude writes the script
+
+    /// Describes the people on this call list's Salesforce list. `auto`: only when the box is empty.
+    private func fillFromSalesforce(auto: Bool = false) async {
+        guard !draft.listViewID.isEmpty else {
+            if !auto { message = "Pick a Salesforce list first." }
+            return
+        }
+        if auto, !draft.persona.trimmed.isEmpty { return }
+        filling = true
+        defer { filling = false }
+        do {
+            let text = try await ListProfile.describe(object: draft.listObject, viewID: draft.listViewID)
+            draft.persona = draft.persona.trimmed.isEmpty ? text : draft.persona.trimmed + "\n\n" + text
+            message = "Filled from Salesforce. Add what keeps them up at night and what they want."
+        } catch {
+            message = "Couldn't read the list: \(error.localizedDescription)"
+        }
+    }
 
     private func write() async {
         writing = true

@@ -1157,7 +1157,7 @@ struct HelpView: View {
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 section("1. Get ready (one time)", [
                     "Click the gear, then Set up. Do each step. Each one turns green when it's done.",
-                    "Aircall phone (at the bottom): click Show, sign in, set yourself to Available, then click Hide.",
+                    "Aircall phone (on the right): sign in one time and set yourself to Available. If it ever freezes: gear, then Settings, then Get help, then Reload the Aircall phone.",
                     "Open your list in Salesforce, in Chrome. The app reads it by itself.",
                 ])
                 section("2. Pick who to call", [

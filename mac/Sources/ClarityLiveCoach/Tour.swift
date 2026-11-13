@@ -78,7 +78,7 @@ enum Tour {
                  text: "Your calls, texts, notes and meetings. Click it to see more.",
                  corner: 14),
         TourStep(spot: .phone, part: "Keep score", title: "Your phone",
-                 text: "Click Show and sign in to Aircall one time. Set yourself to Available. Then click Hide. Calls still work.",
+                 text: "Your Aircall phone is on the right. Sign in one time and set yourself to Available. Pick the number your calls go out from here.",
                  corner: 10),
         TourStep(spot: .update, part: "Keep score", title: "Stay up to date",
                  text: "A blue bar shows at the top when there's a new version. Click Update now between calls. It takes 2 minutes.",

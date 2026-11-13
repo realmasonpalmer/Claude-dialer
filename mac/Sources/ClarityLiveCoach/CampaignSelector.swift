@@ -140,6 +140,7 @@ struct NewCampaignView: View {
     @State private var writeStart = Date()
     @State private var thought = ""
     @State private var message: String?
+    @State private var filling = false
 
     private var view: Salesforce.ListView? { views.first { $0.id == listID } }
 
@@ -164,12 +165,21 @@ struct NewCampaignView: View {
                         ForEach(views) { Text($0.title).tag($0.id) }
                     }
                     .labelsHidden()
+                    // A list picked and the box still empty: describe the list's people right away.
+                    .onChange(of: listID) { _, _ in Task { await fillFromSalesforce(auto: true) } }
                 }
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("3. Who are these people?").font(.headline)
-                Text("Who they are, what keeps them up at night, what they want, and their story. The more real, the better the script.")
+                HStack(spacing: 8) {
+                    Text("3. Who are these people?").font(.headline)
+                    Spacer()
+                    if filling { ProgressView().controlSize(.small) }
+                    Button("Fill from Salesforce") { Task { await fillFromSalesforce() } }
+                        .disabled(view == nil || filling || writing)
+                        .help("Reads the titles, levels, industries, company sizes and states of the people on the list you picked.")
+                }
+                Text("Who they are, what keeps them up at night, what they want, and their story. Click Fill from Salesforce to start with their real titles, then add the rest.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $audience)
                     .font(.callout)
@@ -246,6 +256,24 @@ struct NewCampaignView: View {
     }
 
     /// Writes a full script in the backbone format, shown as it's written.
+    /// Describes the people on the picked list from Salesforce. `auto`: only when the box is empty.
+    private func fillFromSalesforce(auto: Bool = false) async {
+        guard let v = view else {
+            if !auto { message = "Pick a Salesforce list first (step 2)." }
+            return
+        }
+        if auto, !audience.trimmed.isEmpty { return }
+        filling = true
+        defer { filling = false }
+        do {
+            let text = try await ListProfile.describe(object: v.object, viewID: v.id)
+            audience = audience.trimmed.isEmpty ? text : audience.trimmed + "\n\n" + text
+            message = "Filled from Salesforce. Add what keeps them up at night and what they want."
+        } catch {
+            message = "Couldn't read the list: \(error.localizedDescription)"
+        }
+    }
+
     private func writeScript() async {
         writing = true
         writeStart = Date()

@@ -46,6 +46,10 @@ struct SettingsPane: View {
                 }
                 HStack {
                     Menu("Get help") {
+                        Button("Reload the Aircall phone") {
+                            AircallPhone.shared.reload()
+                            note = "Reloaded the Aircall phone on the right. Sign in again if it asks."
+                        }
                         Button("Send a problem report") {
                             Task { note = await BugReporter.manual() }
                         }

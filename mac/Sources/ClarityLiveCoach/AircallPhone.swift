@@ -16,11 +16,9 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
         set { _ = newValue }
     }
 
-    /// The phone is shown big (to sign in) or tucked away (while calling).
-    /// Shown by default; remembers if the rep hides it.
-    @Published var shown = UserDefaults.standard.object(forKey: PrefKey.aircallShown) as? Bool ?? true {
-        didSet { UserDefaults.standard.set(shown, forKey: PrefKey.aircallShown) }
-    }
+    /// The phone always shows on the right of the coach (Mason asked to remove the Show/Hide and
+    /// Reload buttons; Reload lives in Settings > Get help). A rep who hid it before gets it back.
+    @Published var shown = true
 
     let webView: WKWebView
     private var popups: [NSWindow] = []
@@ -374,15 +372,6 @@ struct AircallPhonePanel: View {
     var body: some View {
         // Two rows, so nothing gets squeezed on a narrow window. Labels and buttons never shrink.
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "phone.circle")
-                Text("Aircall phone").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
-                Spacer(minLength: 8)
-                if phone.shown {
-                    Button("Reload") { phone.reload() }.buttonStyle(BrandQuietButton()).fixedSize()
-                }
-                Button(phone.shown ? "Hide" : "Show") { phone.shown.toggle() }.buttonStyle(BrandQuietButton()).fixedSize()
-            }
             HStack(spacing: 12) {
                 // "Call the next person for me" and "Call each person twice" live in gear > Settings.
                 if !numbers.isEmpty {
