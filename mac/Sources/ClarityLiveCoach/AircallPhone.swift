@@ -368,12 +368,13 @@ struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
     @AppStorage(PrefKey.aircallNumberID) private var numberID = 0
     @State private var numbers: [Aircall.Number] = []
+    @AppStorage(PrefKey.nextDials) private var autoDial = true
+    @AppStorage(PrefKey.doubleTap) private var doubleTap = true
 
     var body: some View {
         // Two rows, so nothing gets squeezed on a narrow window. Labels and buttons never shrink.
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                // "Call the next person for me" and "Call each person twice" live in gear > Settings.
                 if !numbers.isEmpty {
                     Text("Calls go out from").font(.caption).foregroundStyle(.secondary).fixedSize()
                     // The app dials through Aircall's system, so it needs to be told which line to use.
@@ -387,6 +388,19 @@ struct AircallPhonePanel: View {
                 }
                 Spacer(minLength: 0)
             }
+            // The two dialing switches, always in reach (Mason: not buried in Settings).
+            HStack(spacing: 14) {
+                Toggle("Auto dial", isOn: $autoDial)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+                    .help("On: the app calls the next person by itself. Off: you click Call each time.")
+                Toggle("Call twice", isOn: $doubleTap)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+                    .help("On: if they don't pick up, the app calls them one more time right away. Off: one call, then the next person.")
+                Spacer(minLength: 0)
+            }
+            .font(.callout)
         }
         .task { numbers = (try? await Aircall.numbers()) ?? [] }
     }

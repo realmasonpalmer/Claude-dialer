@@ -1264,7 +1264,7 @@ struct HelpView: View {
                     "If they pick up, the plan stops for them.",
                 ])
                 section("6. Settings", [
-                    "Gear, then Settings: turn \"Call the next person for me\" and \"Call each person twice\" on or off.",
+                    "Above the Call button: check Auto dial (the app calls the next person by itself) and Call twice (it tries each person one more time).",
                     "Gear, then Settings, then What's working: see which lines work best.",
                     "Something broken? Gear, then Settings, then Get help, then Send a problem report.",
                 ])
