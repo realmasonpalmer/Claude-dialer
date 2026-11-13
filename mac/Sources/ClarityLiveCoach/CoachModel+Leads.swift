@@ -580,7 +580,7 @@ extension CoachModel {
             // Fill in the card's phone and LinkedIn link now that the page is loaded.
             if var f = self.followUp, f.key == self.recordKey() {
                 if Salesforce.isPlaceholderName(f.prospect ?? ""), let company = self.recordCompany, !company.isEmpty { f.prospect = company }
-                if f.phone.isEmpty { f.phone = Aircall.phone(in: self.recordDetails) ?? SalesforceChrome.mobileNumber() ?? "" }
+                if f.phone.isEmpty, !f.noMobile { f.phone = Aircall.phone(in: self.recordDetails) ?? SalesforceChrome.mobileNumber() ?? "" }
                 if f.linkedinURL == nil { f.linkedinURL = Self.linkedInProfile(details: self.recordDetails) }
                 self.followUp = f
                 self.applyPlan()

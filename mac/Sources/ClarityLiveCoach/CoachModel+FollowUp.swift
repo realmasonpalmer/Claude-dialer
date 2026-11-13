@@ -81,6 +81,22 @@ extension CoachModel {
                             linkedinMessage: earlier?.linkedinMessage ?? "",
                             linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
+        // Their Mobile, straight from Salesforce, so the text number is always filled in. Only an office
+        // Phone (no Mobile): no text at all (texts only ever go to mobiles).
+        if let key, followUp?.textDone != true {
+            Task { [weak self] in
+                let mobile = await Salesforce.mobile(of: key)
+                guard let self, mobile.checked, self.followUp?.key == key, self.followUp?.textDone != true else { return }
+                if let number = mobile.number {
+                    self.followUp?.phone = number
+                    self.followUp?.noMobile = false
+                } else {
+                    self.followUp?.phone = ""
+                    self.followUp?.noMobile = true
+                }
+                self.applyPlan()
+            }
+        }
         // Not on the page yet: read their LinkedIn field from Salesforce, so the card opens the profile.
         if followUp?.linkedinURL == nil, let key {
             Task { [weak self] in
@@ -147,7 +163,8 @@ extension CoachModel {
         }
         if step.textToday {
             let wa = followUp.map { Cadence.isWashington($0.phone) } ?? false
-            if !wa { steps.append(("Text", DialHistory.textedToday(key))) }
+            let noMobile = followUp.map { $0.key == key && $0.noMobile } ?? false
+            if !wa, !noMobile { steps.append(("Text", DialHistory.textedToday(key))) }
         }
         if step.linkedInConnect {
             steps.append(("LinkedIn request", DialHistory.linkedInToday(key)))
@@ -166,8 +183,9 @@ extension CoachModel {
         }
         let step = Cadence.step(for: key)
         let washington = Cadence.isWashington(f.phone)
-        f.textDue = (step?.textToday ?? false) && !washington
+        f.textDue = (step?.textToday ?? false) && !washington && !f.noMobile
         if washington, step?.textToday == true, !f.textDone { f.textStatus = "No text: Washington number (texts need consent there)." }
+        if f.noMobile, step?.textToday == true, !f.textDone { f.textStatus = "No text: no Mobile in Salesforce (texts only go to mobiles, never office lines)." }
         f.linkedInDue = (step?.linkedInConnect ?? false) || (step?.linkedInMessage ?? false)
         f.linkedInMessageFirst = step?.linkedInMessage ?? false
         followUp = f

@@ -517,6 +517,16 @@ enum Salesforce {
         return linkedInURL(record?[field] as? String)
     }
 
+    /// Their Mobile from the Lead or Contact. `checked` is false when Salesforce couldn't be asked
+    /// (not signed in, or an error); then nothing is known either way.
+    static func mobile(of id: String) async -> (checked: Bool, number: String?) {
+        guard isConnected, id.allSatisfy({ $0.isLetter || $0.isNumber }), let object = objectFor(id: id),
+              let records = try? await query("SELECT MobilePhone FROM \(object) WHERE Id = '\(id)'"),
+              let record = records.first else { return (false, nil) }
+        let number = (record["MobilePhone"] as? String)?.trimmingCharacters(in: .whitespaces)
+        return (true, (number?.isEmpty ?? true) ? nil : number)
+    }
+
     /// Opens the record in the browser, for when the rep wants the full page.
     static func recordURL(_ id: String) -> URL? {
         Keychain.read(.sfInstance).flatMap { URL(string: "\($0)/\(id)") }

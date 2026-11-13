@@ -92,6 +92,8 @@ struct FollowUp: Equatable {
     var textDue = false
     var linkedInDue = false
     var linkedInMessageFirst = false // the last call day: a message, not a connection note
+    /// Salesforce has no Mobile for them (only an office Phone): no text, ever.
+    var noMobile = false
 
     /// Everything due today is done.
     /// Connect day: both the note and the message. Last call day: the message.
