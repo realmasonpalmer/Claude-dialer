@@ -139,7 +139,7 @@ struct CampaignEditorView: View {
                 }
                 .buttonStyle(BrandPrimaryButton())
                 .disabled(writing || draft.persona.trimmed.isEmpty)
-                .help("Claude writes the whole script for these people. Takes 2 to 5 minutes. It replaces the script below.")
+                .help("Claude writes the whole script for these people. Takes about 1 to 2 minutes. It replaces the script below.")
                 if writing {
                     Button("Stop") { writeTask?.cancel() }
                         .controlSize(.large)

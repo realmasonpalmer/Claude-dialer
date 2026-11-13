@@ -111,7 +111,7 @@ enum Tour {
         TourStep(spot: .newWho, part: "New call list", title: "3. Say who they are",
                  text: "This fills from Salesforce by itself: their titles, levels, industries and states. Or click Fill from Salesforce. Then add what keeps them up at night."),
         TourStep(spot: .newGenerate, part: "New call list", title: "4. Write the script",
-                 text: "Click Generate script. Claude writes the whole script on Clarity's backbone. It takes 2 to 5 minutes, and you'll see it thinking."),
+                 text: "Click Generate script. Claude writes the whole script on Clarity's backbone. It takes about 1 to 2 minutes, and you'll see it thinking."),
         TourStep(spot: .newScript, part: "New call list", title: "Read it over",
                  text: "Change anything you like. Or paste your own script here instead."),
         TourStep(spot: .newSave, part: "New call list", title: "Save",

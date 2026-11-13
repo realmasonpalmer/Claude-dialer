@@ -238,7 +238,7 @@ struct NewCampaignView: View {
                     }
                     .buttonStyle(BrandPrimaryButton())
                     .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
-                    .help("Claude writes the whole script for these people. Takes 2 to 5 minutes.")
+                    .help("Claude writes the whole script for these people. Takes about 1 to 2 minutes.")
                     if writing {
                         Button("Stop") { writeTask?.cancel() }
                             .controlSize(.large)
@@ -396,11 +396,13 @@ enum ScriptWriter {
             let rows = (try? await Salesforce.fullList(object: v.object, key: v.id)) ?? []
             sample = rows.prefix(40).map { $0.subtitle.isEmpty ? $0.name : $0.subtitle }.joined(separator: "\n")
         }
-        var client = ClaudeClient(apiKey: key) // Opus
-        client.effort = "high" // the best script, not the fastest
+        var client = ClaudeClient(apiKey: key)
+        // Sonnet at medium effort: about a minute or two. Opus at high effort took 5+ minutes.
+        client.model = "claude-sonnet-5-5"
+        client.effort = "medium"
         client.maxTokens = 32000 // a full backbone script is long
         client.idleTimeout = 60
-        client.totalTimeout = 420 // high effort can think for several minutes first
+        client.totalTimeout = 300
         client.thinking = ["type": "adaptive", "display": "summarized"] // so the rep sees it working
         let year = Calendar.current.component(.year, from: Date())
         let system = """
