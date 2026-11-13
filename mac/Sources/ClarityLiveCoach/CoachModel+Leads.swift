@@ -468,7 +468,8 @@ extension CoachModel {
         syncRecord() // make sure the script and voicemail are for this person
         // The Aircall phone inside the coach (or the desktop app): dial through the API.
         if AircallPhone.isOn || Aircall.canPlaceCalls {
-            guard let mobile = SalesforceChrome.dialNumber() else {
+            // Salesforce's own fields first (Mobile, then Phone); the page only if they weren't read yet.
+            guard let mobile = recordKey().flatMap({ KnownNumbers.dialNumber(for: $0) }) ?? SalesforceChrome.dialNumber() else {
                 ActivityLog.add("Dial: no Mobile or Phone found on the page for \(calling ?? "?")")
                 return false
             }

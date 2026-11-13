@@ -517,15 +517,37 @@ enum Salesforce {
         return linkedInURL(record?[field] as? String)
     }
 
-    /// Their Mobile from the Lead or Contact. `checked` is false when Salesforce couldn't be asked
-    /// (not signed in, or an error); then nothing is known either way.
-    static func mobile(of id: String) async -> (checked: Bool, number: String?) {
+    /// Their Mobile and Phone from the Lead or Contact. `checked` is false when Salesforce couldn't be
+    /// asked (not signed in, or an error); then nothing is known either way.
+    static func numbers(of id: String) async -> (checked: Bool, mobile: String?, phone: String?) {
         guard isConnected, id.allSatisfy({ $0.isLetter || $0.isNumber }), let object = objectFor(id: id),
-              let records = try? await query("SELECT MobilePhone FROM \(object) WHERE Id = '\(id)'"),
-              let record = records.first else { return (false, nil) }
-        let number = (record["MobilePhone"] as? String)?.trimmingCharacters(in: .whitespaces)
-        return (true, (number?.isEmpty ?? true) ? nil : number)
+              let records = try? await query("SELECT MobilePhone, Phone FROM \(object) WHERE Id = '\(id)'"),
+              let record = records.first else { return (false, nil, nil) }
+        func clean(_ v: Any?) -> String? {
+            let s = (v as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            return s.isEmpty ? nil : s
+        }
+        return (true, clean(record["MobilePhone"]), clean(record["Phone"]))
     }
+}
+
+/// Mobile and Phone from Salesforce for people opened since the app started, so calls use the real
+/// fields (Mobile first, Phone only when there's no Mobile), not whatever the page happened to show.
+@MainActor
+enum KnownNumbers {
+    private static var all: [String: (mobile: String?, phone: String?)] = [:]
+
+    static func set(_ id: String, mobile: String?, phone: String?) {
+        all[String(id.prefix(15))] = (mobile, phone)
+    }
+
+    /// The number to call: Mobile first, then Phone. nil = not looked up yet.
+    static func dialNumber(for id: String) -> String? {
+        all[String(id.prefix(15))].flatMap { $0.mobile ?? $0.phone }
+    }
+}
+
+extension Salesforce {
 
     /// Opens the record in the browser, for when the rep wants the full page.
     static func recordURL(_ id: String) -> URL? {

@@ -83,11 +83,13 @@ extension CoachModel {
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
         // Their Mobile, straight from Salesforce, so the text number is always filled in. Only an office
         // Phone (no Mobile): no text at all (texts only ever go to mobiles).
-        if let key, followUp?.textDone != true {
+        if let key {
             Task { [weak self] in
-                let mobile = await Salesforce.mobile(of: key)
-                guard let self, mobile.checked, self.followUp?.key == key, self.followUp?.textDone != true else { return }
-                if let number = mobile.number {
+                let numbers = await Salesforce.numbers(of: key)
+                guard numbers.checked else { return }
+                KnownNumbers.set(key, mobile: numbers.mobile, phone: numbers.phone) // calls use these (Mobile first)
+                guard let self, self.followUp?.key == key, self.followUp?.textDone != true else { return }
+                if let number = numbers.mobile {
                     self.followUp?.phone = number
                     self.followUp?.noMobile = false
                 } else {
