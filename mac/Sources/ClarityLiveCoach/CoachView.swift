@@ -8,6 +8,8 @@ struct RootView: View {
     @EnvironmentObject var proof: ProofModel
     @EnvironmentObject var coach: CoachModel
     @AppStorage(PrefKey.audioCheckPassed) private var audioCheckPassed = false
+    /// Skipped on a first run: don't show the audio check again at every launch (Set up still lists it).
+    @AppStorage(PrefKey.audioCheckSkipped) private var audioCheckSkipped = false
     private let appPhone = true // always: the Aircall phone is inside the coach
     @ObservedObject private var phone = AircallPhone.shared
     @State private var screen: Screen?
@@ -23,7 +25,7 @@ struct RootView: View {
                         screen = hasKeys ? .coach : .keys
                     }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil,
                        // Never trap a new rep here: they can finish it later from Set up.
-                       onSkip: { proof.testAgain(); screen = .coach })
+                       onSkip: { audioCheckSkipped = true; proof.testAgain(); screen = .coach })
                     .frame(width: 380)
                     .onAppear { proof.onAppear() }
                     if appPhone { AircallPhoneSide() }
@@ -50,7 +52,7 @@ struct RootView: View {
     }
 
     private var hasKeys: Bool { Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil }
-    private var firstScreen: Screen { !audioCheckPassed ? .check : (hasKeys ? .coach : .keys) }
+    private var firstScreen: Screen { !audioCheckPassed && !audioCheckSkipped ? .check : (hasKeys || audioCheckSkipped ? .coach : .keys) }
 }
 
 // MARK: - Keys

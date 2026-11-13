@@ -15,6 +15,7 @@ enum PrefKey {
     static let aircallUserID = "aircallUserID"
     static let appPhone = "appPhone"
     static let audioCheckPassed = "audioCheckPassed"
+    static let audioCheckSkipped = "audioCheckSkipped"
     static let backboneCampaignAdded = "backboneCampaignAdded"
     static let bookingCalendars = "bookingCalendars"
     static let bookingEndHour = "bookingEndHour"
