@@ -296,6 +296,7 @@ struct CoachView: View {
             coach.use(campaigns.selected)
             coach.activate(true)
             syncScriptToList()
+            openListAtLaunch()
         }
         .task {
             // Look for a new version now and every 2 minutes, so the Update button shows up on its own.
@@ -586,6 +587,20 @@ struct CoachView: View {
         guard !origin.isEmpty else { return }
         _ = SalesforceChrome.open("\(origin)/lightning/o/\(campaign.listObject)/list?filterName=\(campaign.listViewID)")
         ActivityLog.add("Campaign: \(campaign.name), list \(campaign.listName)")
+    }
+
+    /// App just opened and Chrome has no Salesforce tab: open this call list's Salesforce list there,
+    /// so the rep can start calling without finding it by hand.
+    private func openListAtLaunch() {
+        let c = campaigns.selected
+        guard !c.listViewID.isEmpty, !c.listObject.isEmpty, let origin = Keychain.read(.sfInstance), !origin.isEmpty,
+              let url = URL(string: "\(origin)/lightning/o/\(c.listObject)/list?filterName=\(c.listViewID)"),
+              let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard SalesforceChrome.url(live: true) == nil else { return } // a Salesforce tab is already open
+            NSWorkspace.shared.open([url], withApplicationAt: chrome, configuration: NSWorkspace.OpenConfiguration())
+            ActivityLog.add("Opened \(c.listName.isEmpty ? "the call list" : c.listName) in Chrome (no Salesforce tab was open)")
+        }
     }
 
     /// The campaign after this one that has a list (the next list to work today).
@@ -1329,9 +1344,11 @@ struct FollowUpCard: View {
                 // LinkedIn, only on the plan's LinkedIn days. First touch (connect day): both the
                 // connection note and the message, so neither waits on whether they're connected.
                 // The plan's last call day: just the message.
-                if f.linkedInDue || f.linkedinDone || f.linkedinMessageDone {
+                // Always shown, so the rep never hunts for them. The plan only asks for them on some
+                // days; on other days they're marked "extra".
+                Group {
                     if !f.linkedInMessageFirst || f.linkedinDone {
-                        row(done: f.linkedinDone, title: "LinkedIn connection note", message: f.linkedin) {
+                        row(done: f.linkedinDone, title: "LinkedIn connection note" + (f.linkedInDue ? "" : " (extra today)"), message: f.linkedin) {
                             if f.linkedinDone {
                                 Button("Open again") { onLinkedIn() }.buttonStyle(.link)
                             } else {
@@ -1346,7 +1363,7 @@ struct FollowUpCard: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    row(done: f.linkedinMessageDone, title: "LinkedIn message", message: f.linkedinMessage) {
+                    row(done: f.linkedinMessageDone, title: "LinkedIn message" + (f.linkedInDue ? "" : " (extra today)"), message: f.linkedinMessage) {
                         if f.linkedinMessageDone {
                             Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
                         } else {
@@ -1362,8 +1379,9 @@ struct FollowUpCard: View {
                 }
 
                 // Text: only on the plan's text day (the 2nd call day), never to Washington numbers.
-                if f.textDue || f.textDone {
-                row(done: f.textDone, title: "Text", message: f.text,
+                // Never to Washington numbers (consent law), never without a Mobile.
+                if f.textDue || f.textDone || (!f.noMobile && !Cadence.isWashington(f.phone)) {
+                row(done: f.textDone, title: "Text" + (f.textDue || f.textDone ? "" : " (extra today)"), message: f.text,
                     editable: !f.textDone && !f.text.isEmpty ? textBinding : nil) {
                     if f.textDone {
                         Label("Sent", systemImage: "checkmark").foregroundStyle(.green)
@@ -1392,7 +1410,7 @@ struct FollowUpCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !f.textDue && !f.textDone && !f.linkedInDue {
-                    Text("Nothing to send today. Texts go out on days 1, 2 and 16. The LinkedIn note goes out on day 1.")
+                    Text("The plan asks for nothing today. Send an extra only if it helps.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

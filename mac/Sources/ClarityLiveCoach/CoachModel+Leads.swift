@@ -535,6 +535,18 @@ extension CoachModel {
                 ActivityLog.problem("Next: page for \(id ?? "?") didn't open in 8 s")
                 return
             }
+            // The page shows no number. Salesforce itself may still have one (the field isn't on this
+            // page layout, or the page was slow): ask it before skipping anyone.
+            if let key = id ?? self.recordKey() {
+                let numbers = await Salesforce.numbers(of: key)
+                guard !Task.isCancelled, self.status == .ready else { return }
+                if numbers.checked, numbers.mobile != nil || numbers.phone != nil {
+                    KnownNumbers.set(key, mobile: numbers.mobile, phone: numbers.phone)
+                    self.noMobileSkips = 0
+                    self.callWhenReady(countdown: countdown) { [weak self] in self?.callMessage = "Couldn't start the call. Click Call." }
+                    return
+                }
+            }
             // No Mobile or Phone: nothing to call. Skip to the next person (up to 20 in a row).
             ActivityLog.add("Next: no Mobile or Phone for \(self.calling ?? "?"), skipping and removing from the list")
             if let key = id ?? self.recordKey() { RemovedList.add(key); self.callList.refreshUpNext() }
