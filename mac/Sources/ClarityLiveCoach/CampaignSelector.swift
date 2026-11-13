@@ -268,7 +268,7 @@ struct NewCampaignView: View {
     }
 }
 
-/// Writes a cold call script in the backbone format (`ColdCallBackbone`). The rep's "who is this for"
+/// Writes a cold call script for one call segment on the `ScriptSkeleton`. The rep's description
 /// leads; titles and companies from the Salesforce list are only a backup hint. Used by New Campaign
 /// and Edit Campaign.
 enum ScriptWriter {
@@ -309,48 +309,55 @@ enum ScriptWriter {
         client.idleTimeout = 60
         client.totalTimeout = 420 // high effort can think for several minutes first
         client.thinking = ["type": "adaptive", "display": "summarized"] // so the rep sees it working
+        let year = Calendar.current.component(.year, from: Date())
         let system = """
-        You are the best cold call script writer working today. You write for Clarity Consulting, a boutique
-        Salesforce partner and Anthropic Claude partner. A live call coach app reads your script during the call:
-        it tracks state, walks the pick order, matches what the prospect says to a row's "Sounds like", and shows
-        that row's "Say" line word for word. So the script must be complete and in the backbone's exact format.
+        You are a world-class cold call script writer, using the best \(year) cold calling techniques, openers
+        and talk tracks. You write for Clarity Consulting, a boutique Salesforce partner and Anthropic Claude
+        partner in Portland, Oregon. A live call coach app reads your script during the call: it tracks state,
+        walks the pick order, matches what the prospect says to a row's "Sounds like", and shows that row's "Say"
+        line word for word. So the script must be complete and follow the skeleton below exactly.
 
-        Before writing, think hard about this call segment, from what the rep wrote: their top pains (in their own
-        words), what they want this year, what they're proud of and afraid of, their day, their busy seasons,
-        what triggers them to look for help, who else they answer to, and the brush-offs they use on every
-        cold caller. Every line of the script comes from that picture. A generic line is a failed line.
+        Every call segment is different. A tax firm, a law firm, a sales team and a manufacturer have different
+        pains, words, busy seasons, tools, goals and brush-offs, so the reason, the question, discovery, the
+        objections, voicemails, texts and LinkedIn notes are all written fresh for this segment. Never reuse a
+        generic pitch. Before writing, think hard about this segment from the rep's description: their top pains
+        in their own words, what they want this year, what they're proud of and afraid of, their day and busy
+        seasons, what makes them look for help, who else they answer to, the tools they use, and the brush-offs
+        they give every cold caller.
 
-        How great cold calls work now (use all of it):
+        The one thing that's the same for every segment: the ask is a free 45 minute health check with Oliver,
+        our managing partner. Pick the kind that fits this segment's problem: a CRM health check (data, pipeline,
+        Salesforce or another CRM) or an AI health check (hours lost to manual work, AI use). Use that name
+        everywhere the skeleton says [CRM or AI].
+
+        How great cold calls work in \(year):
         - Opener: honest and calm. Say it's a cold call or give the reason right away, then ask for 30 seconds.
           Never "how are you", never "did I catch you at a bad time".
-        - Reason: one problem people like them have, in their words, framed as what peers deal with. Not the
-          product. End with a question: is that true for them?
-        - Discovery: one short question at a time, branching on their answer. Get the problem, who it hits and
-          what it costs them, in their words. Don't over-discover: ask for the meeting once a problem is named.
-        - Objections: plan for the 12 to 15 brush-offs this segment really uses. Each answer: a few words of
-          agreement, then one curious question. Never argue. Respect a second firm no.
-        - The ask: small, specific, low risk. Two real times. A free health check with Oliver, our managing partner.
+        - Reason: one problem people like them have, in their words, framed as what peers deal with. Not the product.
+        - The question: one question that sorts them into 2 to 4 tracks, so discovery fits where they are.
+        - Discovery: one short question at a time, branching on their answer. Get the task or problem, who it hits
+          and what it costs, in their words. At most 3 questions before playing it back.
+        - Play it back in their words and get a yes before asking for the meeting.
+        - Objections: a few words of agreement, then one curious question. Never argue. Respect a second firm no.
+        - The ask: small, specific, low risk, with two real times.
         - Gatekeepers: sound expected, ask for help, never pitch them.
-        - Voicemail under 20 seconds, texts and LinkedIn notes in the same voice, each one a new angle.
-        - Sound like a sharp, friendly person from their world. Short words, contractions, no jargon, no hype.
+        - Voicemail under 20 seconds; texts and LinkedIn notes in the same voice, each a new angle.
+        - Sound like a sharp, calm peer from their world. Short words, contractions, no jargon, no hype.
 
-        Format: match the backbone below exactly: the same sections in the same order (OUTPUT RULES, BANNED
-        WORDS AND CLAIMS, TRANSCRIPT NOISE, FACTS, STATE TO TRACK, PICK ORDER, GLOBAL TRIGGERS, S1 to S8,
-        OBJECTIONS, VOICEMAIL, AFTER THE CALL), the same row ID style, table columns separated by tabs, and at
-        least as many rows per section. Keep OUTPUT RULES, BANNED WORDS AND CLAIMS, STATE TO TRACK and PICK ORDER
-        as written. Add words this segment uses to TRANSCRIPT NOISE if speech-to-text could mishear them.
+        Rules:
+        - Follow the skeleton exactly: every section, in order, with the same titles and table columns
+          separated by tabs. Copy the sections it says to copy. Replace every note in (parentheses) with real
+          content for this segment. Use row IDs in the same style (G1, S1 open, S5 ns 1, Q1, O1, VM1, T1, L1).
+        - Every Say line: 25 words at most, ends with a question unless it ends the call, plain spoken English
+          a 5th grader could read, no em dashes. Outcome first (time back, more selling, less risk), then the
+          problem, then the fix. Technology last.
+        - Facts: only the FACTS section. Never invent a number, stat, client name, result, price or offer. If the
+          rep's description gives a real proof point, you may use it exactly as written.
+        - Use [slots] like [Name], [Firm], [SDR], [Day], [Time], [Number]. Use [Name] for the prospect, never he or she.
+        - Return only the script as plain text. No markdown, no notes before or after.
 
-        Rules for every Say line: 25 words at most, ends with a question unless it ends the call, plain spoken
-        English a 5th grader could read, no em dashes. Outcome first (time back, more selling, less risk), then
-        the problem, then the fix. Technology last.
-        Facts: only the FACTS section. Never invent a number, client name, result, price or offer. The real proof
-        point is a tax firm of ten that got back about 2,000 hours a year; say it as it is.
-        Use [slots] like [Name], [Firm], [SDR], [Day], [Time], [Number] the way the backbone does.
-        Use [Name] for the prospect, never he or she.
-        Return only the script as plain text. No markdown, no notes before or after.
-
-        BACKBONE:
-        \(ColdCallBackbone.text)
+        SKELETON:
+        \(ScriptSkeleton.text)
         """
         let user = """
         Write the script for this call segment.

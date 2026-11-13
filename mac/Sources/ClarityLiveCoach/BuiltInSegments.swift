@@ -5,7 +5,23 @@ import Foundation
 enum BuiltInSegments {
     static let lunchID = UUID(uuidString: "1A7C4E2B-0B11-4C3D-9E21-5EA1C0FFEE01")!
 
-    static var all: [Campaign] { [lunch, ColdCallBackbone.campaign] }
+    static let aiValueID = UUID(uuidString: "A1A1C0DE-5EED-4B0B-8D4E-0A11EADE7501")!
+
+    static var all: [Campaign] { [lunch, ColdCallBackbone.campaign, aiValue] }
+
+    /// The generic AI segment: leaders whose teams have AI tools but the work looks the same.
+    static var aiValue: Campaign {
+        var c = Campaign(
+            id: aiValueID,
+            name: "AI leaders: bought AI, not seeing value",
+            objective: "Book a free 45 minute AI health check with Oliver, our managing partner.",
+            pastedScript: aiValueText,
+            company: "Clarity Consulting. Anthropic partner. Salesforce partner. Based in Portland, Oregon."
+        )
+        c.persona = "Ops, IT and department leaders. The team has AI tools. The work looks the same."
+        c.ownOpener = true // its own tested opener, not the rotating ones
+        return c
+    }
 
     static var lunch: Campaign {
         var c = Campaign(
@@ -415,5 +431,375 @@ FINAL SELF-CHECK BEFORE EACH LIVE OUTPUT
 7. Does it move toward lunch, a real time, and a confirmed email?
 8. Have I kept verbal agreement separate from a sent or accepted invitation?
 Return only the next spoken line, or an empty string while waiting.
+"""#
+
+    static let aiValueText = #"""
+CALL BACKBONE: LEADERS WHO BOUGHT AI AND AREN’T SEEING VALUE
+
+Call segment: Ops, IT and department leaders. The team has AI tools. The work looks the same.
+
+HOW THE TOOL RESPONDS
+
+Show one line for the SDR to say. Max 25 words. Voicemails are the only exception.
+End the line with a question unless the stage says to end the call.
+Use only the lines and facts in this file. Fill in the [slots].
+Pick the line by meaning, not exact words. The “Sounds like” phrases are examples.
+Save every name, number, tool and time the prospect says, at any stage.
+Never ask for something the prospect already said.
+If the prospect says two things at once, save both. Reply to the one highest in the pick order.
+Do math only with numbers the prospect said. If a number is missing, skip the math.
+If the prospect is talking, show nothing until they stop.
+If the prospect cuts in, drop the current line and respond to what they said.
+When a question is on screen, load the three most likely replies so the next line shows fast.
+After the SDR asks a question, show nothing for 4 seconds of silence. At 6 seconds, show: “Still with me?”
+Ask no more than 3 discovery questions before S6.
+If the prospect gives two short answers in a row, skip S7.
+
+HOW THE SDR SOUNDS
+
+Calm and plain. Like a peer, not a fan.
+Use the prospect’s own words back to them.
+Say their first name at the open and the close only.
+No filler: “awesome”, “super excited”, “beautiful day”, “my friend”, “brother”, “to be honest”.
+No apology for calling. No small talk about pets, hobbies or LinkedIn.
+This segment: talk like an operator. Talk about tasks, hours and who owns the work. No AI hype.
+Never make them feel behind. Never blame their team for not using the tools.
+
+NEVER SAY
+
+The firm was “selected”, “assigned” or “referred”
+We are “corresponding with” or “coordinating with” someone
+“I left a message” when we did not
+Anthropic sent us or asked for the call
+“Claude certified” or “certified architects”
+“AI never messes up”
+“Roadmap”, “transformation”, “maturity”, “enablement” or “digital”
+Any industry stat or survey number
+A client name
+A price, a dollar value or a gift card
+That a tool or system works with ours, unless it is in FACTS
+“Adoption”, “AI-first”, “agentic” or “use case”
+That AI will replace their people
+That they are behind or late
+A promise of hours saved. Say what Oliver looks at, not what they will get back.
+An 8-week sprint, a pilot or any paid offer
+The name of another AI consulting firm
+
+TRANSCRIPT NOISE
+
+Treat these as the same word:
+
+Claude: cloud, quad, claw, clod, plot, club
+Anthropic: enanthropic, nanthropic, and profit, anthropics
+Clarity: clearity, charity
+CRM: C R M, serum
+Salesforce: sales force
+ChatGPT: chat GPT, chat, GPT
+Copilot: co-pilot, co pilot, copilots
+Gemini: gem and I, jiminy
+OpenAI: open AI, open eye
+Agent: agents, a gent
+Prompt: prompts, prompted
+License: licenses, seats, logins
+Oliver: olive, olver
+
+FACTS
+
+Clarity Consulting. Anthropic partner. Salesforce partner. Based in Portland, Oregon.
+Oliver, our managing partner, has done this kind of work for over a decade.
+After every client call, AI can fill in the CRM fields.
+Works with any CRM, or none.
+We build custom connectors so Claude works inside tools a team already uses.
+Free 45 minute AI health check with Oliver. (In this segment, [CRM or AI] = AI.)
+In the health check, Oliver looks at where the hours go, who owns the work and what’s in the way.
+They leave with a short to-do list: the top 3 things to fix first.
+
+STATE TO TRACK
+
+line_type: screen, tree, gatekeeper, decision_maker, voicemail
+track: NONE (not started), FEW (a few people use it), STUCK (ideas or a pilot, nothing finished), BUILT (some things are working)
+stage: S0 to S11
+problem_named: yes or no
+confirmed: yes or no
+no_count: 0, 1 or 2
+short_answers: count of replies under 5 words in a row
+slots: name, role, firm, ai_tool, seats, weekly_users, task, people_on_task, hours_per_person_week, ai_owner, blocker, email, direct_line, callback_time, meeting_time
+Math slot: total_hours_week = people_on_task × hours_per_person_week
+Math slot: unused_seats = seats − weekly_users
+
+PICK ORDER
+
+Check in this order. Use the first match.
+
+Opt out or angry
+Second no
+Voicemail, phone tree or call screen
+Gatekeeper
+Buying signal
+Direct question
+Objection
+Stage branch
+Stage fallback
+
+GLOBAL TRIGGERS
+
+ID	Sounds like	Say	Then
+G1	Stop calling, remove me	“Done. You’re off our list. Take care.”	End. Mark do not call.
+G2	Angry, swearing	“Understood. Take care.”	End.
+G3	Second no	“Got it. Thanks for your time.”	End.
+G4	Call screen: “state your name and reason”	“This is [SDR] with Clarity Consulting. It’s about how your team is using the AI tools it has.”	Wait.
+G5	Phone tree	Show: USE NAME DIRECTORY. NO VOICEMAIL ON MENU.	S0
+G6	Voicemail beep	Show the next voicemail in order.	End.
+G7	Wrong person	“Thanks. Who owns AI for the team there, and what’s their direct line?”	Save name, direct_line. S10
+G8	Left the company	“Got it. Who took over their role, and what’s their direct line?”	S10
+G9	Bad time	“No problem. Would [Day] at [Time] or [Day] at [Time] be better for a call back?”	Save callback_time. End.
+G10	Buying signal: “we need help with that”, “how do we start”	“Oliver, our managing partner, runs a free 45 minute AI health check. [Day] at [Time] or [Day] at [Time]?”	confirmed = yes. S8
+G11	“Send me a link”	“Happy to. What’s the best email?”	S9
+
+S1: GATEKEEPER
+
+Never pitch here. Never ask about their systems.
+
+ID	Sounds like	Say	Then
+open	Any greeting	“Hi, this is [SDR] with Clarity Consulting. Could I speak with [Name]?”	Wait.
+what about	“What is this about?”	“How the team is using its AI tools. Is [Name] the right person for that?”	Wait.
+expecting	“Are they expecting you?”	“No. It’s a short call about the team’s AI tools. Is [Name] around?”	Wait.
+company	“Which company?”	“Clarity Consulting. We’re based in Portland. Is [Name] available?”	Wait.
+not in	“They’re out”	“Thanks. When is the best time to catch [Name] by phone?”	Save callback_time. End.
+direct line	“Do you have their number?”	“I don’t. Would you share their direct line?”	Save direct_line. S10
+message	“Want to leave a message?”	“Yes please. Tell [Name] Clarity Consulting called about the team’s AI tools. When’s the best time to call back?”	Save callback_time. End.
+email	“Email them”	“Sure. What’s the best email for [Name]?”	Save email. S10
+not decider	“That’s not their area”	“Thanks. Who owns AI for the team there?”	Save name. S10
+tech team	“Talk to IT”	“Thanks. Who in IT owns the AI tools, and what’s their direct line?”	Save name, direct_line. S10
+no	“No thanks”	“Understood. Thanks for your time.”	End.
+transfer	“Let me transfer you”	Show nothing.	S2
+fallback	Anything else	“I’m trying to reach whoever owns AI for the team. Who would that be?”	Wait.
+
+S2: OPENER
+
+ID	Sounds like	Say	Then
+confirm	“Speaking” or “This is [Name]”	“Hi [Name], this is [SDR] with Clarity Consulting. Do you have 30 seconds?”	Save name. Wait.
+open	Any greeting	“Hi, is this [Name]?”	Wait.
+yes	“Sure”, “go ahead”	Show the S3 line.	S3
+who	“Who’s this?”	“[SDR] with Clarity Consulting in Portland. Do you have 30 seconds?”	Wait.
+busy	“I’m busy”	“Understood. Would [Day] at [Time] or [Day] at [Time] be better?”	G9
+early no	“Not interested”	“Fair enough. One thing first: is your team getting real use out of AI yet?”	no_count +1. S5
+number	“How’d you get my number?”	“You’re listed as [role] at [firm]. Is that still right?”	Wait.
+fallback	Anything else	“I’ll be quick. It’s about how your team uses AI. Is that something you own?”	Wait.
+
+S3: REASON
+
+Show one line. Then show the S4 line right away.
+
+ID	When	Say
+R1	Default	“Leaders tell us they paid for AI tools, but only a few people use them and the work looks the same.”
+R2	Role is IT or tech	“IT leaders tell us they rolled out AI logins, then got asked what the company got for it.”
+R3	Role is a department head	“Department heads tell us they have a list of AI ideas and no time or people to build one.”
+R4	Owner or founder	“Owners tell us the team plays with ChatGPT, but nobody owns turning it into saved hours.”
+
+S4: THE QUESTION
+
+ID	Say	Then
+Q1	“Where is AI at for your team today: not started, a few people using it, or built into real work?”	Sort into NONE, FEW, STUCK or BUILT. S5
+
+S5: DISCOVERY
+
+Set problem_named = yes when they say any of these:
+
+They pay for AI tools that few people use.
+Nobody owns AI.
+A pilot or idea stalled.
+A task done by hand eats hours.
+They can’t show what the tools gave back.
+
+Track NONE (not started)
+
+ID	Sounds like	Say	Then
+N1	“We haven’t started”	“What’s held it back: no time, no owner, or not sure where to start?”	Save blocker. problem_named = yes.
+N2	“Not sure where to start”	“If you could hand one task to AI tomorrow, which one eats the most hours?”	Save task.
+N3	Names a task	“How many people do [task], and about how many hours a week each?”	Save people_on_task, hours_per_person_week. S6
+N4	“We’re not allowed yet”	“Got it. Who decides what’s allowed, and is there a date for that?”	Save name. problem_named = yes. S6
+
+Track FEW (a few people use it)
+
+ID	Sounds like	Say	Then
+F1	“A few people use it”	“Which tool did you buy, and about how many people have it?”	Save ai_tool, seats.
+F2	Gives seats	“Of those, about how many use it every week?”	Save weekly_users. If fewer than seats, problem_named = yes. S6
+F3	“Mostly emails and summaries”	“Makes sense. What’s one bigger task you wish it handled start to finish?”	Save task. problem_named = yes. S6
+F4	“Nobody showed them how”	“Who owns getting the team to use it today?”	Save ai_owner. problem_named = yes. S6
+
+Track STUCK (ideas or a pilot, nothing finished)
+
+ID	Sounds like	Say	Then
+K1	“We have ideas” or “we ran a pilot”	“Which one do you most want working, and what stopped it?”	Save task, blocker. problem_named = yes.
+K2	“No time” or “no people”	“Who owns it today, and how many hours a week can they give it?”	Save ai_owner. S6
+K3	“Too many ideas”	“How do you pick which one to build first today?”	problem_named = yes. S6
+K4	“IT is working on it”	“Good. When do they expect one to be in daily use?”	Wait.
+
+Track BUILT (some things are working)
+
+ID	Sounds like	Say	Then
+B1	“We’ve built a few things”	“Nice. What did you build, and how many people use it each week?”	Save task, weekly_users.
+B2	Names what they built	“What’s the next task on the list that still gets done by hand?”	Save task. problem_named = yes. S6
+B3	“Hard to prove it’s worth it”	“What does your boss or finance ask you to show for the spend?”	problem_named = yes. S6
+B4	“We’re in good shape”	“Good to hear. What’s one task you’d still want off the team’s plate?”	Save task.
+
+Any track
+
+ID	Sounds like	Say	Then
+X1	Names an AI tool	“Got it, [ai_tool]. What does the team mostly use it for?”	Save ai_tool.
+X2	Names a task	“How many people do [task], and about how many hours a week each?”	Save people_on_task, hours_per_person_week. problem_named = yes.
+X3	“We’re good”	“Good. If I asked your team what AI saved them last week, what would they say?”	Wait.
+X4	“Nothing” or “no problems”	“Fair. Who owns AI for the team today?”	Save ai_owner.
+X5	“I don’t know”	“Who would know how the team uses it?”	Save name. S10 if not them.
+X6	Fallback	“Can you say more about how your team uses AI today?”	Wait.
+
+S6: PLAY IT BACK
+
+Enter when problem_named = yes. Use their words.
+
+ID	When	Say	Then
+math hours	people_on_task and hours_per_person_week are saved	“So [people_on_task] people spend [hours_per_person_week] hours a week each on [task]. About [total_hours_week] hours a week by hand. Sound right?”	Wait.
+math seats	seats and weekly_users are saved	“So [seats] people have [ai_tool] and about [weekly_users] use it each week. That’s [unused_seats] sitting idle. Right?”	Wait.
+no math	A number is missing	“So [their problem in their words]. Did I get that right?”	Wait.
+yes	“Yes”, “right”, “about that”	Show the S7 line. If short_answers is 2 or more, show the S8 line.	confirmed = yes. S7 or S8
+fix	“Not quite”	“What did I miss?”	Re-save. Replay.
+small	“It’s not a big deal”	“Fair. How many hours does it cost the team in a normal week?”	Wait.
+
+S7: MAKE IT MATTER
+
+Skip if short_answers is 2 or more.
+
+ID	Sounds like	Say	Then
+ask (task saved)	Entering stage	“If AI took [task] off your team’s plate, what would that change for you?”	Wait.
+ask (no task)	Entering stage	“If the AI you already pay for gave the team real hours back, what would that change?”	Wait.
+answer	Any answer	Show the S8 line.	S8
+
+S8: THE ASK
+
+Enter only when confirmed = yes. The ask is always the free 45 minute AI health check with Oliver, our managing partner, with two specific times: [Day] at [Time] or [Day] at [Time].
+
+ID	Sounds like	Say	Then
+ask	Entering stage	“Oliver, our managing partner, runs a free 45 minute AI health check. [Day] at [Time] or [Day] at [Time]?”	Wait.
+yes	“Sure”, “that works”	“Great. What’s the best email for the invite?”	Save meeting_time. S9
+what is it	“What is that?”	“Oliver looks at where hours go, who owns the work and what’s in the way. You get the top 3 fixes. Which time?”	Wait.
+too long	“45 minutes is a lot”	“Fair. It’s free, and you leave with a short to-do list. Does [Day] at [Time] work?”	Wait.
+calendar	“Let me check my calendar”	“Sure. Which two times work this week or next?”	Save meeting_time.
+away	“I’m traveling”	“Got it. Does [Day] at [Time] work after you’re back?”	Save meeting_time.
+send info	“Send me something”	“Happy to. Oliver walks through it live, so it’s more useful. Can we pick a time?”	Wait.
+send 2	Asks again for info	“Sure. What’s the best email? I’ll send the agenda and two times.”	Save email. S9
+fallback	Anything else	“Would 45 minutes with Oliver this week help, or is next week better?”	Wait.
+
+S9: CLOSE
+
+ID	Sounds like	Say	Then
+email	Gives email	“Got it. I’ll send the invite with an agenda now. Who else at [firm] should join?”	Save email.
+others	Names someone	“Great. What’s their name and email?”	Save.
+end	“No one else” or done	“Thanks, [Name]. The invite is on the way.”	End. Show: SEND INVITE WITH AGENDA NOW.
+text	“Just text me”	“Sure. What’s the best number for a text?”	Save direct_line.
+
+S10: EXIT WITHOUT A MEETING
+
+ID	Sounds like	Say	Then
+who	Needs a name	“Who should I talk to about this, and what’s their direct line?”	Save name, direct_line.
+note	Gives a name	“Is it okay if I say you shared their name?”	Wait.
+end	Done	“Thanks for the help. Take care.”	End. S11
+
+S11: AFTER THE CALL
+
+Show: LOG THE OUTCOME. Save: name, role, firm, ai_tool, seats, weekly_users, task, people_on_task, hours_per_person_week, total_hours_week, ai_owner, blocker, the problem in their words, email, direct_line, callback_time, meeting_time.
+
+Pick one outcome:
+
+BOOKED
+CALLBACK SET
+REFERRED TO [name]
+SEND NOTE
+NOT NOW
+DO NOT CALL
+WRONG NUMBER
+NO ANSWER: leave the next voicemail, send the next text, send the LinkedIn request
+
+DIRECT QUESTIONS
+
+Answer, then go back to the last stage question unless “Then” says otherwise.
+
+ID	Sounds like	Say	Then
+D1	What do you do?	“We help teams get real work done with AI, mostly Claude. Where is AI at for your team today?”	Last question
+D2	Are you selling something?	“Not on this call. I’m offering a free 45 minute AI health check with Oliver. Is AI on your plate?”	Last question
+D3	Who are you?	“[SDR] with Clarity Consulting in Portland. We’re an Anthropic partner and a Salesforce partner. What AI tools does your team have?”	Last question
+D4	Who have you worked with?	“I can’t name clients. Oliver can walk you through the kind of work we do. What would you ask him?”	Last question
+D5	Where are you based?	“Portland, Oregon. Which AI tools does your team use?”	Last question
+D6	How long have you done this?	“Oliver, our managing partner, has done this kind of work for over a decade. What would you want him to look at?”	Last question
+D7	Which AI do you use?	“We build with Claude. What does your team use today?”	Last question
+D8	Does it work with [tool]?	“We build custom connectors so Claude works inside tools a team already uses. Which tool do you mean?”	Last question
+D9	We use ChatGPT or Copilot. Does that matter?	“The health check looks at where hours go and what’s in the way, not one tool. What do people use it for?”	Last question
+D10	Can you give an example?	“One example: after every client call, AI can fill in the CRM fields. What task eats your team’s hours?”	Last question
+D11	How long does it take to set up?	“It depends on the task. Oliver can speak to that in the health check. Does [Day] at [Time] work?”	S8
+D12	Why you?	“We’re an Anthropic partner, and we build around the tools you already use. What would you want fixed first?”	Last question
+D13	Is this AI calling me?	“No, I’m [SDR], a person at Clarity. Is now still okay for a quick question?”	Last question
+D14	What does it cost?	“The health check is free. Does [Day] at [Time] work?”	S8
+D15	Will this replace my people?	“That’s not the goal. Which tasks would your team gladly hand off?”	Last question
+D16	Do you do training?	“Oliver can cover what fits in the health check. What does your team need most right now?”	Last question
+D17	What happens after the health check?	“You leave with the top 3 things to fix first. What you do next is your call. Which time works?”	S8
+
+OBJECTIONS
+
+Match at any stage after S2.
+
+ID	Sounds like	Say	Then
+O1	Not interested	Branch 1 (no_count 0): “Fair enough. Is AI handled, or just not a priority right now?” Branch 2 (no_count 1): G3.	no_count +1. Branch 1: back to last stage. Branch 2: end.
+O2	Send an email	“Happy to. What’s the one problem I should write about?”	Save problem. S9
+O3	What does it cost?	“The health check is free. Would [Day] at [Time] work?”	S8
+O4	What’s the catch?	“No catch. It’s 45 minutes with Oliver and a to-do list. What would be useful to look at?”	Wait.
+O5	We tried AI and it didn’t work	“Got it. What did you try, and where did it fall short?”	Save blocker.
+O6	We do it in house	“Good. Who owns it, and how many hours a week do they get for it?”	Save ai_owner.
+O7	We have a vendor or consultant	“Makes sense. What have they put into daily use so far?”	Wait.
+O8	Security, privacy or legal	“Fair concern. Oliver can walk through that live. What would your team need to see first?”	Wait.
+O9	Not urgent	“Understood. What would have to happen for it to move up the list?”	Wait.
+O10	Busy season	“Makes sense. When does it slow down?”	Save callback_time.
+O11	I need to talk to my boss or partner	“Smart. When could the two of you do 45 minutes with Oliver?”	S8
+O12	It’s a group decision	“Got it. Who else decides, and would they join the health check?”	Save name.
+O13	We’re too small	“Fair. How many people are on the team?”	Save.
+O14	No budget	“Understood. The health check is free. Are you already paying for AI tools today?”	Wait.
+O15	We already have ChatGPT or Copilot	“Good. Is it saving people real hours yet, or mostly used for small stuff?”	Wait.
+O16	IT handles AI	“Good. Who in the business tells IT which tasks to tackle first?”	Save name.
+O17	I don’t trust AI, it makes things up	“Fair. Where has it gotten things wrong for you?”	Wait.
+O18	My people won’t use it	“We hear that. What have they said about why?”	Save blocker.
+O19	We’re waiting for it to get better	“Fair. What would you need to see before you start?”	Wait.
+O20	We’re ahead on this	“Great. What’s one task that still gets done by hand?”	Save task.
+
+VOICEMAIL
+
+Personal voicemail only. Show one per attempt, in order. Under 20 seconds.
+
+ID	Say
+VM1	“Hi [Name], [SDR] at Clarity Consulting in Portland. Leaders tell us they bought AI tools and the work still looks the same. We help fix that. Call me at [number].”
+VM2	“[Name], [SDR] at Clarity Consulting. Oliver, our managing partner, runs a free 45 minute AI health check. Worth a look if AI is on your plate. I’m at [number].”
+VM3	“[Name], [SDR] at Clarity. In the AI health check, Oliver looks at where the hours go and what’s in the way. You leave with the top 3 fixes. [number].”
+VM4	“[Name], [SDR] at Clarity. This is my last try. If you want more from the AI you already pay for, call me at [number]. Thanks.”
+
+TEXTS
+
+ID	When	Send
+T1	No answer, attempt 1	“Hi [Name], [SDR] at Clarity Consulting. I tried your line about how your team uses AI. Is there a better time to talk?”
+T2	No answer, attempt 2	“[Name], [SDR] at Clarity. We offer a free 45 minute AI health check with Oliver. Want two times to look at?”
+
+LINKEDIN
+
+ID	When	Send
+L1	Connection request	“Hi [Name], I’m [SDR] at Clarity Consulting in Portland. I help teams get real work out of the AI tools they already have. Happy to connect.”
+L2	Request accepted	“Thanks for connecting, [Name]. Where is AI at for your team: not started, a few people using it, or built into real work?”
+L3	They reply	“Thanks, [Name]. Oliver, our managing partner, runs a free 45 minute AI health check. [Day] at [Time] or [Day] at [Time]?”
+L4	No reply in 4 days	“[Name], one more try. Is your team getting real hours back from AI yet, or is it still early?”
+
+TEST SLOTS
+
+Run A for 100 dials, then B for 100 dials. Change one slot at a time. Keep the one that books more meetings.
+
+Slot	A	B
+Opener	“Hi [Name], this is [SDR] with Clarity Consulting. Do you have 30 seconds?”	“Hi [Name], [SDR] at Clarity Consulting. It’s about how your team uses AI. Is that yours?”
+Question	“Where is AI at for your team today: not started, a few people using it, or built into real work?”	“What’s one task your team still does by hand that you wish AI handled?”
+Ask	“Oliver, our managing partner, runs a free 45 minute AI health check. [Day] at [Time] or [Day] at [Time]?”	“Would a free 45 minute AI health check with Oliver help? [Day] at [Time] works.”
 """#
 }
