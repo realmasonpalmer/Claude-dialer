@@ -28,7 +28,8 @@ struct CampaignEditorView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     basics
                     script
-                    sections
+                    // No "Sections" boxes and no "Tidy up" button: the My script card on the coach
+                    // already shows the script as one page, by section.
                 }
                 .padding(24)
             }
@@ -120,7 +121,7 @@ struct CampaignEditorView: View {
                     .disabled(draft.listViewID.isEmpty || filling || writing)
                     .help("Reads the titles, levels, industries, company sizes and states of the people on this call list's Salesforce list.")
             }
-            Text("Who they are, what keeps them up at night, what they want, and their story. Click Fill from Salesforce to start with their real titles, then add the rest.")
+            Text("This fills in by itself when you pick a list. Add what keeps them up at night and what they want, then click Generate script.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
                 // A list picked and the box still empty: describe the list's people right away.
@@ -149,22 +150,10 @@ struct CampaignEditorView: View {
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Text("Your script").font(.headline)
-            Text("Paste your cold call script, or write one. Any format works: bullets, paragraphs, a Google Doc copy.")
+            Text("Claude writes this for you. You can also paste your own, in any format.")
                 .font(.callout).foregroundStyle(.secondary)
             box($draft.pastedScript, height: 200, placeholder: "Paste your script here...")
                 .disabled(writing)
-            HStack(spacing: 10) {
-                Button {
-                    Task { await organize() }
-                } label: {
-                    Label("Tidy up my script", systemImage: "sparkles")
-                }
-                .disabled(draft.pastedScript.trimmed.isEmpty || organizing)
-                if organizing {
-                    ProgressView().controlSize(.small)
-                    Text("Claude is reading your script...").font(.callout).foregroundStyle(.secondary)
-                }
-            }
             if let message {
                 Text(message).font(.callout).foregroundStyle(.secondary)
             }
@@ -233,7 +222,13 @@ struct CampaignEditorView: View {
         do {
             let text = try await ListProfile.describe(object: draft.listObject, viewID: draft.listViewID)
             draft.persona = draft.persona.trimmed.isEmpty ? text : draft.persona.trimmed + "\n\n" + text
-            message = "Filled from Salesforce. Add what keeps them up at night and what they want."
+            // A list was just picked and there's no script yet: write it right away. Stop is right there.
+            if auto, draft.pastedScript.trimmed.isEmpty, !writing, Keychain.read(.anthropic) != nil {
+                message = "Filled from Salesforce. Writing the script now. Click Stop to change something first."
+                writeTask = Task { await write() }
+            } else {
+                message = "Filled from Salesforce. Add what keeps them up at night, then click Generate script."
+            }
         } catch {
             message = "Couldn't read the list: \(error.localizedDescription)"
         }
@@ -255,7 +250,7 @@ struct CampaignEditorView: View {
             }, onThinking: { partial in
                 Task { @MainActor in if writing { thought = partial } }
             })
-            message = "Done. Read it over, then \"Tidy up my script\" or Save."
+            message = "Done. Read it over, then click Save and use."
         } catch {
             if Task.isCancelled {
                 writing = false // late updates from Claude are dropped

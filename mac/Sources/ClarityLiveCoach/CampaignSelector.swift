@@ -213,7 +213,7 @@ struct NewCampaignView: View {
                         .disabled(view == nil || filling || writing)
                         .help("Reads the titles, levels, industries, company sizes and states of the people on the list you picked.")
                 }
-                Text("Who they are, what keeps them up at night, what they want, and their story. Click Fill from Salesforce to start with their real titles, then add the rest.")
+                Text("This fills in by itself when you pick a list, and the script starts writing. To change it: click Stop, add what keeps them up at night, then click Generate script.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $audience)
                     .font(.callout)
@@ -261,7 +261,7 @@ struct NewCampaignView: View {
                     .tourSpot(.newScript)
                     .overlay(alignment: .topLeading) {
                         if script.isEmpty {
-                            Text("Your script shows up here. Or paste your own.")
+                            Text("Your script shows up here by itself. Or paste your own.")
                                 .foregroundStyle(.tertiary).padding(6).allowsHitTesting(false)
                         }
                     }
@@ -326,7 +326,14 @@ struct NewCampaignView: View {
         do {
             let text = try await ListProfile.describe(object: v.object, viewID: v.id)
             audience = audience.trimmed.isEmpty ? text : audience.trimmed + "\n\n" + text
-            message = "Filled from Salesforce. Add what keeps them up at night and what they want."
+            if name.trimmed.isEmpty { name = v.label }
+            // A list was just picked and there's no script yet: write it right away. Stop is right there.
+            if auto, script.trimmed.isEmpty, !writing, Keychain.read(.anthropic) != nil {
+                message = "Filled from Salesforce. Writing the script now. Click Stop to change something first."
+                writeTask = Task { await writeScript() }
+            } else {
+                message = "Filled from Salesforce. Add what keeps them up at night, then click Generate script."
+            }
         } catch {
             message = "Couldn't read the list: \(error.localizedDescription)"
         }
