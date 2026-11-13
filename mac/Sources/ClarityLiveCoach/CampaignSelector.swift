@@ -9,12 +9,19 @@ struct CampaignSelectorView: View {
     @State private var selection: UUID?
     @State private var showNew = false
     @State private var note: String?
+    /// The walkthrough: 1...n = steps, nil = hidden. Shows by itself the first time.
+    @State private var tourStep: Int?
+    @AppStorage("listsTourSeen") private var listsTourSeen = false
 
     private var picked: Campaign? { store.campaigns.first { $0.id == selection } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Call lists").font(.title2.weight(.semibold))
+            HStack {
+                Text("Call lists").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Show me how") { tourStep = 1 }.buttonStyle(.link)
+            }
             Text("A call list is people to call, plus what to say to them. You can have \(CampaignStore.maxActive) turned on at a time.")
                 .font(.callout).foregroundStyle(.secondary)
 
@@ -25,6 +32,7 @@ struct CampaignSelectorView: View {
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))
             .frame(minHeight: 220)
+            .tourSpot(.listsTable)
             // Double-click a campaign to start calling it (a paused one is activated first).
             .contextMenu(forSelectionType: UUID.self) { ids in
                 if let id = ids.first {
@@ -40,11 +48,13 @@ struct CampaignSelectorView: View {
 
             HStack(spacing: 8) {
                 Button("New call list") { showNew = true }
+                    .tourSpot(.listsNew)
                 Button("Turn on") {
                     guard let id = selection else { return }
                     note = store.setActive(id, true) ? nil : "Only \(CampaignStore.maxActive) call lists can be on. Turn one off first."
                 }
                 .disabled(picked == nil || picked?.active == true)
+                .tourSpot(.listsOnOff)
                 Button("Turn off") {
                     guard let id = selection else { return }
                     store.setActive(id, false)
@@ -58,6 +68,7 @@ struct CampaignSelectorView: View {
                     openWindow(id: "campaign-editor")
                 }
                 .disabled(picked == nil)
+                .tourSpot(.listsEdit)
                 Button("Start calling") {
                     guard let c = picked else { return }
                     start(c.id)
@@ -65,6 +76,7 @@ struct CampaignSelectorView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(picked?.active != true)
                 .help("Pick a call list that is on, then click here. Or double-click it.")
+                .tourSpot(.listsStart)
             }
             if let note {
                 Text(note).font(.caption).foregroundStyle(.orange)
@@ -74,6 +86,10 @@ struct CampaignSelectorView: View {
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 420)
+        .overlayPreferenceValue(TourSpotKey.self) { spots in
+            TourOverlay(step: $tourStep, spots: spots, steps: Tour.listSteps) { listsTourSeen = true }
+        }
+        .onAppear { if !listsTourSeen { tourStep = 1 } }
         .sheet(isPresented: $showNew) { NewCampaignView().environmentObject(store) }
         .task { await refreshSizes() }
         .onAppear { selection = selection ?? store.selectedID }
@@ -141,16 +157,23 @@ struct NewCampaignView: View {
     @State private var thought = ""
     @State private var message: String?
     @State private var filling = false
+    @State private var tourStep: Int?
+    @AppStorage("newListTourSeen") private var newListTourSeen = false
 
     private var view: Salesforce.ListView? { views.first { $0.id == listID } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New call list").font(.title2.weight(.semibold))
+            HStack {
+                Text("New call list").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Show me how") { tourStep = 1 }.buttonStyle(.link)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("1. Name").font(.headline)
                 TextField("e.g. Tax firm partners", text: $name).textFieldStyle(.roundedBorder)
+                    .tourSpot(.newName)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -165,6 +188,7 @@ struct NewCampaignView: View {
                         ForEach(views) { Text($0.title).tag($0.id) }
                     }
                     .labelsHidden()
+                    .tourSpot(.newList)
                     // A list picked and the box still empty: describe the list's people right away.
                     .onChange(of: listID) { _, _ in Task { await fillFromSalesforce(auto: true) } }
                 }
@@ -191,6 +215,7 @@ struct NewCampaignView: View {
                         }
                     }
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                    .tourSpot(.newWho)
                 Button {
                     Task { await writeScript() }
                 } label: {
@@ -203,6 +228,7 @@ struct NewCampaignView: View {
                 .buttonStyle(BrandPrimaryButton())
                 .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
                 .help("Claude writes the whole script for these people. Takes 2 to 5 minutes.")
+                .tourSpot(.newGenerate)
                 if writing, !thought.isEmpty {
                     Text(ScriptWriter.lastThought(thought))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -215,6 +241,7 @@ struct NewCampaignView: View {
                     .font(.callout)
                     .frame(minHeight: 200)
                     .disabled(writing) // it's filling in as Claude writes
+                    .tourSpot(.newScript)
                     .overlay(alignment: .topLeading) {
                         if script.isEmpty {
                             Text("Your script shows up here. Or paste your own.")
@@ -234,10 +261,15 @@ struct NewCampaignView: View {
                 Button("Save") { save() }
                     .buttonStyle(.borderedProminent)
                     .disabled(name.trimmed.isEmpty || script.trimmed.isEmpty || writing)
+                    .tourSpot(.newSave)
             }
         }
         .padding(20)
         .frame(width: 640, height: 760)
+        .overlayPreferenceValue(TourSpotKey.self) { spots in
+            TourOverlay(step: $tourStep, spots: spots, steps: Tour.newListSteps) { newListTourSeen = true }
+        }
+        .onAppear { if !newListTourSeen { tourStep = 1 } }
         .task {
             guard Salesforce.isConnected, views.isEmpty else { return }
             views = (try? await Salesforce.listViews()) ?? []

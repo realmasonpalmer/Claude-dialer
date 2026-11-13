@@ -81,6 +81,13 @@ extension CoachModel {
                             linkedinMessage: earlier?.linkedinMessage ?? "",
                             linkedinMessageDone: earlier?.linkedinMessageDone ?? key.map(DialHistory.linkedInMessageToday) ?? false)
         if followUp?.textDone == true, earlier == nil { followUp?.textStatus = "Already texted today" }
+        // Not on the page yet: read their LinkedIn field from Salesforce, so the card opens the profile.
+        if followUp?.linkedinURL == nil, let key {
+            Task { [weak self] in
+                guard let url = await Salesforce.linkedIn(of: key) else { return }
+                if self?.followUp?.key == key, self?.followUp?.linkedinURL == nil { self?.followUp?.linkedinURL = url }
+            }
+        }
         applyPlan()
         // The script's own messages show right away, no waiting on Claude.
         if var f = followUp {
@@ -242,14 +249,19 @@ extension CoachModel {
             followUp?.linkedinMessageDone = true
             return
         }
+        let words = [f.prospect, recordCompany].compactMap { $0 }.joined(separator: " ")
+        let search = words.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            .flatMap { URL(string: "https://www.linkedin.com/search/results/people/?keywords=\($0)") }
         if let profile = f.linkedinURL ?? (leads.isActive ? nil : Self.linkedInProfile(details: recordDetails)) {
             NSWorkspace.shared.open(profile)
-        } else {
-            let query = [f.prospect, recordCompany].compactMap { $0 }.joined(separator: " ")
-            if let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-               let url = URL(string: "https://www.linkedin.com/search/results/people/?keywords=\(q)") {
-                NSWorkspace.shared.open(url)
+        } else if let key = f.key, Salesforce.isConnected {
+            // Their LinkedIn field first; search LinkedIn only when it's blank.
+            Task {
+                if let url = await Salesforce.linkedIn(of: key) { NSWorkspace.shared.open(url) }
+                else if let search { NSWorkspace.shared.open(search) }
             }
+        } else if let search {
+            NSWorkspace.shared.open(search)
         }
         // Count once per person per day.
         if followUp?.linkedinDone != true, !(f.key.map(DialHistory.linkedInToday) ?? false) {
@@ -263,7 +275,7 @@ extension CoachModel {
     static func linkedInProfile(details: String?) -> URL? {
         var raw = SalesforceChrome.linkedInProfile()
         if raw == nil, let details,
-           let r = details.range(of: #"linkedin\.com/in/[A-Za-z0-9\-_%]+"#, options: .regularExpression) {
+           let r = details.range(of: #"linkedin\.com/(in|pub)/[A-Za-z0-9\-_%]+"#, options: .regularExpression) {
             raw = "https://www." + details[r]
         }
         guard var link = raw else { return nil }

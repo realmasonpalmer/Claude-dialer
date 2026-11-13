@@ -452,8 +452,6 @@ enum Salesforce {
             [t["ActivityDate"] as? String, t["Subject"] as? String, t["CallDisposition"] as? String]
                 .compactMap { $0 }.joined(separator: " · ")
         }
-        var link = (r[linkedIn] as? String)
-        if let l = link, l.hasPrefix("http://") { link = "https://" + l.dropFirst(7) }
         return Details(
             id: id, object: object,
             name: {
@@ -470,10 +468,27 @@ enum Salesforce {
             state: (r["State"] as? String) ?? (r["MailingState"] as? String),
             status: r["Status"] as? String,
             doNotCall: (r["DoNotCall"] as? Bool) ?? false,
-            linkedIn: link.flatMap(URL.init(string:)),
+            linkedIn: linkedInURL(r[linkedIn] as? String),
             notes: r["Description"] as? String,
             recent: recent
         )
+    }
+
+    /// A LinkedIn field value as a link that opens: "www.linkedin.com/in/x" and "http://..." become https.
+    static func linkedInURL(_ raw: String?) -> URL? {
+        guard var s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty,
+              s.lowercased().contains("linkedin.com") else { return nil }
+        if s.lowercased().hasPrefix("http://") { s = "https://" + s.dropFirst(7) }
+        if !s.lowercased().hasPrefix("https://") { s = "https://" + s }
+        return URL(string: s)
+    }
+
+    /// The LinkedIn field on a Lead (Linkedin__c) or Contact (LinkedIn__c). nil if blank or not signed in.
+    static func linkedIn(of id: String) async -> URL? {
+        guard isConnected, id.allSatisfy({ $0.isLetter || $0.isNumber }), let object = objectFor(id: id) else { return nil }
+        let field = object == "Lead" ? "Linkedin__c" : "LinkedIn__c"
+        let record = (try? await query("SELECT \(field) FROM \(object) WHERE Id = '\(id)'"))?.first
+        return linkedInURL(record?[field] as? String)
     }
 
     /// Opens the record in the browser, for when the rep wants the full page.

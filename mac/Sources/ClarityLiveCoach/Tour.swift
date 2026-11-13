@@ -4,6 +4,10 @@ import SwiftUI
 /// The parts of the screen the first-run tour points at.
 enum TourSpot: String {
     case gear, segment, zone, line, script, call, followUp, status, goal, numbers, phone, update
+    // The Call lists window
+    case listsTable, listsOnOff, listsNew, listsEdit, listsStart
+    // The New call list window
+    case newName, newList, newWho, newGenerate, newScript, newSave
 }
 
 /// Where each spot is on screen, collected from the views that mark themselves with `.tourSpot`.
@@ -77,16 +81,44 @@ enum Tour {
         TourStep(spot: .numbers, part: "Keep score", title: "See your numbers",
                  text: "Your calls, texts, notes and meetings. Click it to see more.",
                  corner: 14),
-        TourStep(spot: .phone, part: "Keep score", title: "Your phone",
-                 text: "Your Aircall phone is on the right. Sign in one time and set yourself to Available. Pick the number your calls go out from here.",
-                 corner: 10),
         TourStep(spot: .update, part: "Keep score", title: "Stay up to date",
                  text: "A blue bar shows at the top when there's a new version. Click Update now between calls. It takes 2 minutes.",
                  corner: 10),
     ]
 
     /// "MAKE A CALL · 2 OF 5": where this step is inside its part.
-    static func label(for number: Int) -> String {
+    /// The Call lists window: what a call list is, and how to make, change and start one.
+    static let listSteps: [TourStep] = [
+        TourStep(spot: .listsTable, part: "Call lists", title: "Your call lists",
+                 text: "A call list is people to call (a Salesforce list) plus what to say to them (a script). Each row shows who it's for and how many people are on it.",
+                 corner: 10),
+        TourStep(spot: .listsOnOff, part: "Call lists", title: "Turn lists on and off",
+                 text: "Up to 3 can be on. Only lists that are on show in the menu at the top of the coach."),
+        TourStep(spot: .listsNew, part: "Call lists", title: "Make a new one",
+                 text: "Click New call list. Pick a Salesforce list, say who the people are, and Claude writes the script."),
+        TourStep(spot: .listsEdit, part: "Call lists", title: "Change one",
+                 text: "Pick a list and click Edit to change its name, its Salesforce list or its script."),
+        TourStep(spot: .listsStart, part: "Call lists", title: "Start calling",
+                 text: "Pick a list and click here, or double-click it. Its people open in Chrome and the coach uses its script."),
+    ]
+
+    /// The New call list window: name, Salesforce list, who they are, the script, save.
+    static let newListSteps: [TourStep] = [
+        TourStep(spot: .newName, part: "New call list", title: "1. Name it",
+                 text: "A short name you'll know at a glance, like Tax firm owners."),
+        TourStep(spot: .newList, part: "New call list", title: "2. Pick who to call",
+                 text: "Pick the Salesforce list of people to call. To change who's on it, change the list view in Salesforce."),
+        TourStep(spot: .newWho, part: "New call list", title: "3. Say who they are",
+                 text: "This fills from Salesforce by itself: their titles, levels, industries and states. Or click Fill from Salesforce. Then add what keeps them up at night."),
+        TourStep(spot: .newGenerate, part: "New call list", title: "4. Write the script",
+                 text: "Click Generate script. Claude writes the whole script on Clarity's backbone. It takes 2 to 5 minutes, and you'll see it thinking."),
+        TourStep(spot: .newScript, part: "New call list", title: "Read it over",
+                 text: "Change anything you like. Or paste your own script here instead."),
+        TourStep(spot: .newSave, part: "New call list", title: "Save",
+                 text: "Click Save. Then pick it at the top of the coach, or click Start calling."),
+    ]
+
+    static func label(for number: Int, in steps: [TourStep] = Tour.steps) -> String {
         let step = steps[number - 1]
         let inPart = steps.indices.filter { steps[$0].part == step.part }
         let place = (inPart.firstIndex(of: number - 1) ?? 0) + 1
@@ -99,6 +131,8 @@ enum Tour {
 struct TourOverlay: View {
     @Binding var step: Int?
     let spots: [TourSpot: Anchor<CGRect>]
+    /// Which tour: the coach (default), the Call lists window, or New call list.
+    var steps: [TourStep] = Tour.steps
     var onFinish: () -> Void
 
     var body: some View {
@@ -107,7 +141,7 @@ struct TourOverlay: View {
                 if step == 0 {
                     welcome
                 } else {
-                    let s = Tour.steps[step - 1]
+                    let s = steps[step - 1]
                     let hole = spots[s.spot].map { proxy[$0].insetBy(dx: -s.pad, dy: -s.pad) }
                     spotlight(s, number: step, hole: hole, size: proxy.size)
                 }
@@ -171,7 +205,7 @@ struct TourOverlay: View {
 
     private func tip(_ s: TourStep, number: Int) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(Tour.label(for: number).uppercased())
+            Text(Tour.label(for: number, in: steps).uppercased())
                 .font(.caption2.weight(.semibold)).tracking(0.6)
                 .foregroundStyle(Color.accentColor)
             Text(s.title).font(.headline)
@@ -182,16 +216,16 @@ struct TourOverlay: View {
                     Button("Back") { go(number - 1) }
                         .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
                 }
-                Text("\(number) of \(Tour.steps.count)")
+                Text("\(number) of \(steps.count)")
                     .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 Spacer()
-                let last = number == Tour.steps.count
+                let last = number == steps.count
                 if !last {
                     Button("Skip") { finish() }
                         .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
                         .keyboardShortcut(.cancelAction)
                 }
-                Button(last ? "Start calling" : "Next") { last ? finish() : go(number + 1) }
+                Button(last ? (steps.count == Tour.steps.count ? "Start calling" : "Got it") : "Next") { last ? finish() : go(number + 1) }
                     .buttonStyle(PillButton(prominent: true))
                     .keyboardShortcut(.defaultAction)
             }
