@@ -21,13 +21,15 @@ struct RootView: View {
                     AudioCheckView(onFinish: {
                         audioCheckPassed = true
                         screen = hasKeys ? .coach : .keys
-                    }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil)
+                    }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil,
+                       // Never trap a new rep here: they can finish it later from Set up.
+                       onSkip: { proof.testAgain(); screen = .coach })
                     .frame(width: 380)
                     .onAppear { proof.onAppear() }
                     if appPhone { AircallPhoneSide() }
                 }
             case .keys:
-                KeysView(onSave: { screen = .coach }, onCancel: hasKeys ? { screen = .coach } : nil)
+                KeysView(onSave: { screen = .coach }, onCancel: { screen = .coach }) // team keys can be imported from Set up instead
             case .coach:
                 CoachView(
                     onAudioCheck: { proof.testAgain(); screen = .check },

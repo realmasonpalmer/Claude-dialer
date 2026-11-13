@@ -53,6 +53,8 @@ struct AudioCheckView: View {
     var onFinish: () -> Void = {}
     /// Set when opened from Setup: a way back to the coach without finishing.
     var onCancel: (() -> Void)? = nil
+    /// First run: leave without finishing. The check stays on the Set up list.
+    var onSkip: (() -> Void)? = nil
     @EnvironmentObject var model: ProofModel
     @State private var showAdvanced = false
 
@@ -95,6 +97,11 @@ struct AudioCheckView: View {
                 if showHelp {
                     help
                         .transition(.opacity)
+                }
+                if onCancel == nil, let onSkip, model.step != .done {
+                    Button("Skip for now") { onSkip() }
+                        .buttonStyle(.link)
+                        .help("You can do the audio check later: click the gear, then Set up.")
                 }
             }
             .padding(.horizontal, 24)
