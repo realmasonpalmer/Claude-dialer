@@ -56,7 +56,7 @@ enum CalledToday {
         for id in listIDs {
             if called.contains(id) { b.calledToday += 1 }
             else if RemovedList.contains(id) || DialHistory.isMaxed(id) { b.takenOff += 1 }
-            else if DialHistory.person(id).pickups > 0 || Cadence.isFinished(id) { b.planDone += 1 }
+            else if Cadence.pickedUp(id) || Cadence.isFinished(id) { b.planDone += 1 }
             else if !Cadence.isDue(id) { b.comeBackLater += 1 }
         }
         return b

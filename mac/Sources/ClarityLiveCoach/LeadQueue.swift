@@ -52,7 +52,8 @@ final class LeadQueue: ObservableObject {
         defer { loading = false }
         do {
             let loaded = try await Salesforce.rows(of: view)
-            // Follow-ups due today first (day 2, 5, 8, 16), then new people, each in list order.
+            // The team's calls from Salesforce first, so the order knows who was called where.
+            await CallHistory.load(ids: loaded.map(\.id), object: view.object)
             lastLoaded = loaded
             rows = Self.order(loaded)
             selected = view
@@ -60,6 +61,7 @@ final class LeadQueue: ObservableObject {
             UserDefaults.standard.set(view.id, forKey: PrefKey.sfListView)
             // Start at the first one due today. Nobody due: show nobody (not someone the plan skips).
             index = rows.firstIndex { CalledToday.isCallable($0.id) } ?? rows.count
+            updateSummary()
             await loadDetails()
         } catch {
             self.error = error.localizedDescription
@@ -90,13 +92,17 @@ final class LeadQueue: ObservableObject {
     /// The list as Salesforce sent it, before ordering (to re-order without reloading).
     private var lastLoaded: [Salesforce.Row] = []
 
-    /// Follow-ups due today first (day 2, 5, 8, 16), then new people. With East Coast first on,
-    /// each group goes east to west.
+    /// Late and due follow-ups first (most late first), then new people, by last name (see `CallQueue`).
     private static func order(_ loaded: [Salesforce.Row]) -> [Salesforce.Row] {
-        let followUps = loaded.filter { Cadence.isFollowUp($0.id) && CalledToday.isCallable($0.id) }
-        let followUpIDs = Set(followUps.map(\.id))
-        return TimeZoneFilter.ordered(followUps, id: \.id)
-            + TimeZoneFilter.ordered(loaded.filter { !followUpIDs.contains($0.id) }, id: \.id)
+        CallQueue.ordered(loaded, id: \.id, name: \.name)
+    }
+
+    /// "Today: 3 late · 12 follow-ups due · 30 new · 8 resting".
+    @Published private(set) var summary: String?
+
+    func updateSummary() {
+        let s = CallQueue.summary(rows.map(\.id))
+        if s != summary { summary = s }
     }
 
     /// East Coast first was turned on or off: re-order, staying on the current person.
@@ -166,6 +172,7 @@ final class LeadQueue: ObservableObject {
         guard let id = current?.id else { return }
         CalledToday.add(id)
         calledToday = CalledToday.ids
+        updateSummary()
     }
 
     func clearCalledToday() {

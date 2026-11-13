@@ -132,7 +132,7 @@ extension CoachModel {
     func todaySteps(for key: String?) -> [(title: String, done: Bool)] {
         guard let key else { return [] }
         let p = DialHistory.person(key)
-        guard let step = Cadence.step(for: key), p.pickups == 0 else { return [] }
+        guard let step = Cadence.step(for: key), !Cadence.pickedUp(key) else { return [] }
         let dialsToday = p.dials.filter { Calendar.current.isDateInToday($0) }.count
         var steps: [(String, Bool)] = [("2 dials (\(min(dialsToday, 2)) of 2)", dialsToday >= 2)]
         if step.leaveVoicemail {

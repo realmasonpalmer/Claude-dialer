@@ -156,6 +156,8 @@ final class CallList: ObservableObject {
             guard !rows.isEmpty, listKey == key else { return false }
             // Time zones first, so the time zone filter is right before anyone is opened.
             await TimeZoneFilter.load(ids: rows.map(\.id), object: key.object)
+            // The team's calls from Salesforce, so the order knows who was called on another Mac.
+            await CallHistory.load(ids: rows.map(\.id), object: key.object)
             guard listKey == key else { return false }
             let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } } ?? ""
             let currentID = lastIndex >= 0 && lastIndex < records.count ? records[lastIndex].id : nil
@@ -209,38 +211,26 @@ final class CallList: ObservableObject {
         return nil
     }
 
-    /// The next record after the current one that hasn't been called today.
+    /// Who to call next: the highest priority person on the list (late follow-ups, then due
+    /// follow-ups, then new people, by last name; see `CallQueue`), not counting the one open now.
+    /// Someone the rep moved past today without calling goes after everyone else.
     func upNext(after index: Int? = nil) -> (record: Record, position: Int)? {
         guard !records.isEmpty else { return nil }
         let from = index ?? currentIndex() ?? lastIndex
-        func callable(_ r: Record) -> Bool { CalledToday.isCallable(r.id) }
-        // Follow-ups due today first (day 2, 5, 8, 16), top to bottom: they've heard from us already.
-        if TimeZoneFilter.eastCoastFirst {
-            // East Coast first: the most eastern person due, follow-ups before new people.
-            // Same time zone: the next one down from where the rep is, then from the top.
-            let around = Array(records.indices.dropFirst(max(from + 1, 0))) + Array(records.indices.prefix(max(from + 1, 0)))
-            let due = around.filter { callable(records[$0]) }
-            let pool = due.filter { Cadence.isFollowUp(records[$0].id) }
-            let pick = (pool.isEmpty ? due : pool).min { TimeZoneFilter.eastRank(records[$0].id) < TimeZoneFilter.eastRank(records[$1].id) }
-            return pick.map { (records[$0], $0 + 1) }
+        let openID = records.indices.contains(from) ? records[from].id : nil
+        var best: (key: (Int, Int, Int, Int, String, String), index: Int)?
+        for i in records.indices {
+            let r = records[i]
+            guard r.id != openID, CalledToday.isCallable(r.id) else { continue }
+            let k = CallQueue.key(id: r.id, name: r.name, passedOver: passedOver.contains(r.id))
+            if best == nil || k < best!.key { best = (k, i) }
         }
-        if let k = records.indices.first(where: { callable(records[$0]) && Cadence.isFollowUp(records[$0].id) }) {
-            return (records[k], k + 1)
-        }
-        // Then new people, from where the rep is.
-        var i = from + 1
-        while i < records.count {
-            if callable(records[i]) { return (records[i], i + 1) }
-            i += 1
-        }
-        // Nobody below: anyone above who was skipped and not called today?
-        var j = 0
-        while j < min(max(from, 0), records.count) {
-            if callable(records[j]) { return (records[j], j + 1) }
-            j += 1
-        }
-        return nil
+        return best.map { (records[$0.index], $0.index + 1) }
     }
+
+    /// People the rep moved past today without calling (so Next doesn't keep bringing them back).
+    private var passedOver: Set<String> = []
+    private var passedDay = ""
 
     /// Scrolls the Salesforce list so it loads more rows, then reads them. True if new people showed up.
     func loadMore() async -> Bool {
@@ -282,8 +272,18 @@ final class CallList: ObservableObject {
         return record.name
     }
 
+    /// "Today: 3 late · 12 follow-ups due · 30 new · 8 resting".
+    @Published private(set) var summary: String?
+    private var summaryAt = Date.distantPast
+
     func refreshUpNext(after index: Int? = nil) {
         resetCalledIfNewDay()
+        // Counting the whole list is the slow part: every 10 seconds is plenty.
+        if Date().timeIntervalSince(summaryAt) > 10 {
+            summaryAt = Date()
+            let s = CallQueue.summary(records.map(\.id))
+            if s != summary { summary = s }
+        }
         let info = upNext(after: index).map { (name: displayName(for: $0.record), position: $0.position) }
         if info?.name != upNextInfo?.name || info?.position != upNextInfo?.position { upNextInfo = info }
     }
@@ -300,6 +300,13 @@ final class CallList: ObservableObject {
         guard let (record, position) = upNext() else {
             message = "Nobody else on this list is due today."
             return false
+        }
+        // The person open now wasn't called: they go to the back for today.
+        let today = Date().formatted(.iso8601.year().month().day())
+        if passedDay != today { passedDay = today; passedOver = [] }
+        if let openID = currentIndex().map({ records[$0].id }) ?? lastOpenedID,
+           openID != record.id, !CalledToday.ids.contains(openID) {
+            passedOver.insert(openID)
         }
         return open(record, at: position - 1)
     }

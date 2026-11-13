@@ -21,7 +21,10 @@ extension CoachModel {
         guard Salesforce.isConnected else { return }
         // Their time zone, for the time zone filter (a no-op when the list already loaded it).
         if let object = Salesforce.objectFor(id: usable) {
-            Task { await TimeZoneFilter.load(ids: [usable], object: object) }
+            Task {
+                await TimeZoneFilter.load(ids: [usable], object: object)
+                await CallHistory.load(ids: [usable], object: object)
+            }
         }
         Task { [weak self] in
             // Only act on a real answer from Salesforce (an error is not "blank").

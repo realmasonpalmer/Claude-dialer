@@ -361,11 +361,19 @@ struct CoachView: View {
 
     private var nowBar: some View {
         let now = nowLine
-        return HStack(spacing: 6) {
-            Circle().fill(now.color).frame(width: 7, height: 7)
-            Text(now.text).font(.caption.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+        let plan = coach.status == .ready ? (coach.leads.isActive ? coach.leads.summary : coach.callList.summary) : nil
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Circle().fill(now.color).frame(width: 7, height: 7)
+                Text(now.text).font(.caption.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            if let plan {
+                Text(plan).font(.caption2).foregroundStyle(.secondary)
+                    .padding(.leading, 13)
+                    .help("Late = behind on the 5 day plan. Resting = waiting for their next call day.")
+            }
         }
     }
 
@@ -1458,7 +1466,7 @@ struct RelationshipCard: View {
     private func callsLabel(_ id: String) -> String {
         _ = coach.touchpoints.events.count // redraw after each call
         let p = DialHistory.person(id)
-        if p.pickups > 0 { return "Calls: \(p.dials.count) · picked up" }
+        if Cadence.pickedUp(id) { return "Calls: \(p.dials.count) · picked up" }
         _ = p
         return Cadence.label(for: id)
     }

@@ -191,7 +191,7 @@ enum DialHistory {
     static func isMaxed(_ id: String) -> Bool {
         let p = person(id)
         if p.badNumber || p.failedConnects >= 2 { return true }
-        return p.pickups == 0 && Cadence.isFinished(id) // the 21-day plan is done
+        return !Cadence.pickedUp(id) && Cadence.isFinished(id) // the 21-day plan is done
     }
 
     /// Counts a call that didn't connect. Returns the total. Two = off the list.

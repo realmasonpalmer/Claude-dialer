@@ -23,15 +23,37 @@ enum Cadence {
 
     private static var cal: Calendar { .current }
 
-    /// The days they were called on, oldest first.
+    /// The days they were called on, oldest first: this Mac's calls plus the team's calls in Salesforce.
     static func callDates(_ id: String) -> [Date] {
         var seen = Set<Date>()
-        var out: [Date] = []
-        for d in DialHistory.person(id).dials {
-            let day = cal.startOfDay(for: d)
-            if seen.insert(day).inserted { out.append(day) }
-        }
-        return out
+        for d in DialHistory.person(id).dials { seen.insert(cal.startOfDay(for: d)) }
+        for d in CallHistory.callDays(id) { seen.insert(cal.startOfDay(for: d)) }
+        return seen.sorted()
+    }
+
+    /// They picked up before: on this Mac, or Picked Up Cold Call is checked in Salesforce.
+    static func pickedUp(_ id: String) -> Bool {
+        DialHistory.person(id).pickups > 0 || CallHistory.pickedUp(id)
+    }
+
+    /// Days to wait after the last call day before each step: 1 day (to day 2), 3 (to day 5),
+    /// 3 (to day 8), 8 (to day 16).
+    static func gap(before index: Int) -> Int {
+        index <= 0 ? 0 : callDays[index] - callDays[index - 1]
+    }
+
+    /// Whole days since their last call day before today. nil = never called before today.
+    static func daysSinceLastCall(_ id: String) -> Int? {
+        let today = cal.startOfDay(for: Date())
+        guard let last = callDates(id).last(where: { $0 < today }) else { return nil }
+        return cal.dateComponents([.day], from: last, to: today).day
+    }
+
+    /// How many days past due their next call is. 0 = due today. nil = not due yet, or new.
+    static func daysLate(_ id: String) -> Int? {
+        guard let s = step(for: id), s.index > 0, let since = daysSinceLastCall(id) else { return nil }
+        let late = since - gap(before: s.index)
+        return late >= 0 ? late : nil
     }
 
     /// Today's step for them (today counts as the same step for the redial). nil = plan done.
@@ -48,10 +70,14 @@ enum Cadence {
     }
 
     /// Should they be called today? New people yes; after a pickup or the last call day, no.
+    /// Spacing counts from their last call, so someone who fell behind gets their next step now,
+    /// then waits the normal gap. Never several days in a row to catch up.
     static func isDue(_ id: String) -> Bool {
-        if DialHistory.person(id).pickups > 0 { return false }
+        if pickedUp(id) { return false }
         guard let s = step(for: id) else { return false }
-        return s.index == 0 || day(for: id) >= s.planDay
+        if s.index == 0 { return true }
+        guard let since = daysSinceLastCall(id) else { return true }
+        return since >= gap(before: s.index)
     }
 
     /// All 5 call days used.
@@ -72,21 +98,22 @@ enum Cadence {
         if RemovedList.contains(id) { return "They're off your list." }
         if let zone = TimeZoneFilter.why(id) { return zone }
         let p = DialHistory.person(id)
-        if p.pickups > 0 { return "They picked up before, so the plan is done for them." }
+        if pickedUp(id) { return "They picked up before, so the plan is done for them." }
         if p.badNumber || p.failedConnects >= 2 { return "Their number didn't work." }
         let dialsToday = p.dials.filter { cal.isDateInToday($0) }.count
         if dialsToday >= dialsPerDay { return "Already called \(dialsToday) times today. The plan is \(dialsPerDay)." }
         if dialsToday > 0 { return nil } // the 2nd dial today
         guard let s = step(for: id) else { return "All \(callDays.count) call days are done." }
-        if s.index > 0, day(for: id) < s.planDay {
-            return "Not due today. It's day \(day(for: id)) of their plan. Next call is day \(s.planDay)."
+        if s.index > 0, !isDue(id), let since = daysSinceLastCall(id) {
+            let wait = gap(before: s.index) - since
+            return "Not due today. Their next call is in \(wait) day\(wait == 1 ? "" : "s")."
         }
         return nil
     }
 
     /// Still on the plan, just not due today (resting between call days, or already called today).
     static func comesBackLater(_ id: String) -> Bool {
-        guard !RemovedList.contains(id), !DialHistory.isMaxed(id), DialHistory.person(id).pickups == 0,
+        guard !RemovedList.contains(id), !DialHistory.isMaxed(id), !pickedUp(id),
               !CalledToday.isCallable(id, anyTimeZone: true), let s = step(for: id) else { return false }
         // Called today on their last call day: done for good after today.
         let calledToday = DialHistory.person(id).dials.contains { cal.isDateInToday($0) }
@@ -95,8 +122,7 @@ enum Cadence {
 
     /// "Day 5 · call 3 of 5 · no voicemail" for the card.
     static func label(for id: String) -> String {
-        let p = DialHistory.person(id)
-        if p.pickups > 0 { return "Picked up before" }
+        if pickedUp(id) { return "Picked up before" }
         guard let s = step(for: id) else { return "Plan done" }
         var parts = ["Day \(day(for: id))", "call \(s.index + 1) of \(callDays.count)"]
         parts.append(s.leaveVoicemail ? "voicemail #\(s.voicemailNumber)" : "no voicemail")
