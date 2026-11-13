@@ -335,6 +335,16 @@ extension CoachModel {
         lastVoicemailTry = Date()
         voicemailFor = forWho
         voicemailKey = recordKey()
+        // Written during the last call: use it now, no waiting for Claude.
+        if var ready = prewarmedVoicemail(for: forWho) {
+            applyScriptVoicemail(&ready, for: forWho)
+            voicemailUsedDetails = true
+            voicemailScript = ready
+            prewarmHitFor = forWho
+            fillFollowUp(from: ready, replace: true)
+            ActivityLog.add("Voicemail for \(forWho ?? "?") was ready early")
+            return
+        }
         guard let key = Keychain.read(.anthropic) else { return }
         let client = CoachSpeed.fastest.client(apiKey: key) // voicemails always use Haiku: fast
         let system = self.system

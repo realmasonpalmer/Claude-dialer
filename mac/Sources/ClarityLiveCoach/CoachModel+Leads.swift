@@ -386,7 +386,8 @@ extension CoachModel {
         let voicemailOK = voicemailScript != nil && voicemailFor == calling
             && (voicemailUsedDetails || recordDetails == nil || waited > 8)
         // Claude's personal opener; after 10 seconds the instant one (already for them) is enough.
-        let openerOK = personalOpenerFor == calling || waited > 10
+        // Everything else was written ahead of time: 2 seconds is enough (the instant opener is theirs).
+        let openerOK = personalOpenerFor == calling || waited > (prewarmHitFor == calling ? 2 : 10)
         return detailsOK && voicemailOK && openerOK
     }
 

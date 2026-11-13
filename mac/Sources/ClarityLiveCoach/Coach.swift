@@ -185,6 +185,12 @@ final class CoachModel: ObservableObject {
     var lastWaitingFor = ""
 
     var noMobileSkips = 0
+    /// Voicemail and follow-ups written ahead of time for the next person, by record Id (15 characters).
+    var prewarmed: [String: (calling: String, voicemail: Suggestion, at: Date)] = [:]
+    var prewarmingKey: String?
+    var prewarmTask: Task<Void, Never>?
+    /// The person whose ahead-of-time voicemail is in use (their dial doesn't wait for Claude).
+    var prewarmHitFor: String?
     /// People in a row who weren't ready in time and were moved to the back (stops after 5).
     var stallSkips = 0
     /// "Sending the text in 4": seconds left before the due text goes out by itself. nil = no countdown.

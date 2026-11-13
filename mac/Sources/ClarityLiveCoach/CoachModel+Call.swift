@@ -354,6 +354,7 @@ extension CoachModel {
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
         status = .live
+        prewarmNext() // get the next person ready while this call rings
         quietTicks = 0
         availability.refresh() // fresh free times for this call
         callOpener = kind == .opener ? openerStyle : nil

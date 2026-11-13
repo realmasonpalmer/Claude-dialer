@@ -197,6 +197,10 @@ struct CoachView: View {
     private let showTouchpoints = true // always on
     @AppStorage(PrefKey.nextDials) private var nextDials = true
     @State private var listViewCache: [Salesforce.ListView] = []
+    /// Off (default): the essential view: the person, the line, the follow-up and the buttons.
+    /// On: everything (script, numbers, rings, transcript, stage bar).
+    @AppStorage("showMore") private var showMore = false
+    private var showAll: Bool { showMore || tourStep != nil } // the tour points at everything
     /// "Starting TAX FIRMS in 4": the next list starts by itself when this one is done.
     @State private var nextListIn: Int?
     @State private var nextListTask: Task<Void, Never>?
@@ -233,13 +237,14 @@ struct CoachView: View {
             VStack(alignment: .leading, spacing: gap) {
             // The Chrome list is the default. This header only shows if a Salesforce list was picked in Settings and tools.
             if Salesforce.isConnected && coach.leads.selected != nil { leadHeader }
-            if coach.status != .ready {
+            if showAll, coach.status != .ready {
                 StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: true)
             }
             scriptCard.tourScrollSpot(.line)
-            ScriptOutlineCard(coach: coach).tourScrollSpot(.script)
+            if showAll { ScriptOutlineCard(coach: coach).tourScrollSpot(.script) }
             belowCard
-            if coach.statusRecordID != nil { // stays up during calls too, with the LinkedIn and text cards
+            // Essential view: only between calls (during a call it's just the line).
+            if coach.statusRecordID != nil, showAll || coach.status == .ready {
                 RelationshipCard(coach: coach)
                     .id(coach.statusRecordID) // a fresh card per person: nothing picked carries over
                     .tourScrollSpot(.status)
@@ -264,11 +269,11 @@ struct CoachView: View {
                 )
                 .tourScrollSpot(.followUp)
             }
-            if coach.status == .ready {
+            if showAll, coach.status == .ready {
                 DailyGoalCard(touchpoints: coach.touchpoints, activeCampaigns: campaigns.activeCampaigns)
                     .tourScrollSpot(.goal)
             }
-            if showTouchpoints && coach.status == .ready {
+            if showAll, showTouchpoints && coach.status == .ready {
                 TouchpointsCard(touchpoints: coach.touchpoints).tourScrollSpot(.numbers)
             }
             warnings
@@ -380,6 +385,10 @@ struct CoachView: View {
                 Text(now.text).font(.caption.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                Button(showMore ? "Show less" : "Show more") { showMore.toggle() }
+                    .buttonStyle(.link).font(.caption)
+                    .help(showMore ? "Back to just the person, the line and the buttons"
+                                   : "Also show your script, your numbers, the hour rings and the transcript")
             }
             if let plan {
                 Text(plan).font(.caption2).foregroundStyle(.secondary)
@@ -728,10 +737,12 @@ struct CoachView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
                 // Which script row (or which opener) this line is, so the rep learns what works.
-                if let tag = coach.suggestion.rowTag {
-                    tagChip(tag)
-                } else if coach.kind == .opener, let name = coach.openerName {
-                    tagChip(name)
+                if showAll {
+                    if let tag = coach.suggestion.rowTag {
+                        tagChip(tag)
+                    } else if coach.kind == .opener, let name = coach.openerName {
+                        tagChip(name)
+                    }
                 }
                 Spacer()
                 if coach.thinking && coach.status == .live {
@@ -837,7 +848,7 @@ struct CoachView: View {
                         .buttonStyle(.link).font(.caption)
                 }
             }
-            TranscriptSection(transcript: coach.transcript, open: $showTranscript)
+            if showAll { TranscriptSection(transcript: coach.transcript, open: $showTranscript) }
         }
     }
 
