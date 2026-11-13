@@ -262,7 +262,7 @@ struct NewCampaignView: View {
     }
 }
 
-/// Writes a cold call script in the backbone format (`ColdCallBackbone`). The rep's "who is this for"
+/// Writes a cold call script for one call segment on the `ScriptSkeleton`. The rep's description
 /// leads; titles and companies from the Salesforce list are only a backup hint. Used by New Campaign
 /// and Edit Campaign.
 enum ScriptWriter {
