@@ -21,6 +21,8 @@ struct SetupView: View {
     @State private var refresh = 0 // re-checks the steps after a setup screen closes
     @State private var teamKeys: TeamKeysView.Mode?
     @State private var showMore = false
+    /// Hold Option while opening Set up to see the team lead's "type keys by hand" row. Reps never see it.
+    @State private var adminKeys = NSEvent.modifierFlags.contains(.option)
 
     struct Step: Identifiable {
         let id: String
@@ -142,7 +144,7 @@ struct SetupView: View {
         var list = [
             Step(id: "team", title: "1. Import team keys",
                  detail: Self.hasTeamKeys ? "Claude, Deepgram, Aircall and the booking calendar are set."
-                                          : "Your team lead sends a keys file and a passcode. One step sets up everything.",
+                                          : "Your team lead sends you a file that ends in .claritykeys. Pick it here. One step sets up everything.",
                  done: Self.hasTeamKeys, optional: false) { teamKeys = .importKeys },
             Step(id: "audio", title: "2. Audio check",
                  detail: "Makes sure the app hears you and the person you call.",
@@ -176,15 +178,10 @@ struct SetupView: View {
     /// Everything else: set one thing by hand, or share keys with a new rep.
     private var moreSteps: [Step] {
         _ = refresh
-        return [
+        var list = [
             Step(id: "name", title: "Your first name",
                  detail: repName.isEmpty ? "So your first line says \"this is [you]\"." : "Your first line says \"this is \(repName)\".",
                  done: !repName.isEmpty, optional: true) { askName = true },
-            Step(id: "keys", title: "AI keys (Anthropic + Deepgram)",
-                 detail: "Claude writes your lines. Deepgram hears the call.",
-                 done: Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil, optional: true) {
-                dismiss(); onKeys()
-            },
             Step(id: "salesforce", title: "Salesforce",
                  detail: Salesforce.isConnected ? "Signed in. Saves Relationship Status and Lead Status."
                                                 : "Your own Salesforce (like Darren's): the guide walks you through it.",
@@ -202,6 +199,14 @@ struct SetupView: View {
                  detail: "Save every key on this Mac into one locked file for a new rep.",
                  done: false, optional: true) { teamKeys = .exportKeys },
         ]
+        if adminKeys {
+            list.insert(Step(id: "keys", title: "Type keys by hand (team lead only)",
+                             detail: "Only for whoever makes the team keys file. Everyone else: use Import team keys.",
+                             done: Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil, optional: true) {
+                dismiss(); onKeys()
+            }, at: 1)
+        }
+        return list
     }
 
     private func row(_ step: Step) -> some View {

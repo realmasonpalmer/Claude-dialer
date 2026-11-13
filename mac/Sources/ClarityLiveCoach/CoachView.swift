@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Decides which screen to show: audio check (first run), keys (once), then the coach.
 struct RootView: View {
-    enum Screen { case check, keys, coach }
+    /// keys = upload the team keys file. manualKeys = type keys by hand (hidden, team lead only).
+    enum Screen { case check, keys, manualKeys, coach }
 
     @EnvironmentObject var proof: ProofModel
     @EnvironmentObject var coach: CoachModel
@@ -31,11 +32,18 @@ struct RootView: View {
                     if appPhone { AircallPhoneSide() }
                 }
             case .keys:
-                KeysView(onSave: { screen = .coach }, onCancel: { screen = .coach }) // team keys can be imported from Set up instead
+                // Reps never type keys: they upload the keys file their team lead sends.
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    TeamKeysView(mode: .importKeys, firstRun: true, onClose: { screen = .coach })
+                    Spacer(minLength: 0)
+                }
+            case .manualKeys:
+                KeysView(onSave: { screen = .coach }, onCancel: { screen = .coach })
             case .coach:
                 CoachView(
                     onAudioCheck: { proof.testAgain(); screen = .check },
-                    onKeys: { screen = .keys }
+                    onKeys: { screen = .manualKeys }
                 )
             }
         }
@@ -635,7 +643,7 @@ struct CoachView: View {
             }
             Text(inTour && coach.status == .ready ? TourSample.line
                  : coach.suggestion.say.isEmpty
-                 ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, to add your keys." : "Getting your line ready...")
+                 ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, and upload your keys file." : "Getting your line ready...")
                  : coach.suggestion.say)
                 .font(lineFont)
                 .lineSpacing(2)

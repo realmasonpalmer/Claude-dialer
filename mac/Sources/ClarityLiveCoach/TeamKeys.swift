@@ -158,6 +158,9 @@ struct TeamKeysView: View {
         var id: String { rawValue }
     }
     let mode: Mode
+    /// The first screen a new rep sees: bigger, with a way to skip. `onClose` leaves the screen.
+    var firstRun = false
+    var onClose: (() -> Void)? = nil
     @EnvironmentObject var coach: CoachModel
     @Environment(\.dismiss) private var dismiss
 
@@ -172,7 +175,13 @@ struct TeamKeysView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(mode == .importKeys ? "Import team keys" : "Export team keys").font(.title2.weight(.semibold))
+            if firstRun {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 40)).foregroundStyle(Brand.blue)
+                    .frame(maxWidth: .infinity)
+            }
+            Text(title).font(.title2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: firstRun ? .center : .leading)
             if mode == .importKeys { importForm } else { exportForm }
             if let message {
                 Text(message).font(.callout)
@@ -181,8 +190,10 @@ struct TeamKeysView: View {
             }
             HStack {
                 Spacer()
-                Button(done ? "Done" : "Cancel") { dismiss() }
-                    .keyboardShortcut(done ? .defaultAction : .cancelAction)
+                Button(done ? (firstRun ? "Continue" : "Done") : (firstRun ? "Skip for now" : "Cancel")) {
+                    if let onClose { onClose() } else { dismiss() }
+                }
+                .keyboardShortcut(done ? .defaultAction : .cancelAction)
                 if !done {
                     if mode == .exportKeys {
                         Button("Save file...") { runExport() }
@@ -194,7 +205,7 @@ struct TeamKeysView: View {
                             .keyboardShortcut(.defaultAction)
                             .disabled(passcode.isEmpty || working)
                     } else {
-                        Button("Choose file...") { if chooseFile() { Task { await runImport() } } }
+                        Button(firstRun ? "Choose keys file" : "Choose file...") { if chooseFile() { Task { await runImport() } } }
                             .buttonStyle(BrandPrimaryButton())
                             .keyboardShortcut(.defaultAction)
                             .disabled(working)
@@ -203,12 +214,18 @@ struct TeamKeysView: View {
             }
         }
         .padding(20)
-        .frame(width: 360)
+        .frame(width: firstRun ? nil : 360)
+    }
+
+    private var title: String {
+        mode == .exportKeys ? "Export team keys" : (firstRun ? "Upload your keys file" : "Import team keys")
     }
 
     private var importForm: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pick the team keys file your team lead sent you. It sets up Claude, Deepgram, Salesforce, Aircall and the booking calendar in one step.")
+            Text(firstRun
+                 ? "Your team lead sent you a keys file. Its name ends in .claritykeys. Click the button, pick the file, and you're done. It sets up Claude, Deepgram, Aircall and the booking calendar. Don't have it? Ask your team lead."
+                 : "Pick the keys file your team lead sent you. Its name ends in .claritykeys. It sets up Claude, Deepgram, Salesforce, Aircall and the booking calendar in one step.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let file { Text(file.lastPathComponent).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             if askPasscode {
@@ -233,6 +250,8 @@ struct TeamKeysView: View {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        panel.message = "Pick your Clarity keys file (its name ends in .claritykeys)"
+        panel.prompt = "Use this file"
         panel.level = .modalPanel // above the coach, which floats over Salesforce
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         file = url
