@@ -17,6 +17,7 @@ struct CampaignEditorView: View {
     /// The script being written, so Stop can cancel it.
     @State private var writeTask: Task<Void, Never>?
     @State private var filling = false
+    @State private var showWho = false
     @State private var writeStart = Date()
     @State private var thought = ""
 
@@ -114,18 +115,33 @@ struct CampaignEditorView: View {
     private var script: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("Who are these people?").font(.headline)
+                Button {
+                    showWho.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: showWho ? "chevron.down" : "chevron.right").font(.caption2)
+                        Text(draft.persona.trimmed.isEmpty ? "Who these people are" : "Who these people are (filled in)")
+                            .font(.callout)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
                 Spacer()
                 if filling { ProgressView().controlSize(.small) }
-                Button("Fill from Salesforce") { Task { await fillFromSalesforce() } }
-                    .disabled(draft.listViewID.isEmpty || filling || writing)
-                    .help("Reads the titles, levels, industries, company sizes and states of the people on this call list's Salesforce list.")
+                if showWho {
+                    Button("Fill from Salesforce") { Task { await fillFromSalesforce() } }
+                        .disabled(draft.listViewID.isEmpty || filling || writing)
+                        .help("Reads the titles, levels, industries, company sizes and states of the people on this call list's Salesforce list.")
+                }
             }
-            Text("This fills in by itself when you pick a list. Add what keeps them up at night and what they want, then click Generate script.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
-                // A list picked and the box still empty: describe the list's people right away.
-                .onChange(of: draft.listViewID) { _, _ in Task { await fillFromSalesforce(auto: true) } }
+            // A list picked and nothing written yet: describe the list's people right away.
+            .onChange(of: draft.listViewID) { _, _ in Task { await fillFromSalesforce(auto: true) } }
+            if showWho {
+                Text("Add what keeps them up at night and what they want, then click Generate script.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
+            }
             HStack(spacing: 8) {
                 Button {
                     writeTask = Task { await write() }

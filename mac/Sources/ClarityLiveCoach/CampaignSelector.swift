@@ -157,6 +157,8 @@ struct NewCampaignView: View {
     @State private var thought = ""
     @State private var message: String?
     @State private var filling = false
+    /// "Who are these people?" fills in by itself, so it stays folded unless the rep opens it.
+    @State private var showWho = false
     @State private var listError: String?
     /// The script being written, so Stop can cancel it.
     @State private var writeTask: Task<Void, Never>?
@@ -206,14 +208,30 @@ struct NewCampaignView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("3. Who are these people?").font(.headline)
+                    Button {
+                        showWho.toggle()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: showWho ? "chevron.down" : "chevron.right").font(.caption2)
+                            Text(audience.trimmed.isEmpty ? "Who these people are" : "Who these people are (filled in from Salesforce)")
+                                .font(.callout)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Open to see or change what Claude knows about these people before it writes")
+                    .tourSpot(.newWho)
                     Spacer()
                     if filling { ProgressView().controlSize(.small) }
-                    Button("Fill from Salesforce") { Task { await fillFromSalesforce() } }
-                        .disabled(view == nil || filling || writing)
-                        .help("Reads the titles, levels, industries, company sizes and states of the people on the list you picked.")
+                    if showWho {
+                        Button("Fill from Salesforce") { Task { await fillFromSalesforce() } }
+                            .disabled(view == nil || filling || writing)
+                            .help("Reads the titles, levels, industries, company sizes and states of the people on the list you picked.")
+                    }
                 }
-                Text("This fills in by itself when you pick a list, and the script starts writing. To change it: click Stop, add what keeps them up at night, then click Generate script.")
+                if showWho {
+                Text("To change the script: click Stop, add what keeps them up at night, then click Generate script.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $audience)
                     .font(.callout)
@@ -225,7 +243,7 @@ struct NewCampaignView: View {
                         }
                     }
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-                    .tourSpot(.newWho)
+                }
                 HStack(spacing: 8) {
                     Button {
                         writeTask = Task { await writeScript() }
@@ -253,7 +271,7 @@ struct NewCampaignView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("4. What to say (the script)").font(.headline)
+                Text("3. What to say (the script)").font(.headline)
                 TextEditor(text: $script)
                     .font(.callout)
                     .frame(minHeight: 200)
