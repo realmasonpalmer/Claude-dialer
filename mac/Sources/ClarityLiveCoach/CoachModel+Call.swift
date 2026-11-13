@@ -126,8 +126,20 @@ extension CoachModel {
             // 1st try, no answer: "Calling Jane Doe again in 3", then redial the same person.
             startAutoRedial()
         } else if !shouldOfferRedial, !lastCallAnswered, let f = followUp {
-            // Done with them for now: send the text, then the next call starts.
-            if f.textDone || !f.textDue { afterHangUp { [weak self] in self?.startNextSequence() } } else { waitingForText = true }
+            // Done with them for now (both dials): send the text, then the next call starts.
+            // No wait when no text can go out: none due today, already sent, a phone tree, or no
+            // Mobile (landline only). An empty phone box always means no Mobile, so the text is skipped.
+            let noMobile = f.noMobile || f.phone.trimmingCharacters(in: .whitespaces).isEmpty
+            if f.textDue, !f.textDone, noMobile {
+                followUp?.noMobile = true
+                applyPlan() // hides the text and says why
+                ActivityLog.add("No Mobile for \(calling ?? "?"): text skipped, on to the next person")
+            }
+            if f.textDone || !f.textDue || noMobile || phoneTreeThisCall {
+                afterHangUp { [weak self] in self?.startNextSequence() }
+            } else {
+                waitingForText = true
+            }
         } else if moveOn {
             afterHangUp { [weak self] in self?.startNextSequence() }
         }

@@ -88,6 +88,7 @@ extension CoachModel {
                 let numbers = await Salesforce.numbers(of: key)
                 guard numbers.checked else { return }
                 KnownNumbers.set(key, mobile: numbers.mobile, phone: numbers.phone) // calls use these (Mobile first)
+                if numbers.mobile == nil, numbers.phone == nil { self?.dropNoNumber(key); return }
                 guard let self, self.followUp?.key == key, self.followUp?.textDone != true else { return }
                 if let number = numbers.mobile {
                     self.followUp?.phone = number

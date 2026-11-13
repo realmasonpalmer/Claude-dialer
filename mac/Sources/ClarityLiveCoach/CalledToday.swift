@@ -36,7 +36,7 @@ enum CalledToday {
     /// - Parameter anyTimeZone: true = ignore the time zone filter.
     static func isCallable(_ id: String, anyTimeZone: Bool = false) -> Bool {
         !ids.contains(id) && !RemovedList.contains(id) && !DialHistory.isMaxed(id) && Cadence.isDue(id)
-            && (anyTimeZone || TimeZoneFilter.allows(id))
+            && (anyTimeZone || TimeZoneFilter.allows(id)) && !CallHistory.noNumber(id)
     }
 
     /// Why people on a list can't be called right now, for the "nobody left" message.

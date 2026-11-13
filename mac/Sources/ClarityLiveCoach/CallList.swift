@@ -70,8 +70,10 @@ final class CallList: ObservableObject {
             if !chromeBlocked { chromeBlocked = true }
         case .noSalesforceTab, .noList:
             if chromeBlocked { chromeBlocked = false }
-        case .list(let found):
+        case .list(let onScreen):
             if chromeBlocked { chromeBlocked = false }
+            // No Mobile and no Phone in Salesforce: never on the list.
+            let found = onScreen.filter { !CallHistory.noNumber($0.id) }
             guard !found.isEmpty else { return }
             // Which list is this? (From the address bar while the list page shows.)
             let key = SalesforceChrome.url().flatMap(Self.listKey)
@@ -163,7 +165,8 @@ final class CallList: ObservableObject {
             let currentID = lastIndex >= 0 && lastIndex < records.count ? records[lastIndex].id : nil
             let before = Set(records.map { String($0.id.prefix(15)) })
             let beforeCount = records.count
-            var fresh = rows.map { Record(id: $0.id, name: $0.name, url: "\(origin)/lightning/r/\(key.object)/\($0.id)/view") }
+            var fresh = rows.filter { !CallHistory.noNumber($0.id) } // no Mobile and no Phone: not on the list
+                .map { Record(id: $0.id, name: $0.name, url: "\(origin)/lightning/r/\(key.object)/\($0.id)/view") }
             // The screen is the truth for order (a sort picked in Salesforce may not reach the API):
             // people on screen go first, in screen order; everyone else follows in Salesforce's order.
             if case .list(let screen) = SalesforceChrome.readList(), !Self.sameOrder(screen, fresh) {
@@ -368,6 +371,15 @@ final class CallList: ObservableObject {
     // MARK: Called today
 
     /// Called when a call connects on the record that's open.
+    /// Takes someone off this list (no Mobile and no Phone in Salesforce).
+    func remove(_ id: String) {
+        guard let i = records.firstIndex(where: { $0.id.prefix(15) == id.prefix(15) }) else { return }
+        records.remove(at: i)
+        if lastIndex >= i { lastIndex -= 1 }
+        save()
+        refreshUpNext()
+    }
+
     func markCurrentCalled() {
         resetCalledIfNewDay()
         guard let i = currentIndex() else { return }

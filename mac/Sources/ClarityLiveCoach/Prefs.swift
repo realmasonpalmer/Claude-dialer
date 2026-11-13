@@ -8,6 +8,7 @@ enum PrefKey {
     static let timeZoneFilter = "timeZoneFilter"
     static let sfCallDays = "sfCallDays"
     static let sfPickedUp = "sfPickedUp"
+    static let sfNoNumber = "sfNoNumber"
     static let eastCoastFirst = "eastCoastFirst"
     static let leadTimeZones = "leadTimeZones"
     static let goalCardOpen = "goalCardOpen"

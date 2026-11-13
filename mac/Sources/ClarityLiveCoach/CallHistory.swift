@@ -12,6 +12,8 @@ enum CallHistory {
     private static var days: [String: [Date]] = [:]
     /// Record Ids with Picked Up Cold Call checked.
     private static var picked: Set<String> = []
+    /// Record Ids with no Mobile and no Phone: nothing to call, so they're kept off the list.
+    private static var noNumbers: Set<String> = []
     /// When each person was last looked up while the app has been open.
     private static var checkedAt: [String: Date] = [:]
 
@@ -37,6 +39,24 @@ enum CallHistory {
         let saved = (d.dictionary(forKey: PrefKey.sfCallDays) as? [String: [String]]) ?? [:]
         days = saved.mapValues { $0.compactMap { dayFormat.date(from: $0) } }
         picked = Set(d.stringArray(forKey: PrefKey.sfPickedUp) ?? [])
+        noNumbers = Set(d.stringArray(forKey: PrefKey.sfNoNumber) ?? [])
+    }
+
+    /// Salesforce has no Mobile and no Phone for them.
+    static func noNumber(_ id: String) -> Bool {
+        lock.withLock {
+            loadSaved()
+            return noNumbers.contains(key(id))
+        }
+    }
+
+    static func markNoNumber(_ id: String) {
+        let saved: [String] = lock.withLock {
+            loadSaved()
+            noNumbers.insert(key(id))
+            return Array(noNumbers)
+        }
+        d.set(saved, forKey: PrefKey.sfNoNumber)
     }
 
     /// The days anyone on the team called them (from Salesforce), oldest first.
@@ -69,6 +89,7 @@ enum CallHistory {
         guard !todo.isEmpty else { return }
         var found: [String: Set<String>] = [:]
         var pickedNow: Set<String> = []
+        var noNumberNow: Set<String> = []
         var checked: [String] = []
         for start in stride(from: 0, to: todo.count, by: 100) {
             let chunk = Array(todo[start..<min(start + 100, todo.count)])
@@ -86,9 +107,13 @@ enum CallHistory {
                     found[key(who), default: []].insert(day)
                 }
                 let boxes = try await Salesforce.query(
-                    "SELECT Id, Picked_Up_Cold_Call__c FROM \(object) WHERE Id IN (\(list))")
-                for r in boxes where (r["Picked_Up_Cold_Call__c"] as? Bool) == true {
-                    if let id = r["Id"] as? String { pickedNow.insert(key(id)) }
+                    "SELECT Id, Picked_Up_Cold_Call__c, MobilePhone, Phone FROM \(object) WHERE Id IN (\(list))")
+                for r in boxes {
+                    guard let id = r["Id"] as? String else { continue }
+                    if (r["Picked_Up_Cold_Call__c"] as? Bool) == true { pickedNow.insert(key(id)) }
+                    let mobile = ((r["MobilePhone"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+                    let phone = ((r["Phone"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+                    if mobile.isEmpty && phone.isEmpty { noNumberNow.insert(key(id)) }
                 }
                 checked += chunk.map { key($0) }
             } catch {
@@ -96,17 +121,19 @@ enum CallHistory {
             }
         }
         guard !checked.isEmpty else { return }
-        let saved: (days: [String: [String]], picked: [String]) = lock.withLock {
+        let saved: (days: [String: [String]], picked: [String], noNumbers: [String]) = lock.withLock {
             for k in checked {
                 checkedAt[k] = now
                 let list = (found[k] ?? []).sorted().compactMap { dayFormat.date(from: $0) }
                 days[k] = list.isEmpty ? nil : list
                 if pickedNow.contains(k) { picked.insert(k) } else { picked.remove(k) }
+                if noNumberNow.contains(k) { noNumbers.insert(k) } else { noNumbers.remove(k) }
             }
-            return (days.mapValues { $0.map { dayFormat.string(from: $0) } }, Array(picked))
+            return (days.mapValues { $0.map { dayFormat.string(from: $0) } }, Array(picked), Array(noNumbers))
         }
         d.set(saved.days, forKey: PrefKey.sfCallDays)
         d.set(saved.picked, forKey: PrefKey.sfPickedUp)
+        d.set(saved.noNumbers, forKey: PrefKey.sfNoNumber)
         let withCalls = checked.filter { found[$0] != nil }.count
         ActivityLog.add("Call history: read \(checked.count) people from Salesforce (\(withCalls) called before, \(checked.filter { pickedNow.contains($0) }.count) picked up)")
     }

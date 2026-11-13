@@ -68,6 +68,20 @@ extension CoachModel {
         nextLead(dial: false)
     }
 
+    /// No Mobile and no Phone in Salesforce: off the call list, and on to the next person (and call
+    /// them, with "Call the next person for me" on). Records opened by hand that aren't on the list stay.
+    func dropNoNumber(_ id: String) {
+        CallHistory.markNoNumber(id)
+        let onList = leads.isActive
+            ? leads.current.map { $0.id.prefix(15) == id.prefix(15) } ?? false
+            : callList.records.contains { $0.id.prefix(15) == id.prefix(15) }
+        callList.remove(id)
+        ActivityLog.add("No Mobile or Phone in Salesforce for \(calling ?? id): taken off the list")
+        guard onList, status == .ready, !dialing else { return }
+        problem = "No Mobile or Phone in Salesforce. Skipped."
+        nextLead(dial: autoDial)
+    }
+
     /// The Save button: writes the status to Salesforce.
     /// "Not Quality Prospect", "Negative" and "Unqualified" also take them off the call list.
     func saveStatus(_ value: String, unqualifiedReason: String? = nil) {
