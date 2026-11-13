@@ -245,6 +245,8 @@ extension CoachModel {
         }
         if id == shownID {
             if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
+            var s = s
+            s.say = fillTags(s.say, for: calling) // never show a bare [Name] or [SDR]
             suggestion = s // same answer, still streaming in
             note(s)
             return

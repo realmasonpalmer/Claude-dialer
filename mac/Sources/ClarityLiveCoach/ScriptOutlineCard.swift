@@ -29,7 +29,14 @@ struct ScriptOutlineCard: View {
             _ = pages.version
             let sections = pages.sections(for: c.pastedScript)
             if !sections.isEmpty {
-                return sections.map { Part(id: Self.stageID(for: $0.title), title: $0.title, text: $0.lines.joined(separator: "\n")) }
+                // The person's real name and company go in the slots ([Name], [Firm]); no one loaded: "there".
+                return sections.map { section in
+                    let lines = section.lines.map { line -> String in
+                        let filled = coach.fillTags(line, for: coach.calling)
+                        return filled.hasPrefix("there, ") ? "Hi " + filled : filled
+                    }
+                    return Part(id: Self.stageID(for: section.title), title: section.title, text: lines.joined(separator: "\n"))
+                }
             }
             list = list.filter { !$0.text.trimmed.isEmpty }
             if list.isEmpty {

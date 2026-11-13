@@ -72,6 +72,14 @@ extension CoachModel {
              rep.isEmpty ? "[your name]" : rep),
             (["company", "your company", "rep company"], shortCompany),
         ]
+        // Their company, when Salesforce has it: [Firm], [Their company], [Account].
+        if let theirs = (leads.isActive ? leads.details?.company : recordCompany)?.trimmingCharacters(in: .whitespaces), !theirs.isEmpty {
+            for n in ["firm", "their company", "account", "account name"] {
+                for (o, c) in [("{", "}"), ("[", "]")] {
+                    t = t.replacingOccurrences(of: o + n + c, with: theirs, options: .caseInsensitive)
+                }
+            }
+        }
         for (names, value) in tags {
             for n in names {
                 for (o, c) in [("{", "}"), ("[", "]")] {
