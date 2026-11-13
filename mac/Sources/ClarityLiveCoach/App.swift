@@ -286,14 +286,15 @@ struct LevelMeter: View {
             HStack {
                 Text(label).font(.callout.weight(.medium))
                 Spacer()
-                Text(level > 0.4 ? "Sound coming through" : "Listening")
+                Text(level >= 0.27 ? "Sound coming through" : "Listening")
                     .font(.caption).foregroundStyle(.secondary)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
+                    // Quiet room = empty, normal talking = well past half, so the bar clearly moves.
                     Capsule().fill(Brand.blue)
-                        .frame(width: max(8, geo.size.width * CGFloat(level)))
+                        .frame(width: max(8, geo.size.width * CGFloat(min(1, max(0, (level - 0.1) / 0.5)))))
                 }
             }
             .frame(height: 12)

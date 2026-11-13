@@ -16,8 +16,13 @@ final class ProofModel: ObservableObject {
         case mic, call, you, prospect, done
     }
 
-    /// Louder than this counts as someone talking (about -36 dB).
-    private let speechLevel: Float = 0.4
+    /// Louder than this counts as someone talking (about -44 dB). It was -36 dB, which a laptop
+    /// mic at arm's length often doesn't reach: the bar barely moved and the step never passed.
+    private let speechLevel: Float = 0.27
+    /// The loudest each side got since the last log line, to see what the mic really gives.
+    private var repPeak: Float = 0
+    private var prospectPeak: Float = 0
+    private var lastLevelLog = Date()
     /// Seconds of speech needed to pass a step.
     private let speechNeeded = 1.0
 
@@ -188,6 +193,12 @@ final class ProofModel: ObservableObject {
     private func heard(isRep: Bool, level: Float, seconds: Double) {
         guard isCapturing else { return }
         let talking = level >= speechLevel
+        if isRep { repPeak = max(repPeak, level) } else { prospectPeak = max(prospectPeak, level) }
+        if (step == .you || step == .prospect), Date().timeIntervalSince(lastLevelLog) > 3 {
+            ActivityLog.add(String(format: "Audio check: loudest in the last 3 s: you %.2f, them %.2f (talking is %.2f or more)",
+                                   repPeak, prospectPeak, speechLevel))
+            lastLevelLog = Date(); repPeak = 0; prospectPeak = 0
+        }
         if isRep {
             repLevel = level
             if talking, step == .you { repSpeech += seconds }
