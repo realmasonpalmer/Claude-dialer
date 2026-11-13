@@ -39,6 +39,29 @@ enum CalledToday {
             && (anyTimeZone || TimeZoneFilter.allows(id))
     }
 
+    /// Why people on a list can't be called right now, for the "nobody left" message.
+    /// Each person is counted once, in the first reason that fits.
+    struct Breakdown {
+        var total = 0
+        var calledToday = 0
+        var comeBackLater = 0
+        var takenOff = 0
+        var planDone = 0
+    }
+
+    static func breakdown(_ listIDs: [String]) -> Breakdown {
+        var b = Breakdown()
+        b.total = listIDs.count
+        let called = ids
+        for id in listIDs {
+            if called.contains(id) { b.calledToday += 1 }
+            else if RemovedList.contains(id) || DialHistory.isMaxed(id) { b.takenOff += 1 }
+            else if DialHistory.person(id).pickups > 0 || Cadence.isFinished(id) { b.planDone += 1 }
+            else if !Cadence.isDue(id) { b.comeBackLater += 1 }
+        }
+        return b
+    }
+
     private static var today: String { Date().formatted(.iso8601.year().month().day()) }
 
     /// First use: today's calls from both old lists, so nothing is lost when they were merged.

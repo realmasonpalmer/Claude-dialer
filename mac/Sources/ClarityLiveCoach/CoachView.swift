@@ -348,7 +348,7 @@ struct CoachView: View {
         case .waitingForText: return ("Send the text below. Then the next person loads.", Brand.blue)
         case .idle: break
         }
-        if listRanOut { return ("All done for today on this list.", listening) }
+        if listRanOut { return ("Nobody left to call on this list right now.", Brand.blue) }
         if !coach.leads.isActive && coach.callList.records.isEmpty {
             let setup = SetupView.doneCount(coach: coach)
             return setup.done < setup.total
@@ -983,7 +983,17 @@ struct CoachView: View {
     /// Nobody left to call today on this list (or a Salesforce list opened with nobody due).
     private var listRanOut: Bool {
         guard coach.status == .ready else { return false }
-        return coach.listDone || (coach.leads.isActive && coach.leads.current == nil && !coach.leads.loading)
+        // From the real list, not from a flag: people loaded, and none of them can be called right now.
+        if coach.leads.isActive {
+            return coach.leads.current == nil && !coach.leads.loading && !coach.leads.rows.isEmpty
+        }
+        return coach.callList.state == .endOfList
+    }
+
+    /// A Salesforce list that loaded with nobody on it who can be called (no phone, Do Not Call, taken off).
+    private var listIsEmpty: Bool {
+        coach.status == .ready && coach.leads.isActive && coach.leads.selected != nil
+            && coach.leads.rows.isEmpty && !coach.leads.loading
     }
 
     private var backEnabled: Bool {
@@ -1002,14 +1012,20 @@ struct CoachView: View {
     /// a call problem, the countdown, "send the text", then why Next can't move on.
     @ViewBuilder private var bottomBanner: some View {
         if listRanOut {
-            let calledHere = coach.leads.isActive ? coach.leads.calledHere
-                : coach.callList.records.filter { coach.callList.calledToday.contains($0.id) }.count
-            let later = coach.leads.isActive ? coach.leads.comingBackLater : coach.callList.comingBackLater
+            let why = CalledToday.breakdown(coach.leads.isActive ? coach.leads.rows.map(\.id) : coach.callList.records.map(\.id))
             VStack(alignment: .leading, spacing: 8) {
-                Text("You called everyone for today on \(campaigns.selected.name). Nice work.").font(.callout.weight(.semibold))
+                Text(why.calledToday > 0 ? "Nobody left to call right now on \(campaigns.selected.name). Nice work."
+                                         : "Nobody is due to call right now on \(campaigns.selected.name).")
+                    .font(.callout.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("\(calledHere) called today. \(later) more come back on another day. We call each person on 5 days: day 1, 2, 5, 8 and 16.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(why.total) people on this list:")
+                    if why.calledToday > 0 { Text("• \(why.calledToday) called today") }
+                    if why.comeBackLater > 0 { Text("• \(why.comeBackLater) come back on another day (we call each person on day 1, 2, 5, 8 and 16)") }
+                    if why.takenOff > 0 { Text("• \(why.takenOff) were taken off (no answer after a few tries, a bad number, or not interested)") }
+                    if why.planDone > 0 { Text("• \(why.planDone) finished the 5 day plan, or already picked up") }
+                }
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let zone = TimeZoneFilter.selected {
                     let held = coach.leads.isActive ? coach.leads.heldByTimeZone : coach.callList.heldByTimeZone
                     Text("You're only calling \(zone.label) time. \(held) more people are waiting in other time zones.")
@@ -1031,6 +1047,16 @@ struct CoachView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        } else if listIsEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("No one on \(coach.leads.selected?.label ?? "this list") can be called.")
+                    .font(.callout.weight(.semibold))
+                Text("Everyone is missing a phone number, is marked Do Not Call, or was taken off the list. Check the list in Salesforce, or pick another one.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
         } else if let message = coach.callMessage {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
