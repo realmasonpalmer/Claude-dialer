@@ -211,8 +211,8 @@ enum Salesforce {
             guard !ids.isEmpty else { continue }
             let list = ids.map { "'\($0)'" }.joined(separator: ",")
             let fields = "Id, MobilePhone, Phone, DoNotCall" + (isContact
-                ? ", Relationship_Status__c, MailingState, MailingCountry, Account.BillingState"
-                : ", Status, State, Country")
+                ? ", Relationship_Status__c, MailingCity, MailingState, MailingCountry, Account.BillingCity, Account.BillingState"
+                : ", Status, City, State, Country")
             for r in try await query("SELECT \(fields) FROM \(view.object) WHERE Id IN (\(list))") {
                 guard let id = r["Id"] as? String else { continue }
                 TimeZoneFilter.learn(r) // state and phone say which time zone they're in

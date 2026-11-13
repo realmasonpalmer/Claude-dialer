@@ -1,13 +1,14 @@
 import Foundation
 
-/// The US time zones a rep can call into.
+/// The US and Canadian time zones a rep can call into, east to west.
 enum CallZone: String, CaseIterable, Identifiable {
-    case eastern, central, mountain, pacific, alaska, hawaii
+    case atlantic, eastern, central, mountain, pacific, alaska, hawaii
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
+        case .atlantic: return "Atlantic"
         case .eastern: return "Eastern"
         case .central: return "Central"
         case .mountain: return "Mountain"
@@ -20,6 +21,7 @@ enum CallZone: String, CaseIterable, Identifiable {
     var timeZone: TimeZone {
         let name: String
         switch self {
+        case .atlantic: name = "America/Halifax"
         case .eastern: name = "America/New_York"
         case .central: name = "America/Chicago"
         case .mountain: name = "America/Denver"
@@ -39,18 +41,37 @@ enum CallZone: String, CaseIterable, Identifiable {
 
     // MARK: Working out someone's time zone
 
-    /// The time zone from what's on the Salesforce record: the state first, then the phone's
-    /// area code. nil = the record doesn't say (no state and no US number, or another country).
-    static func of(state: String?, country: String?, phones: [String?]) -> CallZone? {
+    /// The time zone from what's on the Salesforce record, most exact first:
+    /// 1. City and state together (finds the other side of a two-zone state, like Pensacola, FL).
+    /// 2. State or province.
+    /// 3. City alone, when that city name is only in one time zone (Portland, OR and ME: skipped).
+    /// 4. The phone's area code.
+    /// nil = the record doesn't say, or it's outside the US and Canada.
+    static func of(city: String? = nil, state: String?, country: String?, phones: [String?]) -> CallZone? {
         let c = clean(country)
-        if !c.isEmpty, !usNames.contains(c) { return nil }
+        if !c.isEmpty, !usNames.contains(c), !canadaNames.contains(c) { return nil }
         let codes = phones.compactMap(areaCode)
         if let st = stateCode(state) {
+            if let z = zone(city: city, state: st) { return z }
             // A few states have two time zones. A number from the same state says which side.
             if let code = codes.first(where: { areaCodeStates[$0] == st }) { return zone(areaCode: code) }
             return stateZones[st]
         }
+        if let z = zone(city: city, state: nil) { return z }
         return codes.lazy.compactMap(zone(areaCode:)).first
+    }
+
+    /// The time zone of a city, from the city list. With a state: only that state's city.
+    /// Without: only when every city by that name is in the same time zone.
+    static func zone(city: String?, state: String?) -> CallZone? {
+        // "Saint Louis" and "St Louis" are listed as "st. louis".
+        var name = clean(city)
+        if name.hasPrefix("saint ") { name = "st. " + name.dropFirst(6) }
+        else if name.hasPrefix("st ") { name = "st. " + name.dropFirst(3) }
+        guard !name.isEmpty, let places = cityZones[name] else { return nil }
+        if let state { return places.first { $0.state == state }?.zone }
+        let zones = Set(places.map { $0.zone })
+        return zones.count == 1 ? zones.first : nil
     }
 
     /// "OR", "Oregon" or " oregon " -> "OR". nil when it isn't a US state.
@@ -85,15 +106,18 @@ enum CallZone: String, CaseIterable, Identifiable {
     private static let usNames: Set<String> = [
         "us", "usa", "u.s.", "u.s.a.", "united states", "united states of america", "america",
     ]
+    /// In a Country field, "CA" means Canada.
+    private static let canadaNames: Set<String> = ["canada", "ca", "can"]
 
     /// Each state's time zone (the one most of its people live in, for states with two).
     static let stateZones: [String: CallZone] = {
         var out: [String: CallZone] = [:]
         let groups: [(CallZone, String)] = [
-            (.eastern, "CT DE DC FL GA IN KY ME MD MA MI NH NJ NY NC OH PA RI SC VT VA WV"),
-            (.central, "AL AR IL IA KS LA MN MS MO NE ND OK SD TN TX WI"),
-            (.mountain, "AZ CO ID MT NM UT WY"),
-            (.pacific, "CA NV OR WA"),
+            (.atlantic, "NB NS PE NL"),
+            (.eastern, "CT DE DC FL GA IN KY ME MD MA MI NH NJ NY NC OH PA RI SC VT VA WV ON QC NU"),
+            (.central, "AL AR IL IA KS LA MN MS MO NE ND OK SD TN TX WI MB SK"),
+            (.mountain, "AZ CO ID MT NM UT WY AB YT NT"),
+            (.pacific, "CA NV OR WA BC"),
             (.alaska, "AK"),
             (.hawaii, "HI"),
         ]
@@ -115,6 +139,11 @@ enum CallZone: String, CaseIterable, Identifiable {
         "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
         "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA",
         "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+        // Canada
+        "british columbia": "BC", "alberta": "AB", "saskatchewan": "SK", "manitoba": "MB", "ontario": "ON",
+        "quebec": "QC", "québec": "QC", "new brunswick": "NB", "nova scotia": "NS", "prince edward island": "PE",
+        "newfoundland and labrador": "NL", "newfoundland": "NL", "yukon": "YT", "northwest territories": "NT",
+        "nunavut": "NU",
     ]
 
     /// Area codes on the other side of a two-zone state.
@@ -125,6 +154,102 @@ enum CallZone: String, CaseIterable, Identifiable {
         "270": .central, "364": .central,   // Western Kentucky
         "219": .central,                    // Northwest Indiana
     ]
+
+    /// City -> the states it's in, with the time zone there. A third part overrides the state's zone
+    /// (cities on the other side of a two-zone state). Cities named in more than one zone are listed
+    /// in each, so a city alone only counts when they agree. Portland metro and SW Washington come from LocalLunch.
+    static let cityZones: [String: [(state: String, zone: CallZone)]] = {
+        var out: [String: [(state: String, zone: CallZone)]] = [:]
+        func add(_ city: String, _ state: String, _ zone: CallZone?) {
+            guard let z = zone ?? stateZones[state] else { return }
+            out[city, default: []].append((state, z))
+        }
+        for line in cityList.split(separator: "\n") {
+            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.count >= 2 else { continue }
+            let state = parts[1]
+            for city in parts[0].split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces).lowercased() }) where !city.isEmpty {
+                add(city, state, parts.count > 2 ? CallZone(rawValue: parts[2]) : nil)
+            }
+        }
+        for city in LocalLunch.oregonCities { add(city, "OR", nil) }
+        for city in LocalLunch.washingtonCities { add(city, "WA", nil) }
+        return out
+    }()
+
+    private static let cityList = """
+    birmingham, montgomery, huntsville, mobile, tuscaloosa, decatur, troy | AL
+    anchorage, fairbanks, juneau | AK
+    phoenix, tucson, mesa, chandler, scottsdale, gilbert, glendale, tempe, peoria, surprise, flagstaff | AZ
+    little rock, fayetteville, fort smith, bentonville, rogers, springdale, jonesboro | AR
+    los angeles, san diego, san jose, san francisco, fresno, sacramento, long beach, oakland, bakersfield, anaheim, santa ana, riverside, stockton, irvine, chula vista, fremont, san bernardino, modesto, oxnard, huntington beach, glendale, santa clarita, oceanside, rancho cucamonga, santa rosa, elk grove, corona, lancaster, palmdale, salinas, pomona, hayward, escondido, sunnyvale, torrance, pasadena, fullerton, thousand oaks, visalia, simi valley, concord, roseville, santa clara, vallejo, berkeley, palo alto, mountain view, menlo park, redwood city, san mateo, cupertino, santa monica, burbank, newport beach, costa mesa, walnut creek, pleasanton, san ramon, carlsbad, temecula, santa barbara, beverly hills, culver city, el segundo, lakewood, westminster, richmond, carmel, dublin, lake forest, brentwood, lincoln | CA
+    denver, colorado springs, aurora, fort collins, lakewood, boulder, thornton, arvada, westminster, pueblo, greeley, longmont, englewood, littleton, broomfield, centennial, golden | CO
+    hartford, new haven, stamford, bridgeport, norwalk, greenwich, waterbury, danbury, manchester | CT
+    wilmington, dover, newark | DE
+    washington, washington dc, washington d.c. | DC
+    jacksonville, miami, tampa, orlando, st. petersburg, hialeah, tallahassee, fort lauderdale, port st. lucie, cape coral, pembroke pines, gainesville, coral springs, clearwater, boca raton, west palm beach, sarasota, naples, fort myers, boynton beach, delray beach, jupiter, coral gables, doral, kissimmee, lakeland, ocala, daytona beach, melbourne | FL
+    pensacola, panama city, destin, fort walton beach | FL | central
+    atlanta, augusta, columbus, savannah, athens, macon, alpharetta, marietta, roswell, sandy springs, duluth, kennesaw, norcross, peachtree city, gainesville, decatur | GA
+    honolulu | HI
+    boise, meridian, nampa, idaho falls, pocatello | ID
+    coeur d'alene, lewiston | ID | pacific
+    chicago, aurora, naperville, joliet, rockford, springfield, elgin, peoria, champaign, evanston, schaumburg, oak brook, bloomington, decatur, arlington heights, skokie, deerfield, lake forest, downers grove, itasca, rosemont, quincy, o'fallon | IL
+    indianapolis, fort wayne, south bend, carmel, fishers, bloomington, lafayette, west lafayette, noblesville, zionsville | IN
+    evansville, gary, hammond | IN | central
+    des moines, cedar rapids, davenport, sioux city, iowa city, west des moines, ames, dubuque, waterloo | IA
+    wichita, overland park, kansas city, olathe, topeka, lawrence, lenexa, leawood, manhattan | KS
+    louisville, lexington, covington, frankfort | KY
+    bowling green, owensboro, paducah | KY | central
+    new orleans, baton rouge, shreveport, lafayette, lake charles, metairie, monroe, hammond | LA
+    portland, bangor, augusta, lewiston | ME
+    baltimore, columbia, rockville, bethesda, silver spring, annapolis, frederick, gaithersburg, towson | MD
+    boston, worcester, springfield, cambridge, lowell, brockton, quincy, newton, waltham, burlington, framingham, woburn, lexington, needham, wellesley, andover, salem, plymouth, franklin | MA
+    detroit, grand rapids, warren, sterling heights, ann arbor, lansing, flint, dearborn, troy, southfield, kalamazoo, novi, farmington hills, livonia, auburn hills, traverse city, birmingham, monroe, jackson | MI
+    minneapolis, st. paul, rochester, duluth, bloomington, plymouth, eden prairie, minnetonka, edina, maple grove, eagan, st. cloud | MN
+    jackson, gulfport, hattiesburg, biloxi, tupelo, southaven, meridian | MS
+    kansas city, st. louis, springfield, columbia, independence, lee's summit, o'fallon, st. charles, chesterfield, clayton | MO
+    billings, missoula, bozeman, great falls, helena | MT
+    omaha, lincoln, bellevue, grand island, kearney | NE
+    las vegas, henderson, reno, north las vegas, sparks, carson city | NV
+    manchester, nashua, concord, portsmouth, dover | NH
+    newark, jersey city, paterson, elizabeth, trenton, princeton, edison, hoboken, morristown, parsippany, iselin, woodbridge, cherry hill, camden, new brunswick, red bank, short hills, montclair, wayne | NJ
+    albuquerque, las cruces, santa fe, rio rancho, roswell | NM
+    new york, new york city, nyc, brooklyn, queens, bronx, staten island, manhattan, buffalo, rochester, yonkers, syracuse, albany, white plains, long island city, ithaca, schenectady, utica, binghamton, garden city, melville, hauppauge, tarrytown, rye, purchase, armonk, troy | NY
+    charlotte, raleigh, greensboro, durham, winston-salem, fayetteville, cary, wilmington, high point, asheville, chapel hill, morrisville, concord, greenville, burlington | NC
+    fargo, bismarck, grand forks, minot | ND
+    columbus, cleveland, cincinnati, toledo, akron, dayton, canton, youngstown, dublin, mason, westerville, beachwood, independence, bowling green, hamilton, athens | OH
+    oklahoma city, tulsa, norman, broken arrow, edmond, lawton | OK
+    portland, salem, eugene, bend, medford, corvallis | OR
+    philadelphia, pittsburgh, allentown, erie, reading, scranton, lancaster, harrisburg, bethlehem, king of prussia, malvern, wayne, conshohocken, radnor, blue bell, state college, york, west chester | PA
+    providence, warwick, cranston, newport | RI
+    columbia, charleston, greenville, north charleston, mount pleasant, rock hill, myrtle beach, spartanburg | SC
+    sioux falls, aberdeen | SD
+    rapid city | SD | mountain
+    nashville, memphis, clarksville, murfreesboro, franklin, brentwood, jackson | TN
+    knoxville, chattanooga, johnson city, kingsport | TN | eastern
+    houston, san antonio, dallas, austin, fort worth, arlington, corpus christi, plano, laredo, lubbock, irving, garland, frisco, mckinney, amarillo, grand prairie, brownsville, killeen, denton, midland, waco, round rock, the woodlands, sugar land, richardson, addison, southlake, katy, spring, allen, carrollton, lewisville, pasadena, greenville, victoria, athens | TX
+    el paso | TX | mountain
+    salt lake city, west valley city, provo, west jordan, orem, sandy, ogden, st. george, lehi, draper, park city | UT
+    burlington, montpelier | VT
+    virginia beach, norfolk, chesapeake, richmond, newport news, alexandria, hampton, roanoke, arlington, mclean, reston, tysons, herndon, fairfax, vienna, charlottesville, lynchburg, leesburg, portsmouth | VA
+    seattle, spokane, tacoma, bellevue, kent, everett, renton, redmond, kirkland, olympia, bellingham, yakima, federal way, bothell, issaquah, woodinville | WA
+    charleston, huntington, morgantown | WV
+    milwaukee, madison, green bay, kenosha, racine, appleton, waukesha, eau claire, oshkosh, brookfield | WI
+    cheyenne, casper, laramie, jackson | WY
+    vancouver, victoria, surrey, burnaby, richmond, kelowna | BC
+    calgary, edmonton | AB
+    saskatoon, regina | SK
+    winnipeg | MB
+    toronto, ottawa, mississauga, brampton, hamilton, london, markham, vaughan, kitchener, waterloo, oakville, burlington | ON
+    montreal, montréal, quebec city, québec, laval, gatineau | QC
+    halifax | NS
+    moncton, fredericton | NB
+    charlottetown | PE
+    st. john's | NL
+    whitehorse | YT
+    yellowknife | NT
+    iqaluit | NU
+    """
 
     /// Which state each US area code belongs to.
     private static let areaCodeStates: [String: String] = {
@@ -180,6 +305,17 @@ enum CallZone: String, CaseIterable, Identifiable {
             "WV": "304 681",
             "WI": "262 274 414 534 608 715 920",
             "WY": "307",
+            // Canada
+            "BC": "236 250 257 604 672 778",
+            "AB": "368 403 587 780 825",
+            "SK": "306 474 639",
+            "MB": "204 431 584",
+            "ON": "226 249 289 343 365 382 416 437 519 548 613 647 683 705 742 753 807 905",
+            "QC": "263 354 367 418 438 450 468 514 579 581 819 873",
+            "NB": "428 506",
+            "NS": "782 902",
+            "NL": "709",
+            "YT": "867",
         ]
         var out: [String: String] = [:]
         for (state, codes) in byState {
@@ -276,8 +412,9 @@ enum TimeZoneFilter {
             return nil
         }
         let state = text("State", "MailingState") ?? (account?["BillingState"] as? String)
+        let city = text("City", "MailingCity") ?? (account?["BillingCity"] as? String)
         let country = text("Country", "MailingCountry")
-        let found = CallZone.of(state: state, country: country,
+        let found = CallZone.of(city: city, state: state, country: country,
                                 phones: [r["MobilePhone"] as? String, r["Phone"] as? String])
         let value = found?.rawValue ?? ""
         let k = key(id)
@@ -307,8 +444,8 @@ enum TimeZoneFilter {
         let todo = ids.filter { !known.contains(key($0)) && $0.allSatisfy { $0.isLetter || $0.isNumber } }
         guard !todo.isEmpty else { return }
         let fields = object == "Lead"
-            ? "Id, MobilePhone, Phone, State, Country"
-            : "Id, MobilePhone, Phone, MailingState, MailingCountry, Account.BillingState"
+            ? "Id, MobilePhone, Phone, City, State, Country"
+            : "Id, MobilePhone, Phone, MailingCity, MailingState, MailingCountry, Account.BillingCity, Account.BillingState"
         for start in stride(from: 0, to: todo.count, by: 200) {
             let list = todo[start..<min(start + 200, todo.count)].map { "'\($0)'" }.joined(separator: ",")
             guard let found = try? await Salesforce.query("SELECT \(fields) FROM \(object) WHERE Id IN (\(list))") else {

@@ -249,6 +249,23 @@ extension CoachModel {
             followUp?.linkedinMessageDone = true
             return
         }
+        openProfile(f)
+        // Count once per person per day.
+        if followUp?.linkedinDone != true, !(f.key.map(DialHistory.linkedInToday) ?? false) {
+            touchpoints.log(.linkedin)
+            if let key = f.key { DialHistory.logLinkedIn(key) }
+        }
+        followUp?.linkedinDone = true
+    }
+
+    /// The "LinkedIn profile" link on the card: opens it any day, without copying or counting anything.
+    func openLinkedInProfile() {
+        guard let f = followUp else { return }
+        openProfile(f)
+    }
+
+    /// Opens their profile: the link we have, else their Salesforce LinkedIn field, else a LinkedIn search.
+    private func openProfile(_ f: FollowUp) {
         let words = [f.prospect, recordCompany].compactMap { $0 }.joined(separator: " ")
         let search = words.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
             .flatMap { URL(string: "https://www.linkedin.com/search/results/people/?keywords=\($0)") }
@@ -263,12 +280,6 @@ extension CoachModel {
         } else if let search {
             NSWorkspace.shared.open(search)
         }
-        // Count once per person per day.
-        if followUp?.linkedinDone != true, !(f.key.map(DialHistory.linkedInToday) ?? false) {
-            touchpoints.log(.linkedin)
-            if let key = f.key { DialHistory.logLinkedIn(key) }
-        }
-        followUp?.linkedinDone = true
     }
 
     /// The profile link from the record: the LinkedIn field's link on the page, or the URL in the page text.

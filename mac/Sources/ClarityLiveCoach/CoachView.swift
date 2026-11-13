@@ -254,7 +254,8 @@ struct CoachView: View {
                     onSend: { coach.sendFollowUpText() },
                     onLinkedIn: { coach.openLinkedIn() },
                     onLinkedInMessage: { coach.openLinkedIn(message: true) },
-                    onSetupAircall: { showAircall = true }
+                    onSetupAircall: { showAircall = true },
+                    onProfile: { coach.openLinkedInProfile() }
                 )
                 .tourScrollSpot(.followUp)
             }
@@ -1290,6 +1291,8 @@ struct FollowUpCard: View {
     var onLinkedIn: () -> Void
     var onLinkedInMessage: () -> Void
     var onSetupAircall: () -> Void
+    /// Opens their LinkedIn profile (any day, nothing copied).
+    var onProfile: () -> Void = {}
 
     var body: some View {
         if let f = followUp {
@@ -1297,6 +1300,10 @@ struct FollowUpCard: View {
                 HStack {
                     Text((isLastPerson ? "Last call: " : "Today for ") + (f.prospect ?? "them")).font(.headline)
                     Spacer()
+                    // Their profile, any day, right away (the connection note below waits for its words).
+                    Button(f.linkedinURL == nil ? "Find on LinkedIn" : "LinkedIn profile") { onProfile() }
+                        .buttonStyle(.link).font(.caption)
+                        .help(f.linkedinURL == nil ? "No LinkedIn link in Salesforce: searches LinkedIn for them" : "Opens their LinkedIn profile")
                     Button {
                         followUp = nil
                     } label: {
