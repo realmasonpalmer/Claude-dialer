@@ -419,6 +419,59 @@ enum SalesforceChrome {
         !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty
     }
 
+    // MARK: Video meetings in Chrome
+
+    /// Sites whose tabs use the mic and speakers for meetings, never for an Aircall call.
+    private static let meetingSites = ["meet.google.com", "zoom.us/j/", "zoom.us/wc/", "app.zoom.us", "teams.microsoft.com",
+                                       "teams.live.com", "webex.com", "whereby.com", "around.co", "riverside.fm",
+                                       "streamyard.com", "gather.town"]
+    private static var meeting: (at: Date, open: Bool) = (.distantPast, false)
+    private static var meetingCheckRunning = false
+
+    /// A video meeting (Google Meet, Zoom, Teams...) is open in Chrome. Chrome using the mic and
+    /// speakers then is the meeting, not a call, so the coach must not start listening.
+    /// Checked every 5 seconds, off the main thread (the very first check waits for the answer).
+    static func meetingOpen() -> Bool {
+        guard chromeRunning else { return false }
+        let script = """
+        set out to ""
+        tell application "Google Chrome"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    set out to out & (URL of t) & linefeed
+                end repeat
+            end repeat
+        end tell
+        return out
+        """
+        func check() {
+            let urls = (NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue ?? "").lowercased()
+            let open = meetingSites.contains { urls.contains($0) }
+            lock.lock()
+            let changed = open != meeting.open
+            meeting = (Date(), open)
+            meetingCheckRunning = false
+            lock.unlock()
+            if changed {
+                ActivityLog.add(open ? "Chrome: a video meeting is open. Its mic and sound don't count as a call."
+                                     : "Chrome: no video meeting open.")
+            }
+        }
+        lock.lock()
+        let first = meeting.at == .distantPast && !meetingCheckRunning
+        let stale = Date().timeIntervalSince(meeting.at) > 5 && !meetingCheckRunning
+        if stale { meetingCheckRunning = true }
+        let open = meeting.open
+        lock.unlock()
+        if first {
+            queue.sync { check() } // once, so the app never starts a "call" before it knows
+            lock.lock(); defer { lock.unlock() }
+            return meeting.open
+        }
+        if stale { queue.async { check() } }
+        return open
+    }
+
     // MARK: Snapshot (address + title), kept fresh off the main thread
 
     /// Every AppleScript runs on this one queue, never two at once. The main thread only waits

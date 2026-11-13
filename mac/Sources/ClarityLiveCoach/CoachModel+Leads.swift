@@ -298,7 +298,8 @@ extension CoachModel {
         callMessage = nil
         callList.refreshUpNext()
         objectWillChange.send()
-        Task { await leads.timeZoneChanged() }
+        // During a call the person on the line stays put; Next uses the new time zone afterwards.
+        if status == .ready { Task { await leads.timeZoneChanged() } }
     }
 
     /// Call East Coast leads first (then Central, Mountain, Pacific). Works on both call lists.

@@ -487,7 +487,6 @@ struct CoachView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .disabled(coach.status != .ready)
         .help(picked == nil
               ? "Where to call: pick one time zone, or start in the East and go West"
               : "Only calling people in \(picked?.label ?? "") time. People with no state or US number in Salesforce stay on the list.")
@@ -517,6 +516,11 @@ struct CoachView: View {
     /// Pick a campaign, or create and edit one. Locked during a call.
     private var campaignMenu: some View {
         Menu {
+            if coach.status != .ready {
+                Text("You're on a call. Finish it to switch call lists.")
+                Divider()
+            }
+            Group {
             Button("All call lists...") {
                 openWindow(id: "campaign-selector")
                 NSApplication.shared.activate(ignoringOtherApps: true)
@@ -539,13 +543,14 @@ struct CoachView: View {
             }
             Divider()
             Button("Edit this call list...") { edit(campaigns.selected) }
+            }
+            .disabled(coach.status != .ready) // switching scripts mid-call would change what the coach says
         } label: {
             Label(Self.short(campaigns.selected.name), systemImage: "person.2.fill")
                 .labelStyle(.titleAndIcon)
                 .font(.caption.weight(.semibold)).lineLimit(1).truncationMode(.tail)
         }
         .menuStyle(.borderlessButton)
-        .disabled(coach.status != .ready)
         .help(coach.status == .ready ? "Who to call: pick a call list (people to call, plus what to say)" : "Finish the call to switch call lists")
     }
 

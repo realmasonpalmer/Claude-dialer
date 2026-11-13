@@ -81,9 +81,11 @@ struct AudioProcess: Identifiable, Hashable {
     }()
 
     /// Chrome uses the mic and plays sound at the same time only while a call is live.
+    /// Chrome is using the mic and playing sound, and it isn't a video meeting (Meet, Zoom, Teams...).
     static func chromeOnCall(in processes: [AudioProcess]) -> Bool {
         let chrome = processes.filter(\.isChrome)
-        return chrome.contains(where: \.isRunningInput) && chrome.contains(where: \.isRunningOutput)
+        guard chrome.contains(where: \.isRunningInput) && chrome.contains(where: \.isRunningOutput) else { return false }
+        return !SalesforceChrome.meetingOpen()
     }
 
     /// Same check for the Aircall desktop app.
