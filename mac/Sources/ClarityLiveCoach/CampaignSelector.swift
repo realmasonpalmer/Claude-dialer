@@ -158,6 +158,8 @@ struct NewCampaignView: View {
     @State private var message: String?
     @State private var filling = false
     @State private var listError: String?
+    /// The script being written, so Stop can cancel it.
+    @State private var writeTask: Task<Void, Never>?
     @State private var tourStep: Int?
     @AppStorage("newListTourSeen") private var newListTourSeen = false
 
@@ -224,18 +226,25 @@ struct NewCampaignView: View {
                     }
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
                     .tourSpot(.newWho)
-                Button {
-                    Task { await writeScript() }
-                } label: {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Label(writing ? ScriptWriter.progress(script, since: writeStart, now: context.date) : "Generate script",
-                              systemImage: "sparkles")
+                HStack(spacing: 8) {
+                    Button {
+                        writeTask = Task { await writeScript() }
+                    } label: {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Label(writing ? ScriptWriter.progress(script, since: writeStart, now: context.date) : "Generate script",
+                                  systemImage: "sparkles")
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(BrandPrimaryButton())
+                    .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
+                    .help("Claude writes the whole script for these people. Takes 2 to 5 minutes.")
+                    if writing {
+                        Button("Stop") { writeTask?.cancel() }
+                            .controlSize(.large)
+                            .help("Stop writing. Your script goes back to how it was.")
+                    }
                 }
-                .buttonStyle(BrandPrimaryButton())
-                .disabled(audience.trimmed.isEmpty || writing || Keychain.read(.anthropic) == nil)
-                .help("Claude writes the whole script for these people. Takes 2 to 5 minutes.")
                 .tourSpot(.newGenerate)
                 if writing, !thought.isEmpty {
                     Text(ScriptWriter.lastThought(thought))
@@ -274,6 +283,7 @@ struct NewCampaignView: View {
         }
         .padding(20)
         .frame(width: 640, height: 760)
+        .onDisappear { writeTask?.cancel() } // closing the window stops the writing
         .overlayPreferenceValue(TourSpotKey.self) { spots in
             TourOverlay(step: $tourStep, spots: spots, steps: Tour.newListSteps) { newListTourSeen = true }
         }
@@ -328,6 +338,7 @@ struct NewCampaignView: View {
         thought = ""
         message = nil
         defer { writing = false }
+        let before = script
         do {
             script = ""
             let text = try await ScriptWriter.write(segment: name.trimmed.isEmpty ? (view?.label ?? "") : name.trimmed,
@@ -339,7 +350,13 @@ struct NewCampaignView: View {
             script = text
             if name.trimmed.isEmpty, let v = view { name = v.label }
         } catch {
-            message = "Couldn't write the script: \(error.localizedDescription)"
+            if Task.isCancelled {
+                writing = false // late updates from Claude are dropped
+                script = before
+                message = "Stopped. Your script is back the way it was."
+            } else {
+                message = "Couldn't write the script: \(error.localizedDescription)"
+            }
         }
     }
 }

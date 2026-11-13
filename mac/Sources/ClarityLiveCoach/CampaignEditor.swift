@@ -14,6 +14,8 @@ struct CampaignEditorView: View {
     @State private var listError: String?
     @State private var loadingLists = false
     @State private var writing = false
+    /// The script being written, so Stop can cancel it.
+    @State private var writeTask: Task<Void, Never>?
     @State private var filling = false
     @State private var writeStart = Date()
     @State private var thought = ""
@@ -35,6 +37,7 @@ struct CampaignEditorView: View {
         }
         .frame(minWidth: 560, minHeight: 640)
         .onAppear(perform: load)
+        .onDisappear { writeTask?.cancel() } // closing the window stops the writing
         .onChange(of: store.editing?.id) { load() }
     }
 
@@ -124,18 +127,25 @@ struct CampaignEditorView: View {
             box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
                 // A list picked and the box still empty: describe the list's people right away.
                 .onChange(of: draft.listViewID) { _, _ in Task { await fillFromSalesforce(auto: true) } }
-            Button {
-                Task { await write() }
-            } label: {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Label(writing ? ScriptWriter.progress(draft.pastedScript, since: writeStart, now: context.date) : "Generate script",
-                          systemImage: "sparkles")
+            HStack(spacing: 8) {
+                Button {
+                    writeTask = Task { await write() }
+                } label: {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Label(writing ? ScriptWriter.progress(draft.pastedScript, since: writeStart, now: context.date) : "Generate script",
+                              systemImage: "sparkles")
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .buttonStyle(BrandPrimaryButton())
+                .disabled(writing || draft.persona.trimmed.isEmpty)
+                .help("Claude writes the whole script for these people. Takes 2 to 5 minutes. It replaces the script below.")
+                if writing {
+                    Button("Stop") { writeTask?.cancel() }
+                        .controlSize(.large)
+                        .help("Stop writing. Your script goes back to how it was.")
+                }
             }
-            .buttonStyle(BrandPrimaryButton())
-            .disabled(writing || draft.persona.trimmed.isEmpty)
-            .help("Claude writes the whole script for these people. Takes 2 to 5 minutes. It replaces the script below.")
             if writing, !thought.isEmpty {
                 Text(ScriptWriter.lastThought(thought))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -238,6 +248,7 @@ struct CampaignEditorView: View {
         message = nil
         defer { writing = false }
         let list = listViews.first { $0.id == draft.listViewID }
+        let before = draft.pastedScript
         do {
             draft.pastedScript = ""
             draft.pastedScript = try await ScriptWriter.write(segment: draft.name.trimmed, audience: draft.persona,
@@ -246,9 +257,15 @@ struct CampaignEditorView: View {
             }, onThinking: { partial in
                 Task { @MainActor in if writing { thought = partial } }
             })
-            message = "Done. Read it over, then \"Sort it into sections\" or Save."
+            message = "Done. Read it over, then \"Tidy up my script\" or Save."
         } catch {
-            message = "Couldn't write the script: \(error.localizedDescription)"
+            if Task.isCancelled {
+                writing = false // late updates from Claude are dropped
+                draft.pastedScript = before
+                message = "Stopped. Your script is back the way it was."
+            } else {
+                message = "Couldn't write the script: \(error.localizedDescription)"
+            }
         }
     }
 
