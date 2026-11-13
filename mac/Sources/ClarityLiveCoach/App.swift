@@ -191,7 +191,18 @@ struct AudioCheckView: View {
                 Text("Calling from somewhere else (the Aircall desktop app)? Open Advanced below and pick it.")
                     .font(.callout).foregroundStyle(.secondary)
             case .you:
-                Text("Check your headset is the input in System Settings > Sound > Input.")
+                Text("The app listens to you through your Mac's own microphone, not your headset.")
+                Text("1. Open your laptop lid. The Mac's mic is off when the lid is closed.")
+                Text("2. Click Open sound settings. Click Input. Pick your Mac's microphone and slide Input volume up.")
+                Text("3. Say \"Testing, one, two, three\" again. The blue bar should move.")
+                Text("Still nothing after a few seconds? The app switches to the microphone picked in sound settings by itself.")
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Open sound settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") { NSWorkspace.shared.open(url) }
+                    }
+                    Button("Try again") { model.retry() }
+                }
             case .prospect:
                 Text("Turn on Clarity Live Coach under \"System Audio Recording Only\", then press Try again.")
                 HStack {

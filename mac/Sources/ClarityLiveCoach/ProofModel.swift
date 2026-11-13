@@ -250,33 +250,18 @@ final class CaptureEngine {
     /// The call-side processes being listened to right now.
     private(set) var tapTargets: [AudioObjectID] = []
     private var onChunk: ((Bool, AVAudioPCMBuffer) -> Void)?
+    /// Listening to the mic alone (the call side comes from the Aircall phone).
+    private var micOnly = false
 
     func start(processes: [AudioObjectID], onChunk: @escaping (Bool, AVAudioPCMBuffer) -> Void) throws {
         self.onChunk = onChunk
         tapTargets = processes
         let micConverter = self.micConverter, tapConverter = self.tapConverter, writers = self.writers
         do {
-            // With a Bluetooth headset, Aircall should be the only app using its mic: two apps on it
-            // make the headset glitch (worst at hang-up). So the coach hears the rep through the
-            // Mac's built-in mic, unless that's turned off in Settings or there isn't one.
-            // If the built-in mic won't start, use the normal mic: never block a call over this.
-            let useBuiltIn = Prefs.builtInMic
-            let onMic: (AVAudioPCMBuffer) -> Void = { buffer in
+            try startMic { buffer in
                 guard let speech = micConverter.convert(buffer) else { return }
                 writers.write(speech, isRep: true)
                 onChunk(true, speech)
-            }
-            if useBuiltIn, let builtIn = builtInMicrophoneID() {
-                do {
-                    try mic.start(device: builtIn, onBuffer: onMic)
-                    ActivityLog.add("Mic: Mac's built-in")
-                } catch {
-                    ActivityLog.add("Mic: built-in failed (\(error.localizedDescription)), using the default mic")
-                    try mic.start(device: nil, onBuffer: onMic)
-                }
-            } else {
-                try mic.start(device: nil, onBuffer: onMic)
-                ActivityLog.add("Mic: default")
             }
             try tap.start(processes: processes) { buffer in
                 guard let speech = tapConverter.convert(buffer) else { return }
@@ -291,15 +276,44 @@ final class CaptureEngine {
 
     /// Only the rep's mic (the call side comes straight from the Aircall phone).
     func startMicOnly(onChunk: @escaping (Bool, AVAudioPCMBuffer) -> Void) throws {
+        micOnly = true
         let micConverter = self.micConverter, writers = self.writers
-        let useBuiltIn = Prefs.builtInMic
-        let onMic: (AVAudioPCMBuffer) -> Void = { buffer in
+        try startMic { buffer in
             guard let speech = micConverter.convert(buffer) else { return }
             writers.write(speech, isRep: true)
             onChunk(true, speech)
         }
-        if useBuiltIn, let builtIn = builtInMicrophoneID(), (try? mic.start(device: builtIn, onBuffer: onMic)) != nil { return }
-        try mic.start(device: nil, onBuffer: onMic)
+    }
+
+    /// Starts the rep's microphone.
+    ///
+    /// With a Bluetooth headset, Aircall should be the only app using its mic: two apps on it make
+    /// the headset glitch (worst at hang-up). So the coach hears the rep through the Mac's built-in
+    /// mic when there is one. If the built-in mic won't start, or gives pure silence for 3 seconds
+    /// (lid closed, input volume at zero), it switches to the Mac's chosen input: never block a call
+    /// over this.
+    private func startMic(onMic: @escaping (AVAudioPCMBuffer) -> Void) throws {
+        guard Prefs.builtInMic, let builtIn = builtInMicrophoneID() else {
+            try mic.start(device: nil, onBuffer: onMic)
+            ActivityLog.add("Mic: the Mac's chosen input")
+            return
+        }
+        let watch = SilenceWatch()
+        do {
+            try mic.start(device: builtIn) { [weak self] buffer in
+                onMic(buffer)
+                guard watch.isDead(after: buffer) else { return }
+                DispatchQueue.main.async {
+                    guard let self, self.onChunk != nil || self.micOnly else { return }
+                    ActivityLog.problem("Mic: the Mac's built-in mic is silent (lid closed, or input volume at zero). Switching to the Mac's chosen input.")
+                    try? self.mic.start(device: nil, onBuffer: onMic)
+                }
+            }
+            ActivityLog.add("Mic: Mac's built-in")
+        } catch {
+            ActivityLog.add("Mic: built-in failed (\(error.localizedDescription)), using the Mac's chosen input")
+            try mic.start(device: nil, onBuffer: onMic)
+        }
     }
 
     /// Switches the call side to other processes (Aircall's audio showed up after listening began).
@@ -319,6 +333,43 @@ final class CaptureEngine {
         mic.stop()
         tap.stop()
         tapTargets = []
+        onChunk = nil
+        micOnly = false
+    }
+}
+
+/// Notices a microphone that gives nothing but silence. A real mic always has a little room
+/// noise; a dead one (lid closed, input volume at zero) gives exact zeros. Used from the mic's
+/// own audio thread only.
+final class SilenceWatch {
+    private var seconds = 0.0
+    private var heardAnything = false
+    private var reported = false
+
+    /// True once, after 3 seconds of pure silence from the start.
+    func isDead(after buffer: AVAudioPCMBuffer) -> Bool {
+        guard !heardAnything, !reported, buffer.format.sampleRate > 0 else { return false }
+        if Self.peak(of: buffer) > 0.00002 { heardAnything = true; return false } // a dead mic gives exact zeros; any real room is louder
+        seconds += Double(buffer.frameLength) / buffer.format.sampleRate
+        guard seconds >= 3 else { return false }
+        reported = true
+        return true
+    }
+
+    private static func peak(of buffer: AVAudioPCMBuffer) -> Float {
+        let n = Int(buffer.frameLength)
+        guard n > 0 else { return 0 }
+        var peak: Float = 0
+        if let data = buffer.floatChannelData {
+            for c in 0..<Int(buffer.format.channelCount) {
+                for i in 0..<n { peak = max(peak, abs(data[c][i])) }
+            }
+        } else if let data = buffer.int16ChannelData {
+            for i in 0..<n { peak = max(peak, abs(Float(data[0][i])) / Float(Int16.max)) }
+        } else {
+            return 1 // a format we can't read: assume it's fine
+        }
+        return peak
     }
 }
 
