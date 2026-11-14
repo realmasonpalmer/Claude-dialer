@@ -10,6 +10,8 @@ struct RootView: View {
     @EnvironmentObject var proof: ProofModel
     @EnvironmentObject var coach: CoachModel
     @AppStorage(PrefKey.audioCheckPassed) private var audioCheckPassed = false
+    /// Left the keys screen without a keys file (it stays in Set up).
+    @AppStorage("keysSkipped") private var keysSkipped = false
     /// Skipped on a first run: don't show the audio check again at every launch (Set up still lists it).
     @AppStorage(PrefKey.audioCheckSkipped) private var audioCheckSkipped = false
     private let appPhone = true // always: the Aircall phone is inside the coach
@@ -24,7 +26,7 @@ struct RootView: View {
                 HStack(alignment: .top, spacing: 0) {
                     AudioCheckView(onFinish: {
                         audioCheckPassed = true
-                        screen = hasKeys ? .coach : .keys
+                        screen = .coach
                     }, onCancel: audioCheckPassed && hasKeys ? { screen = .coach } : nil,
                        // Never trap a new rep here: they can finish it later from Set up.
                        onSkip: { audioCheckSkipped = true; proof.testAgain(); screen = .coach })
@@ -36,7 +38,10 @@ struct RootView: View {
                 // Reps never type keys: they upload the keys file their team lead sends.
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    TeamKeysView(mode: .importKeys, firstRun: true, onClose: { screen = .coach })
+                    TeamKeysView(mode: .importKeys, firstRun: true, onClose: {
+                        keysSkipped = true
+                        screen = (!audioCheckPassed && !audioCheckSkipped) ? .check : .coach // keys first, then the audio check
+                    })
                     Spacer(minLength: 0)
                 }
             case .manualKeys:
@@ -77,7 +82,11 @@ struct RootView: View {
     }
 
     private var hasKeys: Bool { Keychain.read(.deepgram) != nil && Keychain.read(.anthropic) != nil }
-    private var firstScreen: Screen { !audioCheckPassed && !audioCheckSkipped ? .check : (hasKeys || audioCheckSkipped ? .coach : .keys) }
+    private var firstScreen: Screen {
+        if !hasKeys && !keysSkipped { return .keys }
+        if !audioCheckPassed && !audioCheckSkipped { return .check }
+        return .coach
+    }
 }
 
 // MARK: - Keys
@@ -190,6 +199,9 @@ struct CoachView: View {
     @State private var showAircall = false
     @State private var showSetup = false
     @State private var showSettings = false
+    @State private var showDropSetup = false
+    @AppStorage(PrefKey.dropNudgeDismissed) private var dropNudgeDismissed = false
+    @State private var showWhy = false
     /// The first-run tour: 0 = welcome card, 1...n = steps, nil = hidden.
     @State private var tourStep: Int?
     @AppStorage(PrefKey.tourSeen) private var tourSeen = false
@@ -235,6 +247,7 @@ struct CoachView: View {
             topBar
             nowBar
             readyCheck
+            dropNudge
             // The middle scrolls if it's ever taller than the screen; the top bar and the buttons stay put.
             ScrollViewReader { scroller in
             ScrollView(.vertical, showsIndicators: false) {
@@ -348,6 +361,7 @@ struct CoachView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsPane(updater: updater).environmentObject(coach) }
         .sheet(isPresented: $showAircall) { AircallSetupView() }
+        .sheet(isPresented: $showDropSetup) { VoicemailDropSetupView() }
         .animation(.easeInOut(duration: 0.2), value: coach.status)
     }
 
@@ -358,15 +372,15 @@ struct CoachView: View {
         switch coach.phase {
         case .live:
             switch coach.kind {
-            case .voicemail: return ("Voicemail. Wait for the beep, then read the message.", warning)
+            case .voicemail: return ("Voicemail. Read after the beep.", warning)
             case .screener: return ("A robot answered. Say the line below.", warning)
             default: return ("On a call. Read the big line out loud.", listening)
             }
         case .paused: return ("Paused. The app is not listening.", warning)
         case .dialing: return ("Calling. Get ready to talk.", Brand.blue)
-        case .countdown: return ("Calling the next person soon. Click Wait to stop.", Brand.blue)
+        case .countdown: return ("Next call soon. Space to pause.", Brand.blue)
         case .gettingReady: return ("Getting the next person ready.", Brand.blue)
-        case .waitingForText: return ("Send the text below. Then the next person loads.", Brand.blue)
+        case .waitingForText: return ("Send the text to move on.", Brand.blue)
         case .idle: break
         }
         if listRanOut { return ("Nobody left to call on this list right now.", Brand.blue) }
@@ -397,6 +411,23 @@ struct CoachView: View {
             ("Chrome", coach.leads.isActive || !coach.callList.chromeBlocked, { showSetup = true }),
             ("List", coach.leads.isActive || !coach.callList.records.isEmpty, { openList(of: campaigns.selected) }),
         ]
+    }
+
+    /// Shown once, after the rep has heard a voicemail, until they set up the voicemail drop or say not now.
+    @ViewBuilder private var dropNudge: some View {
+        if coach.status == .ready, !Prefs.voicemailDropOn, !dropNudgeDismissed, !inTour, Aircall.canPlaceCalls,
+           UserDefaults.standard.integer(forKey: PrefKey.voicemailsSeen) >= 1 {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform.badge.mic").foregroundStyle(Brand.blue)
+                Text("Skip talking to voicemails: record one message and the app drops it for you.")
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                Button("Set up") { showDropSetup = true }.controlSize(.small)
+                Button("Not now") { dropNudgeDismissed = true }.buttonStyle(.link).font(.caption)
+            }
+            .padding(8)
+            .background(Brand.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 
     @ViewBuilder private var readyCheck: some View {
@@ -445,15 +476,19 @@ struct CoachView: View {
                     }
                     Button("Stop") { coach.stopBlock() }.buttonStyle(.link).font(.caption2)
                 } else if coach.breakUntil == nil, coach.status == .ready {
-                    Button("Start a 50 min block") { coach.startBlock() }.buttonStyle(.link).font(.caption2)
+                    Button("Start a 50 min block") { coach.startBlock() }.buttonStyle(.bordered).controlSize(.small)
                         .help("50 minutes of calling, then a 10 minute break")
                 }
                 Spacer(minLength: 0)
             }
             .padding(.leading, 13)
+            if let toast = coach.toast {
+                Text(toast).font(.caption2.weight(.semibold)).foregroundStyle(Color.green).padding(.leading, 13)
+            }
             if let plan {
-                Text(plan).font(.caption2).foregroundStyle(.secondary)
+                Text(CallQueue.short(plan)).font(.caption2).foregroundStyle(.secondary)
                     .padding(.leading, 13)
+                    .help(plan)
                     .help("Late = behind on the 5 day plan. Resting = waiting for their next call day.")
             }
         }
@@ -488,7 +523,7 @@ struct CoachView: View {
         // No status, Voicemail or End call buttons here (the app handles those by itself).
         // Command-E still ends a call; Settings has both buttons.
         .background(
-            Button("") { coach.endCall() }
+            Button("") { coach.hangUpAndEnd() }
                 .keyboardShortcut("e", modifiers: .command)
                 .opacity(0).frame(width: 0, height: 0)
                 .allowsHitTesting(false)
@@ -583,6 +618,7 @@ struct CoachView: View {
     private var settingsMenu: some View {
         Menu {
             Button(setupLabel) { showSetup = true }
+            Button(Prefs.voicemailDropOn ? "Voicemail drop (on)..." : "Voicemail drop...") { showDropSetup = true }
             Button("Settings...") { showSettings = true }
             Button("Help") { showHelp = true }
             Button("Show me around") { tourStep = 0 }
@@ -947,6 +983,34 @@ struct CoachView: View {
     }
 
     /// After a 2nd-try voicemail: "Calling Jane in 4", with a button to stay.
+    /// A real talk just ended: three big buttons. One click saves it in Salesforce and moves on.
+    private var outcomeBar: some View {
+        let object = coach.currentAttemptKey.flatMap { Salesforce.objectFor(id: $0) } ?? "Contact"
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("How did it go with \(Screener.firstName(coach.calling) ?? "them")?").font(.callout.weight(.semibold))
+                Spacer(minLength: 0)
+                Button("Skip") { coach.skipOutcome() }.buttonStyle(.link).font(.caption)
+                    .help("Don't rate this call, move on")
+            }
+            HStack(spacing: 8) {
+                ForEach(Outcomes.quick(object), id: \.label) { o in
+                    Button {
+                        coach.saveStatus(o.value, unqualifiedReason: o.value == "Unqualified" ? "Non-Responsive" : nil)
+                    } label: {
+                        Text(o.label).font(.callout.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 4)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(coach.savingStatus)
+                    .help("Saves \(o.value) in Salesforce")
+                }
+            }
+        }
+        .padding(10)
+        .brandCard(radius: 10)
+    }
+
     private func autoNextBar(_ left: Int) -> some View {
         countdownBar("Calling \(coach.autoNextName ?? coach.nextLeadName ?? "next person") in \(left)", left: left) {
             coach.cancelAutoNext()
@@ -982,7 +1046,7 @@ struct CoachView: View {
             // During a call: no stage buttons, just a way out if the app ever misses the hang-up.
             HStack(spacing: 8) {
                 Button(role: .destructive) {
-                    coach.endCall()
+                    coach.hangUpAndEnd()
                 } label: {
                     Label("End call", systemImage: "phone.down.fill").frame(maxWidth: .infinity)
                 }
@@ -997,23 +1061,43 @@ struct CoachView: View {
             // Walkthrough: a sample person, since no list is loaded yet.
             HStack(spacing: 8) {
                 bigButton("Call \(TourSample.name)", icon: "phone.fill") {}
-                smallButton("Call \(TourSample.next)") {}
+                smallButton("Skip") {}
             }
             .controlSize(.large)
             .allowsHitTesting(false)
-        } else if coach.leads.isActive {
-            leadNavigation
         } else {
-            stepNavigation
+            goBar
         }
     }
 
-    /// Between calls with the Salesforce list: Back, a big Call button, Next.
-    private var leadNavigation: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let error = coach.dialError {
-                warningText(error)
+    /// Between calls: three fixed spots that never change jobs. Back goes to the person before, the big
+    /// Go button does the next right thing (call, call again, or move on), Skip passes this person.
+    private var goBar: some View {
+        let leadMode = coach.leads.isActive
+        let first = leadMode ? (coach.leads.details.map { $0.firstName ?? $0.name } ?? "them") : currentName
+        let nextName = leadMode ? coach.leads.nextRow?.name : { () -> String? in
+            if case .ready(let name, _, _) = coach.callList.state { return name }
+            return nil
+        }()
+        let calledAlready = leadMode ? coach.currentAttempts > 0 : coach.currentAttemptKey != nil
+        let notCalledYet = leadMode ? coach.currentAttempts == 0 : (coach.calling != nil && coach.currentAttemptKey == nil)
+        // What Go does now.
+        let go: (title: String, icon: String, enabled: Bool, action: () -> Void) = {
+            if coach.shouldOfferRedial {
+                return ("Call \(first) again", "arrow.clockwise", leadMode ? canCall : !coach.dialing, { coach.redial() })
             }
+            if notCalledYet {
+                return (leadMode ? (coach.dialing ? "Calling..." : callTitle) : (coach.gettingReady ?? (coach.dialing ? "Calling..." : "Call \(currentName)")),
+                        "phone.fill", leadMode ? canCall : !coach.dialing,
+                        { leadMode ? coach.dial() : coach.callOpenLead() })
+            }
+            return (nextName.map { "Next: \($0)" } ?? "No one left", "phone.arrow.right",
+                    leadMode ? (nextName != nil && !coach.dialing) : (nextEnabled && !coach.dialing),
+                    { coach.nextLead() })
+        }()
+        let goIsNext = !coach.shouldOfferRedial && !notCalledYet
+        return VStack(alignment: .leading, spacing: 6) {
+            if let error = coach.dialError { warningText(error) }
             HStack(spacing: 8) {
                 Button {
                     coach.previousLead()
@@ -1021,38 +1105,27 @@ struct CoachView: View {
                     Image(systemName: "chevron.left").frame(width: 16, height: 20)
                 }
                 .buttonStyle(BrandQuietButton())
-                .disabled(!coach.leads.canGoBack)
+                .disabled(leadMode ? !coach.leads.canGoBack : !backEnabled)
                 .help("Go back to the person before")
 
-                let first = coach.leads.details.map { $0.firstName ?? $0.name } ?? ""
-                let nextName = coach.leads.nextRow?.name
-                if coach.shouldOfferRedial {
-                    // 1st try, no answer: call right back.
-                    bigButton("Redial \(first)", icon: "arrow.clockwise") { coach.redial() }
-                        .keyboardShortcut("r", modifiers: .command)
-                        .disabled(!canCall)
-                    smallButton(nextName.map { "Call \($0)" } ?? "No one left") { coach.nextLead() }
-                        .keyboardShortcut("n", modifiers: .command)
-                        .disabled(nextName == nil || coach.dialing)
-                } else if coach.currentAttempts == 0 {
-                    // Haven't called them yet.
-                    bigButton(coach.dialing ? "Calling..." : callTitle, icon: "phone.fill") { coach.dial() }
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .disabled(!canCall)
-                    smallButton(nextName.map { "Call \($0)" } ?? "No one left") { coach.nextLead() }
-                        .keyboardShortcut("n", modifiers: .command)
-                        .disabled(nextName == nil || coach.dialing)
-                } else {
-                    // Two tries done (or they answered): on to the next person.
-                    bigButton(nextName.map { "Call \($0)" } ?? "No one left", icon: "phone.arrow.right") { coach.nextLead() }
-                        .keyboardShortcut("n", modifiers: .command)
-                        .disabled(nextName == nil || coach.dialing)
-                    smallButton("Redial") { coach.redial() }
-                        .keyboardShortcut("r", modifiers: .command)
-                        .disabled(!canCall)
-                }
+                bigButton(go.title, icon: go.icon, action: go.action)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(!go.enabled)
+
+                smallButton("Skip") { coach.nextLead() }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .disabled(goIsNext || nextName == nil || coach.dialing)
+                    .help("Skip this person and call the next one (Command-N)")
             }
             .controlSize(.large)
+            // Call them once more after their two tries (Command-R), without a button taking space.
+            .background(
+                Button("") { coach.redial() }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .opacity(0).frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .disabled(!calledAlready)
+            )
         }
     }
 
@@ -1087,49 +1160,6 @@ struct CoachView: View {
         if d.doNotCall { return "Do Not Call" }
         if !Aircall.canPlaceCalls { return "Set up Aircall first (gear)" }
         return d.callNumber != nil ? "Call \(d.name)" : "No phone number"
-    }
-
-    /// During a call (or without the Salesforce list): Back and Next as before.
-    private var stepNavigation: some View {
-        HStack(spacing: 8) {
-            Button {
-                coach.status == .ready ? coach.previousLead() : coach.back()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .frame(width: 16, height: 20)
-            }
-            .buttonStyle(BrandQuietButton())
-            .disabled(!backEnabled)
-            .help(coach.status == .ready ? "Go back to the person before" : "Show the line before this one")
-
-            if coach.status == .ready && coach.calling != nil && coach.currentAttemptKey == nil {
-                // A lead is open in Salesforce and not called yet: call their Mobile right from here.
-                bigButton(coach.gettingReady ?? (coach.dialing ? "Calling..." : "Call \(currentName)"), icon: "phone.fill") {
-                    coach.callOpenLead()
-                }
-                .disabled(coach.dialing)
-                smallButton(nextTitle) { coach.nextLead() }
-                    .disabled(!nextEnabled || coach.dialing)
-            } else if coach.status == .ready && coach.shouldOfferRedial {
-                // 1st try, no answer: call right back.
-                bigButton("Redial \(currentName)", icon: "arrow.clockwise") { coach.redial() }
-                    .keyboardShortcut("r", modifiers: .command)
-                smallButton(nextTitle) { coach.nextLead() }
-                    .keyboardShortcut("n", modifiers: .command)
-                    .disabled(!nextEnabled)
-            } else {
-                bigButton(nextTitle, icon: coach.status == .ready ? (nextDials ? "phone.arrow.right" : "arrow.right") : "arrow.right") {
-                    coach.status == .ready ? coach.nextLead() : coach.advanceStep()
-                }
-                .keyboardShortcut("n", modifiers: .command)
-                .disabled(!nextEnabled)
-                if coach.status == .ready && coach.currentAttemptKey != nil {
-                    smallButton("Redial") { coach.redial() }
-                        .keyboardShortcut("r", modifiers: .command)
-                }
-            }
-        }
-        .controlSize(.large)
     }
 
     /// The person on screen now, from the Salesforce tab (e.g. Lead "Burcin Sonmezer").
@@ -1183,6 +1213,11 @@ struct CoachView: View {
                 .padding(10)
                 .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             }
+        } else if coach.awaitingOutcome {
+            VStack(alignment: .leading, spacing: 8) {
+                outcomeBar
+                if let left = coach.autoNextIn { autoNextBar(left) }
+            }
         } else if listRanOut {
             let why = CalledToday.breakdown(coach.leads.isActive ? coach.leads.rows.map(\.id) : coach.callList.records.map(\.id))
             VStack(alignment: .leading, spacing: 8) {
@@ -1190,14 +1225,17 @@ struct CoachView: View {
                                          : "Nobody is due to call right now on \(campaigns.selected.name).")
                     .font(.callout.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
+                Button(showWhy ? "Hide why" : "Why?") { showWhy.toggle() }.buttonStyle(.link).font(.caption)
+                if showWhy {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(why.total) people on this list:")
                     if why.calledToday > 0 { Text("• \(why.calledToday) called today") }
-                    if why.comeBackLater > 0 { Text("• \(why.comeBackLater) come back on another day (we call each person on day 1, 2, 5, 8 and 16)") }
-                    if why.takenOff > 0 { Text("• \(why.takenOff) were taken off (no answer after a few tries, a bad number, or not interested)") }
-                    if why.planDone > 0 { Text("• \(why.planDone) finished the 5 day plan, or already picked up") }
+                    if why.comeBackLater > 0 { Text("• \(why.comeBackLater) come back on another day") }
+                    if why.takenOff > 0 { Text("• \(why.takenOff) taken off (no answer, bad number, or not interested)") }
+                    if why.planDone > 0 { Text("• \(why.planDone) finished the plan, or picked up") }
                 }
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 if let zone = TimeZoneFilter.selected {
                     let held = coach.leads.isActive ? coach.leads.heldByTimeZone : coach.callList.heldByTimeZone
                     Text("You're only calling \(zone.label) time. \(held) more people are waiting in other time zones.")
@@ -1206,8 +1244,6 @@ struct CoachView: View {
                         Button("Call all time zones") { coach.setTimeZoneFilter(nil) }
                     }
                 }
-                Text("Want to keep going? Add people to this list in Salesforce, or start your next list.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let next = nextCampaign {
                     if let left = nextListIn {
                         countdownBar("Starting \(next.name) in \(left)", left: left) { stopNextListCountdown() }
@@ -1512,7 +1548,7 @@ struct FollowUpCard: View {
                             }
                         }
                         if f.linkedinDone && !f.linkedinMessageDone {
-                            Text("On their profile: click Connect, then Add a note. Right-click the box, click Paste, then Send.")
+                            Text("Connect, Add a note, Paste, Send.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -1526,7 +1562,7 @@ struct FollowUpCard: View {
                         }
                     }
                     if f.linkedinMessageDone {
-                        Text("Copied. On their profile: click Message, paste (Command-V), then Send.")
+                        Text("Copied. Message, Paste, Send.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -1561,10 +1597,6 @@ struct FollowUpCard: View {
                     Text(status).font(.caption)
                         .foregroundStyle(f.sending ? Color.secondary : Color.orange)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                if !f.textDue && !f.textDone && !f.linkedInDue {
-                    Text("The plan asks for nothing today. Send an extra only if it helps.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .padding(12)
@@ -1633,6 +1665,15 @@ struct FollowUpCard: View {
 
 /// Contact: every Relationship Status. Lead: every Lead Status. Round radio buttons, two columns, Save.
 /// Saves to Salesforce. "Not Quality Prospect", "Negative" and "Unqualified" take them off the list.
+/// The 3 one-click outcomes: the button's name and what it saves, for a Lead or a Contact.
+enum Outcomes {
+    static func quick(_ object: String) -> [(label: String, value: String)] {
+        object == "Lead"
+            ? [("Interested", "Interested"), ("Not now", "Nurturing"), ("Not a fit", "Unqualified")]
+            : [("Interested", "Engaged"), ("Not now", "No Relationship"), ("Not a fit", "Not Quality Prospect")]
+    }
+}
+
 struct RelationshipCard: View {
     @ObservedObject var coach: CoachModel
     @ObservedObject private var connections = Connections.shared
@@ -1645,12 +1686,7 @@ struct RelationshipCard: View {
     /// The full list of statuses (folded: just the 3 one-click buttons).
     @State private var showAllStatuses = false
 
-    /// The 3 one-click outcomes: button name and what it saves, for a Lead or a Contact.
-    private func quickOutcomes(_ object: String) -> [(label: String, value: String)] {
-        object == "Lead"
-            ? [("Interested", "Interested"), ("Not now", "Nurturing"), ("Not a fit", "Unqualified")]
-            : [("Interested", "Engaged"), ("Not now", "No Relationship"), ("Not a fit", "Not Quality Prospect")]
-    }
+    private func quickOutcomes(_ object: String) -> [(label: String, value: String)] { Outcomes.quick(object) }
 
     private let columns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
 

@@ -108,6 +108,7 @@ extension CoachModel {
                 guard let self else { return }
                 if self.savingStatusFor == id { self.savingStatusFor = nil }
                 ActivityLog.add("Status: saved \(value)")
+                self.outcomeSaved.insert(String(id.prefix(15)))
                 // Taken off the list even if the rep already moved on.
                 if Salesforce.removedStatuses.contains(value) { RemovedList.add(id) } else { RemovedList.remove(id) }
                 guard self.statusRecordID == id else { self.callList.refreshUpNext(); return }
@@ -189,8 +190,8 @@ extension CoachModel {
                 self.leads.markCurrentCalled()
                 if self.status == .ready { self.pendingDialSince = Date() } // the call may already be live
             } catch {
-                self?.dialing = false
                 self?.dialError = error.localizedDescription
+                self?.handleDialFailure(error) { [weak self] in self?.dial(number) }
             }
         }
     }
@@ -298,14 +299,39 @@ extension CoachModel {
         followUp = nil // the last person's follow-ups are done
         if leads.isActive {
             // Nobody left: Next reloads the list, or says the list is done for today.
-            if autoDial, nextLeadName != nil { startAutoNext() } else { nextLead(dial: false) }
+            if autoDial, nextLeadName != nil { startAutoNext(seconds: nextIsReady ? 1 : 3) } else { nextLead(dial: false) }
             return
         }
         guard openNextInChrome() else {
             nextLead(dial: autoDial) // loads more of the list, or says the list is done
             return
         }
-        if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 3) }
+        if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: nextIsReady ? 1 : 3) }
+    }
+
+    /// Aircall wouldn't start the call. With auto dial on: one more try, then the next person. By hand: say so.
+    func handleDialFailure(_ error: Error, retry: @escaping () -> Void) {
+        dialing = false
+        ActivityLog.problem("Dial failed: \(error.localizedDescription)")
+        let key = recordKey() ?? ""
+        guard autoDial else {
+            callMessage = "Aircall didn't start the call: \(error.localizedDescription)"
+            return
+        }
+        if dialRetryKey != key {
+            dialRetryKey = key
+            callMessage = "Aircall didn't start the call. Trying once more..."
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, self.status == .ready, !self.dialing else { return }
+                self.callMessage = nil
+                retry()
+            }
+        } else {
+            dialRetryKey = nil
+            callMessage = nil
+            skipStalled(why: "Aircall wouldn't start the call")
+        }
     }
 
     /// Only call people in this time zone (nil = everyone). Both call lists skip the rest.
@@ -525,9 +551,7 @@ extension CoachModel {
                     self.stallSkips = 0
                     if self.status == .ready { self.pendingDialSince = Date() } // the call may already be live
                 } catch {
-                    self?.dialing = false
-                    self?.callMessage = "Aircall didn't start the call: \(error.localizedDescription)"
-                    ActivityLog.problem("Dial failed: \(error.localizedDescription)")
+                    self?.handleDialFailure(error) { [weak self] in _ = self?.callFromPage() }
                 }
             }
             return true

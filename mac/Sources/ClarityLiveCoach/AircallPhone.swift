@@ -267,6 +267,107 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
         return result == "button"
     }
 
+    /// Clicks Aircall's voicemail drop button: the main half of the split button right of the red
+    /// hang-up button (its arrow half only picks which message). It drops the DEFAULT message.
+    /// `dryRun`: only look for it. `clicked` is true if it was found (and clicked, when not a dry run).
+    /// `info` names the button, or lists the buttons it saw, for the activity log.
+    func dropVoicemail(dryRun: Bool) async -> (clicked: Bool, info: String) {
+        let js = #"""
+        (function (DRY) {
+          function deep(root, out) {
+            var l = root.querySelectorAll('button,[role=button]');
+            for (var i = 0; i < l.length; i++) out.push(l[i]);
+            var all = root.querySelectorAll('*');
+            for (var j = 0; j < all.length; j++) if (all[j].shadowRoot) deep(all[j].shadowRoot, out);
+            return out;
+          }
+          function label(b) {
+            return [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
+                    b.getAttribute('data-testid'), b.getAttribute('data-tip'), b.id, b.className && b.className.baseVal === undefined ? b.className : '',
+                    (b.textContent || '').trim().slice(0, 30)].join(' ').toLowerCase();
+          }
+          var buttons = deep(document, []).filter(function (b) { return b.getClientRects().length && !b.disabled; });
+          var arrowish = /chevron|arrow|dropdown|caret|expand|more|menu/;
+          var skip = /hang|end[ _-]?call|end the call|mute|pause|hold|keypad|transfer|note|tag|contact|insight|add/;
+          var main = null, how = '';
+          // 1. By name: anything called voicemail / voice mail / drop (not the arrow half).
+          var cands = buttons.filter(function (b) { var l = label(b); return /voice[ _-]?mail|vm[ _-]?drop|drop/.test(l) && !skip.test(l); });
+          for (var i = 0; i < cands.length && !main; i++) {
+            var l = label(cands[i]);
+            if (!arrowish.test(l) && cands[i].getAttribute('aria-haspopup') !== 'true') { main = cands[i]; how = 'name'; }
+          }
+          if (!main && cands.length) { main = cands[0]; how = 'name'; }
+          // 2. By place: the first button right after the red hang-up button.
+          if (!main) {
+            var hang = null;
+            for (var k = 0; k < buttons.length && !hang; k++) if (/hang[ _-]?up|end[ _-]?call|end the call/.test(label(buttons[k]))) hang = buttons[k];
+            var el = hang;
+            for (var depth = 0; el && !main && depth < 3; depth++) {
+              var next = el.nextElementSibling;
+              if (next) {
+                var b = (next.tagName === 'BUTTON' || next.getAttribute('role') === 'button') ? next : next.querySelector('button,[role=button]');
+                if (b && b.getClientRects().length) { main = b; how = 'place'; }
+              }
+              el = el.parentElement;
+            }
+          }
+          if (!main) {
+            return 'none:' + buttons.slice(0, 30).map(function (b) { return label(b).replace(/\s+/g, ' ').trim().slice(0, 40); }).join(' | ');
+          }
+          var name = label(main).replace(/\s+/g, ' ').trim().slice(0, 50) + ' (' + how + ')';
+          if (DRY) return 'found:' + name;
+          main.click();
+          return 'clicked:' + name;
+        })(__DRY__)
+        """#.replacingOccurrences(of: "__DRY__", with: dryRun ? "true" : "false")
+        let raw = (try? await webView.evaluateJavaScript(js)) as? String ?? "none:the phone didn't answer"
+        let info = raw.firstIndex(of: ":").map { String(raw[raw.index(after: $0)...]) } ?? raw
+        if !raw.hasPrefix("clicked:") && !raw.hasPrefix("found:") { ActivityLog.add("Voicemail drop button: not found. Buttons seen: \(info)") }
+        return (raw.hasPrefix("clicked:") || raw.hasPrefix("found:"), info)
+    }
+
+    /// Tries to open Aircall's Settings > Call settings (where voicemail drops are recorded) by clicking
+    /// its gear and the "Call settings" row. If the phone's layout differs, the rep clicks them by hand.
+    func openCallSettings() {
+        let js = #"""
+        (function () {
+          function deep(root, out, sel) {
+            var l = root.querySelectorAll(sel);
+            for (var i = 0; i < l.length; i++) out.push(l[i]);
+            var all = root.querySelectorAll('*');
+            for (var j = 0; j < all.length; j++) if (all[j].shadowRoot) deep(all[j].shadowRoot, out, sel);
+            return out;
+          }
+          function lab(b) {
+            return [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
+                    b.getAttribute('data-testid'), (b.textContent || '').trim().slice(0, 30)].join(' ').toLowerCase();
+          }
+          function clickText(text) {
+            var els = deep(document, [], '*');
+            for (var i = 0; i < els.length; i++) {
+              var e = els[i];
+              if (e.children.length > 2 || !e.getClientRects().length) continue;
+              if ((e.textContent || '').trim().toLowerCase() === text) {
+                (e.closest('button,a,[role=button],[role=menuitem],li') || e).click();
+                return true;
+              }
+            }
+            return false;
+          }
+          var buttons = deep(document, [], 'button,[role=button]').filter(function (b) { return b.getClientRects().length; });
+          var gear = null;
+          for (var i = 0; i < buttons.length && !gear; i++) {
+            var l = lab(buttons[i]);
+            if (/settings/.test(l) && !/call settings|audio|inbox|network/.test(l)) gear = buttons[i];
+          }
+          if (gear) gear.click();
+          setTimeout(function () { clickText('call settings'); }, 700);
+          return gear ? 'gear' : 'no gear';
+        })()
+        """#
+        Task { _ = try? await webView.evaluateJavaScript(js) }
+    }
+
     /// Presses keys in the live call (phone menus): sends the tones through the call's own audio
     /// sender, the way a keypad does. Never changes or closes the call. True if a live call took them.
     func sendDigits(_ digits: String) async -> Bool {

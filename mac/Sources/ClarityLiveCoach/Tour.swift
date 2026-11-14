@@ -45,45 +45,20 @@ enum Tour {
     /// Every part of the screen a new rep will wonder about, in the order they use it.
     /// One short idea per step, in plain words.
     static let steps: [TourStep] = [
-        // Part 1
-        TourStep(spot: .gear, part: "Get ready", title: "Set up first",
-                 text: "Click the gear, then Set up. Do each step one time. Each one turns green when it's done.",
+        TourStep(spot: .gear, part: "Quick tour", title: "Set up first",
+                 text: "Click the gear, then Set up. Do each step once. Voicemail drop is in the gear menu too.",
                  corner: 20, pad: 8),
-        TourStep(spot: .segment, part: "Get ready", title: "Pick who to call",
-                 text: "A call list is people to call, plus what to say to them. Pick one here and its people load.",
+        TourStep(spot: .segment, part: "Quick tour", title: "Pick who to call",
+                 text: "Pick a call list. Its people load by themselves.",
                  corner: 10, pad: 8),
-        TourStep(spot: .zone, part: "Get ready", title: "Pick where to call",
-                 text: "Call just one time zone. Or pick \"Start in the East, go West\" to call the East Coast first.",
-                 corner: 10, pad: 8),
-        // Part 2
-        TourStep(spot: .line, part: "Make a call", title: "Say this",
-                 text: "Your next line shows here, big. Read it out loud. It changes each time they talk.",
+        TourStep(spot: .line, part: "Quick tour", title: "Say this",
+                 text: "Read the big line out loud. It changes when they talk.",
                  corner: 16, pad: 4),
-        TourStep(spot: .script, part: "Make a call", title: "See your whole script",
-                 text: "Click here to open it. The part you're on lights up, so you always know where you are."),
-        TourStep(spot: .call, part: "Make a call", title: "Click Call",
-                 text: "The big button calls this person. The small button skips to the next person."),
-        TourStep(spot: .call, part: "Make a call", title: "While you talk",
-                 text: "The app listens and knows when the call ends. If it ever misses, click End call. If it misses a voicemail, click Voicemail."),
-        TourStep(spot: .call, part: "Make a call", title: "No answer?",
-                 text: "The app calls them one more time. Then it counts down and calls the next person. Click Wait to stop it."),
-        // Part 3
-        TourStep(spot: .followUp, part: "After the call", title: "Send the follow-up",
-                 text: "Left a voicemail? Your text and LinkedIn note show up here. One click sends each one.",
+        TourStep(spot: .call, part: "Quick tour", title: "The app does the rest",
+                 text: "Check Auto dial. It calls, redials, hangs up and moves to the next person. Press the space bar to pause."),
+        TourStep(spot: .followUp, part: "Quick tour", title: "After the call",
+                 text: "Texts send by themselves. LinkedIn and your outcome buttons show here.",
                  corner: 14),
-        TourStep(spot: .status, part: "After the call", title: "Say how it went",
-                 text: "A card shows up for each person. Pick what happened and click Save. It saves to Salesforce.",
-                 corner: 14),
-        // Part 4
-        TourStep(spot: .goal, part: "Keep score", title: "Close your rings",
-                 text: "Aim for 50 an hour. Each ring fills as you go. Try to beat yesterday.",
-                 corner: 14),
-        TourStep(spot: .numbers, part: "Keep score", title: "See your numbers",
-                 text: "Your calls, texts, notes and meetings. Click it to see more.",
-                 corner: 14),
-        TourStep(spot: .update, part: "Keep score", title: "Stay up to date",
-                 text: "A blue bar shows at the top when there's a new version. Click Update now between calls. It takes 2 minutes.",
-                 corner: 10),
     ]
 
     /// "MAKE A CALL · 2 OF 5": where this step is inside its part.
@@ -159,7 +134,7 @@ struct TourOverlay: View {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().frame(width: 64, height: 64)
                 Text("Welcome").font(.title2.weight(.semibold))
-                Text("This app dials for you, listens to the call, and shows you what to say next.\n\nHere's a 2 minute tour of every button.")
+                Text("This app dials for you, listens to the call, and shows you what to say next.\n\nHere's a 1 minute tour.")
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)

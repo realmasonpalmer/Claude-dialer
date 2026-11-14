@@ -40,7 +40,18 @@ enum CallQueue {
         }.map { $0.item }
     }
 
-    /// "Today: 3 late · 12 follow-ups due · 30 new · 8 resting" for the top of the coach.
+    /// "34 to call" from the longer summary below (the longer one shows on hover).
+    static func short(_ long: String) -> String {
+        var total = 0
+        for part in long.replacingOccurrences(of: "Today: ", with: "").components(separatedBy: " · ") {
+            guard part.hasSuffix("late") || part.hasSuffix("due") || part.hasSuffix("new"),
+                  let n = Int(part.split(separator: " ").first ?? "") else { continue }
+            total += n
+        }
+        return total > 0 ? "\(total) to call" : "Nobody due today"
+    }
+
+    /// "Today: 3 late · 12 due · 30 new · 8 waiting" for the top of the coach.
     static func summary(_ ids: [String]) -> String? {
         var late = 0, due = 0, new = 0, resting = 0
         for id in ids {
@@ -54,9 +65,9 @@ enum CallQueue {
         }
         var parts: [String] = []
         if late > 0 { parts.append("\(late) late") }
-        if due > 0 { parts.append("\(due) follow-up\(due == 1 ? "" : "s") due") }
+        if due > 0 { parts.append("\(due) due") }
         if new > 0 { parts.append("\(new) new") }
-        if resting > 0 { parts.append("\(resting) resting") }
+        if resting > 0 { parts.append("\(resting) waiting") }
         return parts.isEmpty ? nil : "Today: " + parts.joined(separator: " · ")
     }
 }

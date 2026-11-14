@@ -14,6 +14,8 @@ struct SettingsPane: View {
     @AppStorage(PrefKey.nextDials) private var autoDial = true
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     @AppStorage(PrefKey.autoLinkedIn) private var autoLinkedIn = false
+    @AppStorage(PrefKey.autoText) private var autoText = true
+    @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
     @State private var confirmReset = false
     @State private var note: String?
 
@@ -28,7 +30,11 @@ struct SettingsPane: View {
                 Toggle("Open their LinkedIn when the next person loads", isOn: $autoLinkedIn)
                 Text("On: their profile opens in a background Chrome tab, so it's ready when you look.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("Auto dial and Call twice are on the main screen, above the Call button.")
+                Toggle("Send texts by itself", isOn: $autoText)
+                Text("On: the text goes out in the background while the next person loads.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle("Drop my recorded voicemail by itself", isOn: $dropOn)
+                Text("Set it up first: gear, then Voicemail drop.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
 

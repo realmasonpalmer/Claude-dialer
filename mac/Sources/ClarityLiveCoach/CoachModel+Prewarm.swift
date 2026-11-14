@@ -50,6 +50,29 @@ extension CoachModel {
         }
     }
 
+    /// The next person's voicemail and follow-ups were written during the last call: a 1 second
+    /// countdown is enough instead of 3.
+    var nextIsReady: Bool {
+        let id: String? = leads.isActive ? leads.nextRow?.id : callList.upNext()?.record.id
+        return id.map { prewarmed[String($0.prefix(15))] != nil } ?? false
+    }
+
+    /// A real talk just ended and the rep hasn't said how it went yet: the bottom bar asks, with big buttons.
+    var awaitingOutcome: Bool {
+        guard status == .ready, lastCallAnswered, Salesforce.isConnected, let key = currentAttemptKey,
+              Salesforce.objectFor(id: key) != nil, !outcomeSaved.contains(String(key.prefix(15))),
+              !RemovedList.contains(key), !dialing,
+              Date().timeIntervalSince(endedAt) < 120,
+              statusRecordID.map({ $0.prefix(15) == key.prefix(15) }) == true else { return false }
+        return true
+    }
+
+    /// The rep doesn't want to rate this call: move on now.
+    func skipOutcome() {
+        if let key = currentAttemptKey { outcomeSaved.insert(String(key.prefix(15))) }
+        startNextSequence()
+    }
+
     /// The voicemail written ahead of time for the person now opening, if there is one.
     func prewarmedVoicemail(for calling: String?) -> Suggestion? {
         let id = leads.isActive ? leads.details?.id : (callList.lastOpenedID ?? recordKey())

@@ -132,7 +132,7 @@ struct AudioCheckView: View {
         case .mic: return "Let the coach hear you"
         case .call: return "Make a test call"
         case .you: return "Say something"
-        case .prospect: return "Now have them talk"
+        case .prospect: return "Now talk on your cell"
         case .done: return "You're all set"
         }
     }
@@ -140,9 +140,9 @@ struct AudioCheckView: View {
     private var detail: String {
         switch model.step {
         case .mic: return "The coach needs your microphone to hear your side of the call."
-        case .call: return "Call a teammate (or your own cell) from the Aircall phone on the right. This screen moves on by itself when the call connects."
+        case .call: return "Call your own cell phone from the Aircall phone on the right. This screen moves on by itself when the call connects."
         case .you: return "Say \"Testing, one, two, three.\""
-        case .prospect: return "Ask your teammate to say a few words."
+        case .prospect: return "Say a few words into your cell phone."
         case .done: return "The coach can hear you and the prospect, each on their own. You can hang up."
         }
     }
@@ -163,7 +163,7 @@ struct AudioCheckView: View {
         case .you:
             LevelMeter(label: "You", level: model.repLevel, progress: model.repSpeech)
         case .prospect:
-            LevelMeter(label: "Your teammate", level: model.prospectLevel, progress: model.prospectSpeech)
+            LevelMeter(label: "Your cell phone", level: model.prospectLevel, progress: model.prospectSpeech)
         case .done:
             VStack(spacing: 10) {
                 if model.micHearsCall {

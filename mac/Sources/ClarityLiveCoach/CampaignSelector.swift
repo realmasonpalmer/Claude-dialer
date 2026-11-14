@@ -293,15 +293,16 @@ struct NewCampaignView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                Button("Save") { save() }
+                Button(writing ? "Save and keep writing" : "Save") { save() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(name.trimmed.isEmpty || script.trimmed.isEmpty || writing)
+                    .disabled(name.trimmed.isEmpty || (script.trimmed.isEmpty && !writing))
+                    .help(writing ? "Saves now with the standard script. Your new script replaces it when it's done." : "")
                     .tourSpot(.newSave)
             }
         }
         .padding(20)
         .frame(width: 640, height: 760)
-        .onDisappear { writeTask?.cancel() } // closing the window stops the writing
+        .onDisappear { if PendingScript.finish == nil { writeTask?.cancel() } } // closing the window stops the writing (unless it was saved to finish later)
         .overlayPreferenceValue(TourSpotKey.self) { spots in
             TourOverlay(step: $tourStep, spots: spots, steps: Tour.newListSteps) { newListTourSeen = true }
         }
@@ -325,6 +326,18 @@ struct NewCampaignView: View {
                          pastedScript: script.trimmed,
                          company: "Clarity Consulting. Anthropic partner. Salesforce partner.")
         c.persona = audience.trimmed
+        if writing {
+            // Save now with the standard script so calling can start; the new one replaces it when it's done.
+            let id = c.id, store = self.store
+            c.pastedScript = ColdCallBackbone.text
+            PendingScript.finish = { text in
+                guard var latest = store.campaigns.first(where: { $0.id == id }) else { return }
+                latest.pastedScript = text
+                latest.version += 1
+                store.save(latest)
+                ActivityLog.add("Script finished writing in the background for \(latest.name)")
+            }
+        }
         if let v = view { c.listObject = v.object; c.listViewID = v.id; c.listName = v.label }
         c.active = store.activeCampaigns.count < CampaignStore.maxActive
         store.save(c)
@@ -373,6 +386,7 @@ struct NewCampaignView: View {
                 Task { @MainActor in if writing { thought = partial } }
             })
             script = text
+            if let finish = PendingScript.finish { PendingScript.finish = nil; finish(text) }
             if name.trimmed.isEmpty, let v = view { name = v.label }
         } catch {
             if Task.isCancelled {
@@ -384,6 +398,11 @@ struct NewCampaignView: View {
             }
         }
     }
+}
+
+/// A script that was still writing when the rep clicked Save: what to do with it when it's done.
+@MainActor enum PendingScript {
+    static var finish: ((String) -> Void)?
 }
 
 /// Writes a cold call script for one call segment on the `ScriptSkeleton`. The rep's description

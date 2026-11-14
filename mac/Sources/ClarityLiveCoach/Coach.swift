@@ -185,6 +185,16 @@ final class CoachModel: ObservableObject {
     var lastWaitingFor = ""
 
     var noMobileSkips = 0
+    /// People (15 characters) whose outcome was saved after their last call.
+    @Published var outcomeSaved: Set<String> = []
+    /// Aircall wouldn't start a call for this person: one retry, then on to the next.
+    var dialRetryKey: String?
+    /// The recorded voicemail was already dropped (or is being) on this call.
+    var voicemailDropStarted = false
+    /// A short note that fades by itself ("Text sent to Neal").
+    @Published var toast: String?
+    var toastTask: Task<Void, Never>?
+    var bgTextTask: Task<Void, Never>?
     /// Calls in a row with no break longer than 3 minutes.
     @Published var streak = 0
     var lastDialAt = Date.distantPast

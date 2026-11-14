@@ -57,6 +57,14 @@ extension CoachModel {
                 quietTicks = onCall ? 0 : quietTicks + 1
                 if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
             }
+            // Rang 30 seconds and nobody spoke (no person, no recording): hang up for the rep, so the
+            // redial or the next person starts by itself.
+            if autoDial, AircallPhone.isOn, !startedByHand, !autoHungUpThisCall, !autoHangingUp,
+               !phoneTreeActive, !phoneTreeThisCall, !sawVoicemail, !screenerActive, !voicemailDropStarted,
+               !turns.contains(where: { $0.speaker == .prospect }),
+               Date().timeIntervalSince(callStartedAt) > 30 {
+                hangUpUnanswered()
+            }
             checkAircallEveryFewSeconds()
             if aircallTicks % 2 == 0, Date().timeIntervalSince(callStartedAt) < 30 { followCallAudio() }
             if AudioProcess.doubleCall(in: AudioProcess.others()) {
@@ -64,6 +72,42 @@ extension CoachModel {
             }
         default:
             break
+        }
+    }
+
+    /// The End call button: hangs up the phone for real (Aircall's own button), then resets the app.
+    func hangUpAndEnd() {
+        guard status != .ready else { return }
+        autoHungUpThisCall = true
+        Task { [weak self] in
+            if AircallPhone.isOn { _ = await AircallPhone.shared.hangUp() }
+            self?.endCall()
+        }
+    }
+
+    /// 30 seconds of ringing and nobody spoke: hang up, then the normal flow (redial, or the next person).
+    func hangUpUnanswered() {
+        autoHungUpThisCall = true
+        ActivityLog.add("Rang 30 s with no answer for \(calling ?? "?"): hanging up")
+        Task { [weak self] in
+            guard let self, self.status == .live else { return }
+            let done = await AircallPhone.shared.hangUp()
+            guard done else { ActivityLog.problem("Ringing hang-up: couldn't find Aircall's hang-up button"); return }
+            for _ in 0..<4 {
+                try? await Task.sleep(for: .seconds(1))
+                if await Aircall.lineIsOnCall() == false { break }
+            }
+            if self.status == .live { self.endCall() }
+        }
+    }
+
+    /// A short note at the top that fades by itself.
+    func showToast(_ text: String) {
+        toast = text
+        toastTask?.cancel()
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled { self?.toast = nil }
         }
     }
 
@@ -83,6 +127,7 @@ extension CoachModel {
             && !turns.contains { $0.speaker == .prospect }
         ActivityLog.add("Call ended: \(calling ?? "?") after \(Int(Date().timeIntervalSince(callStartedAt))) s. voicemail=\(sawVoicemail) theySpoke=\(turns.contains(where: { $0.speaker == .prospect })) bad=\(badNumberThisCall)")
         if quickFail, let key = currentAttemptKey {
+            outcomeSaved.insert(String(key.prefix(15))) // nothing to rate
             let fails = DialHistory.logFailedConnect(key)
             if fails >= 2 { markNotQualityProspect(key, reason: "didn't connect twice") }
             nextCall()
@@ -97,6 +142,7 @@ extension CoachModel {
         if badNumberThisCall {
             // Number doesn't work: no voicemail, no text, no redial. Off the list, on to the next.
             badNumberThisCall = false
+            if let key = currentAttemptKey { outcomeSaved.insert(String(key.prefix(15))) }
             nextCall()
             waitingForNewCall = true
             endedAt = Date()
@@ -138,9 +184,13 @@ extension CoachModel {
             }
             if f.textDone || !f.textDue || noMobile || phoneTreeThisCall {
                 afterHangUp { [weak self] in self?.startNextSequence() }
+            } else if autoDial, Aircall.isSetUp, Prefs.autoText, !f.text.isEmpty {
+                // The text goes out in the background while the next person loads. No waiting.
+                sendTextInBackground(f)
+                afterHangUp { [weak self] in self?.startNextSequence() }
             } else {
                 waitingForText = true
-                startTextCountdown() // sends it by itself in 5 seconds, unless the rep edits or skips
+                startTextCountdown() // waits for its words, then sends by itself in 5 seconds (or the rep sends it)
             }
         } else if lastCallAnswered, autoDial, currentAttemptKey != nil {
             // A real talk just ended: 10 seconds to save how it went, then the next person. Wait stops it.
@@ -208,11 +258,11 @@ extension CoachModel {
     }
 
     /// Counts down 5 seconds, then loads the next lead (and calls them, if "Next calls right away" is on).
-    func startAutoNext() {
+    func startAutoNext(seconds: Int = 3) {
         guard nextLeadName != nil else { return }
         autoNextTask?.cancel()
         autoNextTask = Task { [weak self] in
-            for left in stride(from: 3, through: 1, by: -1) {
+            for left in stride(from: seconds, through: 1, by: -1) {
                 self?.autoNextIn = left
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
@@ -240,6 +290,18 @@ extension CoachModel {
             guard let self, !Task.isCancelled else { return }
             self.autoNextIn = nil
             self.startNextSequence()
+        }
+    }
+
+    /// Sends the text from a copy of the card, 3 seconds from now, while the next person loads. The
+    /// card can change meanwhile. A failure shows a note and never holds up the dialing.
+    func sendTextInBackground(_ f: FollowUp) {
+        bgTextTask?.cancel()
+        bgTextTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled else { return }
+            ActivityLog.add("Text: sending in the background for \(f.prospect ?? "?")")
+            self.sendText(f, background: true)
         }
     }
 
@@ -399,6 +461,8 @@ extension CoachModel {
         status = .live
         streak = Date().timeIntervalSince(lastDialAt) < 180 ? streak + 1 : 1
         lastDialAt = Date()
+        voicemailDropStarted = false
+        if let key = currentAttemptKey { outcomeSaved.remove(String(key.prefix(15))) } // a new call: rate it again
         prewarmNext() // get the next person ready while this call rings
         quietTicks = 0
         availability.refresh() // fresh free times for this call
@@ -517,7 +581,7 @@ extension CoachModel {
     func afterHangUp(_ work: @escaping () -> Void) {
         let gen = hangUpGen
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(1))
             // Skip it if the rep already moved on by hand (Next, Redial, Call).
             guard let self, self.status == .ready, self.hangUpGen == gen else { return }
             work()

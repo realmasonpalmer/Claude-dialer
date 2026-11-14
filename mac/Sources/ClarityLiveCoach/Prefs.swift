@@ -10,6 +10,10 @@ enum PrefKey {
     static let sfPickedUp = "sfPickedUp"
     static let sfNoNumber = "sfNoNumber"
     static let autoLinkedIn = "autoLinkedInOff"
+    static let voicemailDropOn = "voicemailDropOn"
+    static let dropNudgeDismissed = "dropNudgeDismissed"
+    static let voicemailsSeen = "voicemailsSeen"
+    static let autoText = "autoText"
     static let eastCoastFirst = "eastCoastFirst"
     static let leadTimeZones = "leadTimeZones"
     static let goalCardOpen = "goalCardOpen"
@@ -66,6 +70,14 @@ enum Prefs {
         get { d.object(forKey: PrefKey.nextDials) as? Bool ?? true }
         set { d.set(newValue, forKey: PrefKey.nextDials) }
     }
+    /// The rep recorded a voicemail in Aircall and turned this on: the app clicks Aircall's voicemail
+    /// drop button by itself on voicemail days.
+    static var voicemailDropOn: Bool {
+        get { d.bool(forKey: PrefKey.voicemailDropOn) }
+        set { d.set(newValue, forKey: PrefKey.voicemailDropOn) }
+    }
+    /// Texts go out by themselves (in the background) while the next person loads.
+    static var autoText: Bool { d.object(forKey: PrefKey.autoText) as? Bool ?? true }
     /// When the next person loads, open their LinkedIn profile in a background Chrome tab.
     static var autoLinkedIn: Bool { d.object(forKey: PrefKey.autoLinkedIn) as? Bool ?? false }
     /// Call each person twice in a row when the first try isn't answered.

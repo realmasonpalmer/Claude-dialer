@@ -21,6 +21,7 @@ struct SetupView: View {
     @State private var refresh = 0 // re-checks the steps after a setup screen closes
     @State private var teamKeys: TeamKeysView.Mode?
     @State private var showMore = false
+    @State private var showDrop = false
     /// Hold Option while opening Set up to see the team lead's "type keys by hand" row. Reps never see it.
     @State private var adminKeys = NSEvent.modifierFlags.contains(.option)
 
@@ -157,6 +158,11 @@ struct SetupView: View {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Google Chrome.app"))
             },
         ]
+        // Record one voicemail in Aircall once, and the app drops it for the rep on voicemail days.
+        list.append(Step(id: "drop", title: "Voicemail drop",
+                         detail: Prefs.voicemailDropOn ? "On: the app drops your message after the beep."
+                                                       : "Record one message in Aircall. The app drops it for you. Saves about 20 seconds a voicemail.",
+                         done: Prefs.voicemailDropOn, optional: true) { showDrop = true })
         // Only when the keys file didn't cover them.
         if Self.hasTeamKeys && !Salesforce.isConnected {
             list.append(Step(id: "salesforce", title: "Sign in to Salesforce",
@@ -291,6 +297,7 @@ struct SetupView: View {
             .padding(20)
         }
         .frame(width: 380, height: 640)
+        .sheet(isPresented: $showDrop, onDismiss: { refresh += 1 }) { VoicemailDropSetupView() }
         .sheet(item: $teamKeys, onDismiss: { refresh += 1 }) { mode in
             TeamKeysView(mode: mode).environmentObject(coach)
         }

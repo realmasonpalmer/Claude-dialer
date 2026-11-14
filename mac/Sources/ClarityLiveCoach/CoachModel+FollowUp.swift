@@ -21,6 +21,7 @@ extension CoachModel {
 
     /// Instant voicemail card: the script written before the call, or "mailbox full, move on".
     func showVoicemail(mailboxFull: Bool) {
+        if !sawVoicemail { UserDefaults.standard.set(UserDefaults.standard.integer(forKey: PrefKey.voicemailsSeen) + 1, forKey: PrefKey.voicemailsSeen) }
         voicemailActive = true
         sawVoicemail = true
         screenerActive = false
@@ -51,6 +52,7 @@ extension CoachModel {
                 script.cue = "Day \(step.planDay) voicemail (the only one in the plan). Wait for the beep."
             }
             show(script, id: seq, kind: .voicemail)
+            scheduleVoicemailDrop()
         } else {
             // Not written yet: ask now. The beep usually gives a few seconds.
             show(Suggestion(say: "Writing your voicemail...", cue: "Wait for the beep.", stage: "Voicemail", sayComplete: true),
@@ -217,31 +219,45 @@ extension CoachModel {
     /// Sends the follow-up text through Aircall and checks it off.
     func sendFollowUpText() {
         guard let f = followUp, !f.text.isEmpty, !f.sending else { return }
+        sendText(f, background: false)
+    }
+
+    /// Sends a text from a copy of the card (the card on screen may be someone else's by now).
+    /// `background`: no one is watching; a problem shows as a short note and never holds up dialing.
+    func sendText(_ f: FollowUp, background: Bool) {
+        func note(_ s: String?) {
+            if followUp?.key == f.key { followUp?.textStatus = s }
+        }
+        func problemNote(_ s: String) {
+            note(s)
+            if background { showToast("Text to \(Screener.firstName("Lead \"\(f.prospect ?? "")\"") ?? "them") didn't send: \(s)") }
+        }
         // Never send a blank slot like [SDR] or [your name].
         if let slot = f.text.range(of: #"\[[^\]]{1,30}\]|\{[^}]{1,30}\}"#, options: .regularExpression) {
-            followUp?.textStatus = Prefs.repName.isEmpty
+            problemNote(Prefs.repName.isEmpty
                 ? "Add your first name first (Setup > Your first name). Then fix \(f.text[slot]) in the text."
-                : "Fill in \(f.text[slot]) in the text first."
+                : "Fill in \(f.text[slot]) in the text first.")
             return
         }
         if let key = f.key, DialHistory.textedToday(key) {
-            followUp?.textStatus = "Already texted today. Not sent again."
-            followUp?.textDone = true
+            note("Already texted today. Not sent again.")
+            if followUp?.key == f.key { followUp?.textDone = true }
             return
         }
         if let key = f.key, DialHistory.alreadySent(f.text, to: key) {
-            followUp?.textStatus = "You already sent them these exact words. Edit the text, or wait a moment for a new one."
+            problemNote("You already sent them these exact words.")
             ActivityLog.add("Text blocked: same words as an earlier text to \(f.prospect ?? "?")")
             return
         }
-        followUp?.textStatus = "Sending..."
-        followUp?.sending = true
+        note("Sending...")
+        if followUp?.key == f.key { followUp?.sending = true }
         Task { [weak self] in
             do {
                 try await Aircall.sendText(to: f.phone, body: f.text)
                 self?.touchpoints.log(.text)
                 if let key = f.key { DialHistory.logText(key, body: f.text) }
                 ActivityLog.add("Text sent to \(f.prospect ?? "?") at \(f.phone)")
+                if background { self?.showToast("Text sent to \(f.prospect ?? "them")") }
                 // Only mark the card it was sent from (not a newer person's card).
                 guard self?.followUp?.key == f.key else { return }
                 self?.followUp?.textStatus = nil
@@ -249,6 +265,7 @@ extension CoachModel {
                 self?.followUp?.textDone = true
             } catch {
                 ActivityLog.problem("Text failed: \(error.localizedDescription)")
+                if background { self?.showToast("Text didn't send: \(error.localizedDescription)") }
                 guard self?.followUp?.key == f.key else { return }
                 self?.followUp?.textStatus = error.localizedDescription
                 self?.followUp?.sending = false
@@ -378,6 +395,47 @@ extension CoachModel {
                 self?.fillFollowUp(from: s, replace: usedDetails) // the card is always up for the person on screen
             }
             if !Task.isCancelled { self?.voicemailTask = nil }
+        }
+    }
+
+    /// Voicemail drop: on a voicemail day's last try, wait for the greeting to end and the beep to pass,
+    /// then click Aircall's voicemail drop button (the rep's recorded message). Only when the rep
+    /// recorded one and turned it on (Set up > Voicemail drop).
+    func scheduleVoicemailDrop() {
+        guard Prefs.voicemailDropOn, autoDial, AircallPhone.isOn, status == .live, currentAttempts >= maxAttempts,
+              !voicemailDropStarted, let key = currentAttemptKey,
+              Cadence.step(for: key)?.leaveVoicemail ?? true else { return }
+        voicemailDropStarted = true
+        let shownAt = Date()
+        Task { [weak self] in
+            // The greeting finished (1.6 s of quiet) and at least 3 s passed; never wait over 25 s.
+            while let self, self.status == .live {
+                let quiet = Date().timeIntervalSince(self.lastWordsAt ?? shownAt)
+                let since = Date().timeIntervalSince(shownAt)
+                if (quiet > 1.6 && since > 3) || since > 25 { break }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            try? await Task.sleep(for: .milliseconds(900)) // the beep
+            guard let self, self.status == .live else { return }
+            let result = await AircallPhone.shared.dropVoicemail(dryRun: false)
+            guard result.clicked else {
+                ActivityLog.problem("Voicemail drop: couldn't find the button. \(result.info)")
+                self.problem = "Couldn't click the voicemail drop button. Read your message instead."
+                return
+            }
+            ActivityLog.add("Voicemail drop: clicked (\(result.info))")
+            DialHistory.logVoicemail(key, body: "(recorded voicemail dropped)")
+            self.showToast("Voicemail dropped")
+            // The message plays (about 20 seconds) and the call ends. If it doesn't, hang up.
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .seconds(1))
+                if self.status != .live { return }
+                if await Aircall.lineIsOnCall() == false { break }
+            }
+            if self.status == .live {
+                _ = await AircallPhone.shared.hangUp()
+                self.endCall()
+            }
         }
     }
 
