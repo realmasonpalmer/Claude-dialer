@@ -162,7 +162,9 @@ enum CoachPrompt {
     }
 
     static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?) -> String {
-        let history = turns.suffix(30).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        // The whole call, so nothing said early is forgotten (names, numbers, pains). 300 turns is only
+        // a safety cap for a call left running by mistake.
+        let history = turns.suffix(300).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         let booking = openTimes.map { "\($0)\n\n" } ?? ""
         return """

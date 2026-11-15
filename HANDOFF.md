@@ -273,3 +273,4 @@ meant to replace Aircall, a Twilio dialer server, and a web-page coach. Don't re
   - **Setup order:** keys file first, then the audio check (test with your own cell, no teammate needed). Tour cut to 5 stops.
   - **New call list:** "Save and keep writing" while the script writes; it saves with the standard backbone and the new script replaces it when done (`PendingScript`).
   - **Shorter words:** status lines, LinkedIn steps, "Why?" link on the list-done banner, "34 to call" with details on hover, block timer is a real button.
+- **Whole call to Claude (2026-11-15):** `CoachPrompt.reply` sends every turn of the call (safety cap 300, was 30), so early names, numbers and pains are never dropped on long calls.
