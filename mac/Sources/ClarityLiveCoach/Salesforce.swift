@@ -544,6 +544,13 @@ enum KnownNumbers {
 
     static func set(_ id: String, mobile: String?, phone: String?) {
         all[String(id.prefix(15))] = (mobile, phone)
+        // Any number outside the US and Canada: off the list for good, the moment we see it.
+        let foreign = [mobile, phone].compactMap { $0?.trimmingCharacters(in: .whitespaces) }
+            .contains { !$0.isEmpty && !Aircall.isNorthAmerican($0) }
+        if foreign, !RemovedList.contains(id) {
+            RemovedList.add(id)
+            Task { @MainActor in ActivityLog.add("Non-US number for \(id.prefix(15)): taken off the list for good") }
+        }
     }
 
     /// The number to call: Mobile first, then Phone. nil = not looked up yet.
