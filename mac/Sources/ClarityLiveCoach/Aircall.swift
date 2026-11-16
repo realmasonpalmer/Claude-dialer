@@ -180,6 +180,12 @@ enum Aircall {
         return nil
     }
 
+    /// True for a US or Canada (+1) number. Anything else (+44, +61, short numbers) is false.
+    static func isNorthAmerican(_ raw: String) -> Bool {
+        guard let e = e164(raw) else { return false }
+        return "23456789".contains(e[e.index(e.startIndex, offsetBy: 2)]) // area codes never start with 0 or 1
+    }
+
     /// Finds the lead's Mobile number in the Salesforce page text.
     static func phone(in pageText: String?) -> String? {
         guard let pageText else { return nil }

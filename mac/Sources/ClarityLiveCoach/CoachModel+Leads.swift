@@ -170,10 +170,15 @@ extension CoachModel {
     /// Calls the lead from the Aircall desktop app.
     func dial(_ number: String? = nil) {
         // Mobile first, then Phone. Neither: skip them and take them off the list.
-        if status == .ready, !dialing, number == nil, let d = leads.details, !d.doNotCall, d.callNumber == nil {
-            ActivityLog.add("No Mobile or Phone for \(d.name): skipping and removing from the list")
+        if status == .ready, !dialing, number == nil, let d = leads.details, !d.doNotCall,
+           d.callNumber == nil || !Aircall.isNorthAmerican(d.callNumber ?? "") {
+            let foreign = d.callNumber != nil
+            ActivityLog.add(foreign
+                ? "\(d.name) isn't a US or Canada number (\(d.callNumber ?? "")): skipping and removing from the list"
+                : "No Mobile or Phone for \(d.name): skipping and removing from the list")
             RemovedList.add(d.id)
-            problem = "No phone number. Removed from your list, on to the next person."
+            problem = foreign ? "Not a US or Canada number. Skipped, on to the next person."
+                              : "No phone number. Removed from your list, on to the next person."
             nextLead()
             return
         }
