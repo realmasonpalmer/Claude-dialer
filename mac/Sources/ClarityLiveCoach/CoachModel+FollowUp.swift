@@ -334,7 +334,8 @@ extension CoachModel {
     /// The next person just loaded and Salesforce has their LinkedIn link: open the profile in a
     /// background Chrome tab, once per person, so it's ready when the rep looks. Never during a call.
     private func autoOpenLinkedIn() {
-        guard Prefs.autoLinkedIn, !LinkedInBot.autoSend, // the bot opens LinkedIn itself status == .ready, let f = followUp, let key = f.key, let url = f.linkedinURL,
+        guard Prefs.autoLinkedIn, !LinkedInBot.autoSend, status == .ready, // with auto-send on, the bot opens LinkedIn itself
+               let f = followUp, let key = f.key, let url = f.linkedinURL,
               linkedInOpenedFor != key else { return }
         linkedInOpenedFor = key
         SalesforceChrome.openInBackground(url.absoluteString)

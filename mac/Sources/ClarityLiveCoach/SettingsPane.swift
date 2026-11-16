@@ -56,9 +56,6 @@ struct SettingsPane: View {
             Text("Settings").font(.title2.weight(.semibold))
 
             section("Calling") {
-                Toggle("Open their LinkedIn when the next person loads", isOn: $autoLinkedIn)
-                Text("On: their profile opens in a background Chrome tab, so it's ready when you look.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("Send texts by itself", isOn: $autoText)
                 Text("On: the text goes out in the background while the next person loads.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
