@@ -34,6 +34,7 @@ extension CoachModel {
     }
 
     func followUpChanged() {
+        LinkedInBot.closeLast(keeping: followUp?.key) // next person or skipped: close the last profile
         autoOpenLinkedIn()
         autoLinkedInNow()
         if waitingForLinkedIn, status == .ready, followUp?.linkedinDone ?? true {
@@ -378,6 +379,7 @@ extension CoachModel {
             let first = Screener.firstName(f.prospect) ?? "there"
             let note = LinkedInBot.note(f.linkedin, first: first)
             ActivityLog.add("LinkedIn bot: \(f.prospect ?? "?") at \(url.absoluteString), note: \(note)")
+            LinkedInBot.personKey = key
             let result = await LinkedInBot.connect(profile: url, note: note, company: company) { [weak self] status in
                 self?.linkedInStatus = status
             }

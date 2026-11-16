@@ -68,6 +68,17 @@ enum LinkedInBot {
     /// Test mode: everything up to the typed note, then Cancel. Nothing is sent.
     static var testRun = false
 
+    /// The profile tab left open, and whose it is. Closed when the next person opens or they're skipped.
+    static var lastTab: (tab: String, key: String?)?
+    static var personKey: String?
+
+    /// Closes the last person's LinkedIn tab, unless it's this person's.
+    static func closeLast(keeping key: String?) {
+        guard let last = lastTab, last.key != key || key == nil else { return }
+        lastTab = nil
+        Task { await closeTab(last.tab) }
+    }
+
     static func connect(profile: URL, note: String, company: String?, onStatus: @escaping (String) -> Void) async -> Result {
         running = true
         defer { running = false }
@@ -93,6 +104,7 @@ enum LinkedInBot {
             }
         }
         _ = backTo
+        lastTab = (tab, personKey)
         return result
     }
 
