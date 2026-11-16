@@ -6,10 +6,17 @@ import Foundation
 
 /// Voicemail, the text and LinkedIn card, and the follow-up plan.
 extension CoachModel {
+    /// The record open right now is this person (and their details are loaded).
+    func isOnScreen(_ key: String) -> Bool {
+        guard let now = recordKey() else { return false }
+        return now.prefix(15) == key.prefix(15)
+    }
+
     /// The moment a lead opens (any lead we haven't sent a request to yet): the bot sends the connection
     /// note in the background, while the call goes on. Waits up to 8 s for Claude's note, then uses the plain one.
     private func autoLinkedInNow() {
-        guard LinkedInBot.autoSend, let f = followUp, let key = f.key, !linkedInTried.contains(key) else { return }
+        guard LinkedInBot.autoSend, let f = followUp, let key = f.key, !linkedInTried.contains(key),
+              isOnScreen(key) else { return } // only the person on screen, never one written ahead
         // Why not, said once per person in the log, so a skip is never a mystery.
         var why: String?
         if f.linkedinDone { why = "LinkedIn already marked done for today" }
@@ -28,7 +35,7 @@ extension CoachModel {
         linkedInWaitingNote.insert(key)
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(8))
-            guard let self, let cur = self.followUp, cur.key == key, !cur.linkedinDone else { return }
+            guard let self, let cur = self.followUp, cur.key == key, !cur.linkedinDone, self.isOnScreen(key) else { return }
             self.queueLinkedIn(cur)
         }
     }
@@ -364,6 +371,11 @@ extension CoachModel {
         if let why = LinkedInBot.whyNot {
             ActivityLog.add("LinkedIn bot: not running (\(why)). Send the note by hand or click Skip LinkedIn.")
             linkedInStatus = LinkedInBot.isOn ? "LinkedIn bot \(why). Send the note by hand or Skip." : nil
+            return
+        }
+        guard isOnScreen(key) || !LinkedInBot.autoSend else {
+            ActivityLog.add("LinkedIn bot: \(f.prospect ?? "?") is no longer on screen, not sending")
+            Task { @MainActor [weak self] in self?.drainLinkedInQueue() }
             return
         }
         let company = leads.details?.company ?? recordCompany
