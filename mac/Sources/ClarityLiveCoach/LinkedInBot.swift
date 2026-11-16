@@ -99,7 +99,9 @@ enum LinkedInBot {
         if let b = blocked(state) { return b }
         switch state {
         case "NOJS": return .skipped("Chrome blocked the script (View > Developer > Allow JavaScript from Apple Events)")
-        case "LOADING": return .skipped("their profile didn't load")
+        case "LOADING":
+            ActivityLog.add("LinkedIn bot page report: \(await step("report"))")
+            return .skipped("couldn't find their name on the page (details in the Activity log)")
         case "NOMATCH": return .skipped("their current company on LinkedIn doesn't match Salesforce")
         case "PENDING": return .pending
         case "CONNECTED": return .alreadyConnected
@@ -114,7 +116,10 @@ enum LinkedInBot {
             c = await step("menu")
         }
         if let b = blocked(c) { return b }
-        guard c == "CLICKED" else { return .skipped("no Connect button on their profile") }
+        guard c == "CLICKED" else {
+            ActivityLog.add("LinkedIn bot page report: \(await step("report"))")
+            return .skipped("no Connect button on their profile (details in the Activity log)")
+        }
 
         var n = "WAIT"
         for _ in 0..<10 {
@@ -127,7 +132,9 @@ enum LinkedInBot {
         case "TEXTAREA": break
         case "EMAIL": _ = await step("close"); return .skipped("LinkedIn wants their email to connect")
         case "NONOTE": _ = await step("close"); return .skipped("no free notes left this month (LinkedIn wants Premium)")
-        default: _ = await step("close"); return .skipped("Add a note didn't open")
+        default:
+            ActivityLog.add("LinkedIn bot page report: \(await step("report"))")
+            _ = await step("close"); return .skipped("Add a note didn't open (details in the Activity log)")
         }
 
         onStatus("LinkedIn: typing the note...")
@@ -259,7 +266,7 @@ enum LinkedInBot {
       var href = location.href;
       var body = ((document.body && document.body.innerText) || '').toLowerCase();
       if (/checkpoint|authwall|\/login|uas\/|challenge/.test(href)) return 'BLOCKED:LinkedIn wants you to sign in or pass a check';
-      var profileShown = !!(document.querySelector('main h1'));
+      var profileShown = !!(document.querySelector('h1'));
       if (!profileShown && (body.indexOf('security verification') >= 0 || body.indexOf('captcha') >= 0 || body.indexOf('quick security check') >= 0))
         return 'BLOCKED:LinkedIn showed a security check';
       if (body.indexOf('weekly invitation limit') >= 0 || body.indexOf('reached the weekly') >= 0) return 'BLOCKED:weekly invitation limit reached';
@@ -269,12 +276,27 @@ enum LinkedInBot {
       function btns(root) { return all(root, 'button, [role=button], [role=menuitem], a'); }
       function label(e) { return (((e.getAttribute('aria-label') || '') + ' ' + (e.innerText || '')).trim()).toLowerCase(); }
       function text(e) { return ((e.innerText || '').trim()).toLowerCase(); }
-      var main = document.querySelector('main');
-      var h1 = main && main.querySelector('h1');
-      var top = h1 ? (h1.closest('section') || main) : null;
+      var main = document.querySelector('main') || document.body;
+      // Their name: the page's h1, wherever LinkedIn puts it this month.
+      var h1 = all(document, 'h1')[0] || all(document, '.text-heading-xlarge')[0] || document.querySelector('h1');
+      // The top card: the nearest box around the name that also holds the action buttons.
+      var top = null;
+      if (h1) {
+        var box = h1;
+        for (var up = 0; up < 12 && box && box !== document.body; up++) {
+          box = box.parentElement;
+          if (box && btns(box).some(function (e) { var l = label(e); return l.indexOf('more') >= 0 || l.indexOf('connect') >= 0 || l.indexOf('message') >= 0 || l.indexOf('follow') >= 0; })) { top = box; break; }
+        }
+        if (!top) top = h1.closest('section') || main;
+      }
       var modal = all(document, '[role=dialog]')[0] || null;
+      if (phase === 'report') {
+        return 'url=' + href.slice(0, 80) + ' title=' + document.title.slice(0, 60) + ' h1s=' + document.querySelectorAll('h1').length +
+          ' main=' + !!document.querySelector('main') + ' ready=' + document.readyState + ' top=' + !!top +
+          ' buttons=' + (top ? btns(top) : btns(document)).slice(0, 12).map(function (e) { return label(e).slice(0, 30); }).join(' | ');
+      }
       if (phase === 'check') {
-        if (!top || !top.querySelector('h1')) return 'LOADING';
+        if (!top || !h1) return 'LOADING';
         var t = (top.innerText || '').toLowerCase();
         if (keys.length && !keys.some(function (k) { return t.indexOf(k) >= 0; })) return 'NOMATCH';
         if (btns(top).some(function (e) { var l = label(e); return l.indexOf('pending') >= 0 || l.indexOf('withdraw') >= 0; })) return 'PENDING';
