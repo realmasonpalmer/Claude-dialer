@@ -240,7 +240,7 @@ extension CoachModel {
                 self.listDone = false
                 // Skip Do Not Call records and records with no mobile number (up to 20 in a row).
                 var skipped = 0
-                while self.leads.details.map({ $0.doNotCall || $0.callNumber == nil }) == true, skipped < 20,
+                while self.leads.details.map({ $0.doNotCall || $0.callNumber == nil || !Aircall.isNorthAmerican($0.callNumber ?? "") }) == true, skipped < 20,
                       await self.leads.next() { skipped += 1 }
                 // "Next calls right away" (on by default): dial as soon as the lead is loaded.
                 if dialNow, self.leads.details?.doNotCall == false {
@@ -543,6 +543,12 @@ extension CoachModel {
             guard let mobile = recordKey().flatMap({ KnownNumbers.dialNumber(for: $0) }) ?? SalesforceChrome.dialNumber() else {
                 ActivityLog.add("Dial: no Mobile or Phone found on the page for \(calling ?? "?")")
                 return false
+            }
+            if !Aircall.isNorthAmerican(mobile) {
+                ActivityLog.add("Dial: \(calling ?? "?") at \(mobile) isn't a US or Canada number, skipping")
+                problem = "Not a US or Canada number. Skipped, on to the next person."
+                nextLead(dial: Prefs.autoDial)
+                return true
             }
             ActivityLog.add("Dial: \(calling ?? "?") at \(mobile)")
             dialing = true
