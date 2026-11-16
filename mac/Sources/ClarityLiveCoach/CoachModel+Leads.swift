@@ -171,10 +171,10 @@ extension CoachModel {
     func dial(_ number: String? = nil) {
         // Mobile first, then Phone. Neither: skip them and take them off the list.
         if status == .ready, !dialing, number == nil, let d = leads.details, !d.doNotCall,
-           d.callNumber == nil || !Aircall.isNorthAmerican(d.callNumber ?? "") {
+           d.callNumber == nil || d.foreignNumber != nil {
             let foreign = d.callNumber != nil
             ActivityLog.add(foreign
-                ? "\(d.name) isn't a US or Canada number (\(d.callNumber ?? "")): skipping and removing from the list"
+                ? "\(d.name) isn't a US or Canada number (\(d.foreignNumber ?? "")): skipping and removing from the list"
                 : "No Mobile or Phone for \(d.name): skipping and removing from the list")
             RemovedList.add(d.id)
             problem = foreign ? "Not a US or Canada number. Skipped, on to the next person."
@@ -240,7 +240,7 @@ extension CoachModel {
                 self.listDone = false
                 // Skip Do Not Call records and records with no mobile number (up to 20 in a row).
                 var skipped = 0
-                while self.leads.details.map({ $0.doNotCall || $0.callNumber == nil || !Aircall.isNorthAmerican($0.callNumber ?? "") }) == true, skipped < 20,
+                while self.leads.details.map({ $0.doNotCall || $0.callNumber == nil || $0.foreignNumber != nil }) == true, skipped < 20,
                       await self.leads.next() { skipped += 1 }
                 // "Next calls right away" (on by default): dial as soon as the lead is loaded.
                 if dialNow, self.leads.details?.doNotCall == false {

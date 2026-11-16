@@ -442,6 +442,11 @@ enum Salesforce {
 
         /// Calls go to Mobile, or to Phone when there's no Mobile.
         var callNumber: String? { textNumber ?? phone.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
+        /// Any number on the record (Mobile or Phone) that isn't US or Canada (+1). Those leads get skipped.
+        var foreignNumber: String? {
+            [mobile, phone].compactMap { $0?.trimmingCharacters(in: .whitespaces) }
+                .first { !$0.isEmpty && !Aircall.isNorthAmerican($0) }
+        }
         /// Texts only ever go to Mobile (the Phone field is often an office line).
         var textNumber: String? { mobile.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
         /// Plain text for the coach, like the Salesforce page text it used to read.

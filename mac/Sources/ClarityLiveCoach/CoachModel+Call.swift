@@ -10,7 +10,7 @@ extension CoachModel {
     /// Checked every half second, so no path (first lead, Back, reload, auto next) can miss it.
     private func skipForeignLead() {
         guard status == .ready, !dialing, leads.isActive, let d = leads.details, !d.doNotCall,
-              let n = d.callNumber, !Aircall.isNorthAmerican(n), foreignSkippedID != d.id else { return }
+              let n = d.foreignNumber, foreignSkippedID != d.id else { return }
         foreignSkippedID = d.id // once per person, so Back can still show them
         ActivityLog.add("\(d.name) isn't a US or Canada number (\(n)): skipping and removing from the list")
         RemovedList.add(d.id)

@@ -332,7 +332,7 @@ final class CoachModel: ObservableObject {
                 Task { @MainActor in
                     guard let self, self.status == .ready, details.id != self.appliedLeadID else { return }
                     // Not a US or Canada number: skip right away, before anyone can press Call.
-                    if !details.doNotCall, let n = details.callNumber, !Aircall.isNorthAmerican(n), !self.dialing {
+                    if !details.doNotCall, let n = details.foreignNumber, !self.dialing {
                         ActivityLog.add("\(details.name) isn't a US or Canada number (\(n)): skipping and removing from the list")
                         RemovedList.add(details.id)
                         self.problem = "Not a US or Canada number. Skipped, on to the next person."
