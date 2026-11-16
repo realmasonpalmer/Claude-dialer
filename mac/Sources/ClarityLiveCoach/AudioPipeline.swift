@@ -50,34 +50,80 @@ func level(of buffer: AVAudioPCMBuffer) -> Float {
     return min(max((db + 60) / 60, 0), 1) // -60 dB..0 dB -> 0..1
 }
 
-/// The rep's microphone, via AVAudioEngine. A fresh engine every start, so switching
-/// microphones (built-in vs. headset) never leaves stale settings behind.
+/// The rep's microphone, read straight from the mic with Core Audio. Input only, on purpose:
+/// it never opens a speaker. (AVAudioEngine, used before, also opened an output device and
+/// could build a hidden mic + speaker combo, which pulled call sound to the wrong speakers.)
+/// Where sound plays is left 100% to the Mac's Sound settings.
 final class MicCapture {
-    private var engine = AVAudioEngine()
+    private var deviceID = AudioDeviceID(kAudioObjectUnknown)
+    private var procID: AudioDeviceIOProcID?
+    private let queue = DispatchQueue(label: "clarity.mic", qos: .userInteractive)
+    /// Converting and sending happen here, never on the audio thread.
+    private let work = DispatchQueue(label: "clarity.mic-work", qos: .userInitiated)
 
-    /// - Parameter device: a specific microphone (like the Mac's built-in one); nil = the system default.
+    /// - Parameter device: a specific microphone (like the Mac's built-in one); nil = the Mac's chosen input.
     func start(device: AudioDeviceID? = nil, onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
         stop()
-        engine = AVAudioEngine()
-        let input = engine.inputNode
-        if var id = device, let unit = input.audioUnit {
-            let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
-                                              &id, UInt32(MemoryLayout<AudioDeviceID>.size))
-            try check(status, "Pick microphone")
+        let id = try device ?? readProperty(AudioObjectID(kAudioObjectSystemObject),
+                                            kAudioHardwarePropertyDefaultInputDevice, AudioDeviceID(kAudioObjectUnknown))
+        guard id != kAudioObjectUnknown else {
+            throw CoreAudioError(status: -1, what: "Open microphone (no input device)")
         }
-        // The microphone's own format, read after picking it.
-        let format = input.inputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else {
-            throw CoreAudioError(status: -1, what: "Open microphone (no input device or no permission)")
+        guard let stream = try inputStreams(of: id).first else {
+            throw CoreAudioError(status: -1, what: "Open microphone (no input on this device)")
         }
-        input.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in onBuffer(buffer) } // nil = the bus's own format
-        engine.prepare()
-        try engine.start()
+        var asbd = try readProperty(stream, kAudioStreamPropertyVirtualFormat, AudioStreamBasicDescription())
+        guard asbd.mSampleRate > 0, asbd.mBytesPerFrame > 0,
+              let format = AVAudioFormat(streamDescription: &asbd) else {
+            throw CoreAudioError(status: -1, what: "Read microphone format")
+        }
+        let bytesPerFrame = asbd.mBytesPerFrame
+        let work = self.work
+        var proc: AudioDeviceIOProcID?
+        // Only reads inputData. Never writes outputData, so no speaker is ever used.
+        try check(AudioDeviceCreateIOProcIDWithBlock(&proc, id, queue) { _, inputData, _, _, _ in
+            let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
+            guard list.count > 0, let src = list[0].mData else { return } // the first input stream
+            let frames = AVAudioFrameCount(list[0].mDataByteSize / bytesPerFrame)
+            guard frames > 0, let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
+            copy.frameLength = frames
+            let to = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+            guard to.count > 0, let dst = to[0].mData else { return }
+            memcpy(dst, src, Int(min(list[0].mDataByteSize, to[0].mDataByteSize)))
+            work.async { onBuffer(copy) }
+        }, "Open microphone")
+        deviceID = id
+        procID = proc
+        do {
+            try check(AudioDeviceStart(id, proc), "Start microphone")
+        } catch {
+            stop()
+            throw error
+        }
     }
 
     func stop() {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        if deviceID != kAudioObjectUnknown, let procID {
+            AudioDeviceStop(deviceID, procID)
+            AudioDeviceDestroyIOProcID(deviceID, procID)
+        }
+        procID = nil
+        deviceID = AudioDeviceID(kAudioObjectUnknown)
+    }
+
+    deinit { stop() }
+
+    private func inputStreams(of device: AudioDeviceID) throws -> [AudioStreamID] {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        try check(AudioObjectGetPropertyDataSize(device, &addr, 0, nil, &size), "Find microphone streams")
+        var list = [AudioStreamID](repeating: 0, count: Int(size) / MemoryLayout<AudioStreamID>.size)
+        guard !list.isEmpty else { return [] }
+        try check(AudioObjectGetPropertyData(device, &addr, 0, nil, &size, &list), "Read microphone streams")
+        return list
     }
 }
 

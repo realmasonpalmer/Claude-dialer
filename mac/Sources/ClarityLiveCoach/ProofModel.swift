@@ -372,8 +372,12 @@ final class SilenceWatch {
         guard n > 0 else { return 0 }
         var peak: Float = 0
         if let data = buffer.floatChannelData {
-            for c in 0..<Int(buffer.format.channelCount) {
-                for i in 0..<n { peak = max(peak, abs(data[c][i])) }
+            if buffer.format.isInterleaved { // all channels side by side in one block
+                for i in 0..<(n * Int(buffer.format.channelCount)) { peak = max(peak, abs(data[0][i])) }
+            } else {
+                for c in 0..<Int(buffer.format.channelCount) {
+                    for i in 0..<n { peak = max(peak, abs(data[c][i])) }
+                }
             }
         } else if let data = buffer.int16ChannelData {
             for i in 0..<n { peak = max(peak, abs(Float(data[0][i])) / Float(Int16.max)) }
