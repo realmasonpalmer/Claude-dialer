@@ -240,10 +240,16 @@ enum LinkedInBot {
     }
 
     /// A new tab in the front Chrome window, without taking the rep away from their tab.
+    /// Every LinkedIn tab this app opened that may still be open.
+    private static var ourTabs: [String] = []
+
+    /// Opens one LinkedIn tab. Closes every LinkedIn tab the app opened before, so there's only ever one.
     private static func openTab(_ url: URL) async -> String? {
         let link = url.absoluteString
         guard !link.contains("\""), !link.contains("\\") else { return nil }
-        return await apple("""
+        for old in ourTabs { await closeTab(old) }
+        ourTabs = []
+        let r = await apple("""
         tell application "Google Chrome"
             if (count of windows) = 0 then make new window
             set w to window 1
@@ -253,6 +259,8 @@ enum LinkedInBot {
             return ((id of t) as text) & "|" & (oldIndex as text)
         end tell
         """)
+        if let r, let id = r.split(separator: "|").first, r != "ERR" { ourTabs.append(String(id)) }
+        return r
     }
 
     private static func onTab(_ tab: String, _ action: String) -> String {
