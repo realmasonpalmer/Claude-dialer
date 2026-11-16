@@ -299,10 +299,14 @@ enum LinkedInBot {
         }
         if (!top) top = h1.closest('section') || main;
       }
-      var modal = all(document, '[role=dialog]')[0] || null;
+      var modal = all(document, '[role=dialog], dialog[open], [aria-modal=true], .artdeco-modal, .artdeco-modal-overlay')[0] || null;
+      // The new layout may not mark its pop-up as a dialog: use the whole page, but only for the pop-up's own controls.
+      var scope = modal || document;
       if (phase === 'report') {
         return 'url=' + href.slice(0, 80) + ' title=' + document.title.slice(0, 60) + ' h1s=' + document.querySelectorAll('h1').length +
           ' main=' + !!document.querySelector('main') + ' ready=' + document.readyState + ' top=' + !!top +
+          ' modal=' + !!modal + ' textareas=' + all(document, 'textarea').length +
+          ' popup=' + btns(scope).filter(function (e) { return !(top && top.contains(e)); }).slice(0, 14).map(function (e) { return label(e).slice(0, 30); }).join(' | ') +
           ' buttons=' + (top ? btns(top) : btns(document)).slice(0, 12).map(function (e) { return label(e).slice(0, 30); }).join(' | ');
       }
       if (phase === 'check') {
@@ -341,17 +345,16 @@ enum LinkedInBot {
         return 'NOCONNECT';
       }
       if (phase === 'note') {
-        if (!modal) return 'WAIT';
-        if (modal.querySelector('input[type=email], input[name=email]')) return 'EMAIL';
-        if (modal.querySelector('textarea')) return 'TEXTAREA';
-        var add = btns(modal).filter(function (e) { return label(e).indexOf('add a note') >= 0; })[0];
+        if (scope.querySelector('input[type=email], input[name=email]') && !all(scope, 'textarea')[0]) return 'EMAIL';
+        if (all(scope, 'textarea')[0]) return 'TEXTAREA';
+        var add = btns(scope).filter(function (e) { return label(e).indexOf('add a note') >= 0; })[0];
         if (add && !add.__clarityTried) { add.__clarityTried = true; add.click(); return 'WAIT'; }
-        var mt = (modal.innerText || '').toLowerCase();
-        if (mt.indexOf('premium') >= 0) return 'NONOTE';
+        var mt = ((modal || document.body).innerText || '').toLowerCase();
+        if (add === undefined && mt.indexOf('premium') >= 0 && mt.indexOf('personalize') >= 0) return 'NONOTE';
         return 'WAIT';
       }
       if (phase === 'type') {
-        var ta = modal && modal.querySelector('textarea');
+        var ta = all(scope, 'textarea')[0];
         if (!ta) return 'NOTEXT';
         var setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
         ta.focus();
@@ -361,7 +364,7 @@ enum LinkedInBot {
         return ta.value === note ? 'TYPED' : 'NOTEXT';
       }
       function sendButton() {
-        return modal && btns(modal).filter(function (e) {
+        return btns(scope).filter(function (e) {
           var l = label(e);
           return l.indexOf('send') >= 0 && l.indexOf('without') < 0 && !e.disabled && e.getAttribute('aria-disabled') !== 'true';
         })[0];
@@ -382,20 +385,16 @@ enum LinkedInBot {
         return w ? 'WATCHING' : 'NOSEND';
       }
       if (phase === 'verify') {
-        if (modal) {
-          var vt = (modal.innerText || '').toLowerCase();
-          if (vt.indexOf('limit') >= 0 && vt.indexOf('invitation') >= 0) return 'BLOCKED:invitation limit reached';
-          if (modal.querySelector('textarea')) return 'WAIT';
-        }
+        var vt = ((modal || document.body).innerText || '').toLowerCase();
+        if (vt.indexOf('invitation limit') >= 0 || vt.indexOf('weekly limit') >= 0) return 'BLOCKED:invitation limit reached';
+        if (all(scope, 'textarea')[0]) return 'WAIT';
         var pending = top && btns(top).some(function (e) { var l = label(e); return l.indexOf('pending') >= 0 || l.indexOf('withdraw') >= 0; });
         if (window.__clarityClicked || pending) return 'SENT';
-        return modal ? 'WAIT' : 'CLOSED';
+        return 'CLOSED';
       }
       if (phase === 'close') {
-        if (modal) {
-          var x = btns(modal).filter(function (e) { var l = label(e); return l.indexOf('dismiss') >= 0 || l.indexOf('cancel') >= 0; })[0];
-          if (x) x.click();
-        }
+        var x = btns(scope).filter(function (e) { var l = label(e); return l.indexOf('dismiss') >= 0 || l.indexOf('cancel') >= 0 || l.indexOf('close') >= 0; })[0];
+        if (x) x.click();
         return 'OK';
       }
       return 'UNKNOWN';
