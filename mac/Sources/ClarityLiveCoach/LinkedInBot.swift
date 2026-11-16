@@ -17,7 +17,7 @@ enum LinkedInBot {
         case blocked(String)
     }
 
-    static let dailyCap = 20
+    static let dailyCap = 50
     static var running = false
 
     static var isOn: Bool { true }
@@ -82,6 +82,9 @@ enum LinkedInBot {
     static func connect(profile: URL, note: String, company: String?, onStatus: @escaping (String) -> Void) async -> Result {
         running = true
         defer { running = false }
+        // A random 3 to 25 s start, so it looks human. Start plus run (~15 s) still fits inside
+        // two dials to voicemail (~60 s), so it's done before the next person.
+        if !testRun { await pause(6, 50) }
         guard let opened = await openTab(profile), !opened.isEmpty, opened != "ERR" else {
             return .skipped("Chrome didn't open the tab")
         }
