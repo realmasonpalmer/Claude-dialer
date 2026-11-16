@@ -429,7 +429,7 @@ enum ScriptWriter {
         return String((lines.last ?? "").prefix(140))
     }
 
-    static func write(segment: String, audience: String, list: Salesforce.ListView?,
+    static func write(segment: String, audience: String, guidance: String = "", list: Salesforce.ListView?,
                       onText: @escaping (String) -> Void,
                       onThinking: ((String) -> Void)? = nil) async throws -> String {
         guard let key = Keychain.read(.anthropic) else {
@@ -502,6 +502,7 @@ enum ScriptWriter {
         Write the script for this call segment.
         Call segment: \(segment.isEmpty ? "Not named" : segment)
         The rep's description (this leads): \(audience.trimmed.isEmpty ? "Not given. Use the list below." : audience.trimmed)
+        \(guidance.trimmed.isEmpty ? "" : "The rep's special instructions (follow these closely, work them into the script): " + guidance.trimmed)
         \(sample.isEmpty ? "" : "Titles and companies from the Salesforce list (a hint only; the description wins):\n\(sample)")
         """
         var text = ""

@@ -20,6 +20,8 @@ struct CampaignEditorView: View {
     @State private var showWho = false
     @State private var writeStart = Date()
     @State private var thought = ""
+    /// Extra direction for Claude, kept between uses.
+    @AppStorage("scriptGuidance") private var guidance = ""
 
     private var isNew: Bool { !store.campaigns.contains { $0.id == draft.id } }
 
@@ -142,6 +144,9 @@ struct CampaignEditorView: View {
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 box($draft.persona, height: 110, placeholder: ScriptWriter.describeHint)
             }
+            Text("Customize script (optional)").font(.headline)
+            box($guidance, height: 60, placeholder: "Anything special for Claude? Example: mention our tax season special. Keep it under 20 seconds. Sound more casual.")
+                .disabled(writing)
             HStack(spacing: 8) {
                 Button {
                     writeTask = Task { await write() }
@@ -260,7 +265,7 @@ struct CampaignEditorView: View {
         let before = draft.pastedScript
         do {
             draft.pastedScript = ""
-            draft.pastedScript = try await ScriptWriter.write(segment: draft.name.trimmed, audience: draft.persona,
+            draft.pastedScript = try await ScriptWriter.write(segment: draft.name.trimmed, audience: draft.persona, guidance: guidance,
                                                               list: list, onText: { partial in
                 Task { @MainActor in if writing { draft.pastedScript = partial } }
             }, onThinking: { partial in
