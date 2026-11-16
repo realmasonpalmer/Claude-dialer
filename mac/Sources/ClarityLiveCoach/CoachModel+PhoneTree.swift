@@ -17,15 +17,18 @@ extension CoachModel {
         voicemailActive = false
         sawVoicemail = false
         followUp = nil
-        if let key = currentAttemptKey { markNotQualityProspect(key, reason: "phone tree") }
+        if let key = currentAttemptKey {
+            RemovedList.add(key) // off the app's list; Salesforce isn't changed
+            ActivityLog.add("Phone tree for \(calling ?? "?"): hanging up and skipping them")
+        }
         seq += 1
-        show(Suggestion(say: "Phone tree. Hanging up. The next call starts by itself.", cue: "Disqualified: phone menus aren't worth working.",
+        show(Suggestion(say: "Phone tree. Hanging up. The next call starts by itself.", cue: "Skipped: phone menus aren't worth working.",
                         stage: "Exit", sayComplete: true), id: seq, kind: .reply)
         guard AircallPhone.isOn else { return }
         Task { [weak self] in
             guard let self, self.status == .live else { return }
             guard await AircallPhone.shared.hangUp() else {
-                self.show(Suggestion(say: "Phone tree. Hang up. The next call starts by itself.", cue: "Disqualified.",
+                self.show(Suggestion(say: "Phone tree. Hang up. The next call starts by itself.", cue: "Skipped.",
                                      stage: "Exit", sayComplete: true), id: self.seq, kind: .reply)
                 return
             }

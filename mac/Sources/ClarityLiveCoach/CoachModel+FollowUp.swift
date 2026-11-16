@@ -312,6 +312,20 @@ extension CoachModel {
         SalesforceChrome.openInBackground(url.absoluteString)
     }
 
+    /// Automatic mode: notes wait their turn here and go out one at a time while the rep keeps calling.
+    func queueLinkedIn(_ f: FollowUp) {
+        guard f.key != nil, !linkedInQueue.contains(where: { $0.key == f.key }) else { return }
+        linkedInQueue.append(f)
+        ActivityLog.add("LinkedIn bot: queued \(f.prospect ?? "?") (\(linkedInQueue.count) waiting)")
+        drainLinkedInQueue()
+    }
+
+    private func drainLinkedInQueue() {
+        guard !LinkedInBot.running, !linkedInQueue.isEmpty else { return }
+        let f = linkedInQueue.removeFirst()
+        runLinkedInBot(f)
+    }
+
     /// Sends the connection note in Chrome (see LinkedInBot), then lets the flow move on.
     /// Whatever happens (sent, already connected, skipped, blocked) it's logged and the calls keep going.
     func runLinkedInBot(_ f: FollowUp) {
@@ -363,6 +377,7 @@ extension CoachModel {
 
     private func finishLinkedIn(_ key: String, note: String?) {
         linkedInStatus = note.map { "LinkedIn skipped: \($0)" }
+        Task { @MainActor [weak self] in self?.drainLinkedInQueue() } // the next queued note
         if followUp?.key == key { followUp?.linkedinDone = true } // the flow moves on
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))

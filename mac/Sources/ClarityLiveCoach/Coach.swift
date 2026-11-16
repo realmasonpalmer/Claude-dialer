@@ -196,6 +196,8 @@ final class CoachModel: ObservableObject {
     @Published var waitingForLinkedIn = false
     /// What the LinkedIn bot is doing right now, for the line under the top bar.
     @Published var linkedInStatus: String?
+    /// Automatic mode: notes waiting to go out, oldest first.
+    var linkedInQueue: [FollowUp] = []
     /// A short note that fades by itself ("Text sent to Neal").
     @Published var toast: String?
     var toastTask: Task<Void, Never>?

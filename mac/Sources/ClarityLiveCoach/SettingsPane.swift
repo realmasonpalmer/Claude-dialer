@@ -15,8 +15,6 @@ struct SettingsPane: View {
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     @AppStorage(PrefKey.autoLinkedIn) private var autoLinkedIn = false
     @AppStorage(PrefKey.autoText) private var autoText = true
-    @AppStorage("linkedInBot") private var linkedInBot = true
-    @AppStorage("linkedInBotSend") private var linkedInBotSend = true
     @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
     @State private var confirmReset = false
     @State private var note: String?
@@ -33,11 +31,6 @@ struct SettingsPane: View {
                 Text("On: their profile opens in a background Chrome tab, so it's ready when you look.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("Send texts by itself", isOn: $autoText)
-                Toggle("LinkedIn bot: send the connection note in Chrome", isOn: $linkedInBot)
-                    .help("Opens their profile in Chrome, checks their company, clicks Connect, adds the note. At most \(LinkedInBot.dailyCap) a day. Stops for 2 hours at any LinkedIn warning.")
-                Toggle("LinkedIn bot clicks Send by itself", isOn: $linkedInBotSend)
-                    .disabled(!linkedInBot)
-                    .help("Off: it types the note and waits for you to click Send. The app moves on after your click.")
                 Text("On: the text goes out in the background while the next person loads.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("Drop my recorded voicemail by itself", isOn: $dropOn)

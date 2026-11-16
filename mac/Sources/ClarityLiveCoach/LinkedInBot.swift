@@ -20,7 +20,7 @@ enum LinkedInBot {
     static let dailyCap = 20
     static var running = false
 
-    static var isOn: Bool { UserDefaults.standard.object(forKey: "linkedInBot") as? Bool ?? true }
+    static var isOn: Bool { true }
     /// On: clicks Send itself. Off: types the note and waits for the rep to click Send.
     static var autoSend: Bool { UserDefaults.standard.object(forKey: "linkedInBotSend") as? Bool ?? true }
 
@@ -34,7 +34,6 @@ enum LinkedInBot {
 
     /// Why the bot won't run right now, or nil if it can.
     static var whyNot: String? {
-        if !isOn { return "off in Settings" }
         if running { return "already busy" }
         if let until = pausedUntil, until > Date() { return "paused after a LinkedIn warning until \(until.formatted(date: .omitted, time: .shortened))" }
         if sentToday >= dailyCap { return "hit today's limit of \(dailyCap)" }

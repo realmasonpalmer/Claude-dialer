@@ -1507,6 +1507,7 @@ struct ScoreboardView: View {
 /// After a voicemail: send the text in one click (Aircall) and open LinkedIn with the note copied.
 /// Stays after the call until both are done or it's closed.
 struct FollowUpCard: View {
+    @AppStorage("linkedInBotSend") private var autoLinkedIn = true
     @Binding var followUp: FollowUp?
     /// The card is for someone other than the person on screen now.
     var isLastPerson = false
@@ -1564,6 +1565,9 @@ struct FollowUpCard: View {
                                     .disabled(f.linkedin.isEmpty)
                             }
                         }
+                        Toggle("Send LinkedIn connection request automatically", isOn: $autoLinkedIn)
+                            .toggleStyle(.checkbox).font(.caption)
+                            .help("On: the app sends it in Chrome in the background while you keep calling. Off: it opens their profile and types the note, you click Send, then the next call starts.")
                         if f.linkedinDone && !f.linkedinMessageDone {
                             Text("Connect, Add a note, Paste, Send.")
                                 .font(.caption).foregroundStyle(.secondary)

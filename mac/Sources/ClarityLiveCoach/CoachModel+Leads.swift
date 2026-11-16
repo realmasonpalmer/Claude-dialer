@@ -301,7 +301,10 @@ extension CoachModel {
     func startNextSequence() {
         cancelAutoNext()
         guard status == .ready else { return }
-        if autoDial, let f = followUp, f.linkedInDue, !f.linkedinDone {
+        // Automatic LinkedIn: the note goes out in the background, the calls never wait.
+        if let f = followUp, f.linkedInDue, !f.linkedinDone, LinkedInBot.autoSend {
+            queueLinkedIn(f)
+        } else if autoDial, let f = followUp, f.linkedInDue, !f.linkedinDone {
             if !waitingForLinkedIn {
                 ActivityLog.add("Waiting: LinkedIn note for \(f.prospect ?? "?") before the next person")
                 runLinkedInBot(f)
