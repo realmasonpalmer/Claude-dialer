@@ -85,12 +85,14 @@ enum LinkedInBot {
         default: break
         }
         // A blocked page stays open so the rep can see it; everything else closes.
+        // Leave their profile open (back from the invite page if the bot used it).
         if case .blocked = result {} else {
-            await closeTab(tab)
-            if let backTo { // back to the tab the rep was on
-                _ = await apple("tell application \"Google Chrome\" to set active tab index of window 1 to \(backTo)")
+            let link = profile.absoluteString
+            if !link.contains("\""), !link.contains("\\") {
+                _ = await apple(onTab(tab, "if (URL of t) does not contain \"/in/\" then set URL of t to \"\(link)\"\n return \"OK\""))
             }
         }
+        _ = backTo
         return result
     }
 
@@ -198,7 +200,7 @@ enum LinkedInBot {
     }
 
     private static func pause(_ low: Double, _ high: Double) async {
-        try? await Task.sleep(for: .milliseconds(Int(Double.random(in: low...high) * 1000)))
+        try? await Task.sleep(for: .milliseconds(Int(Double.random(in: low...high) * 500)))
     }
 
     // MARK: Chrome
