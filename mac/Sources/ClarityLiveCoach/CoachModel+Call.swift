@@ -128,7 +128,8 @@ extension CoachModel {
     func endCall() {
         guard status != .ready else { return }
         let hadVoicemail = sawVoicemail // for the log
-        if hadVoicemail, !(currentAttempts < maxAttempts && autoDial), let key = currentAttemptKey,
+        if hadVoicemail, !(currentAttempts < maxAttempts && autoDial), !autoHungUpThisCall, repWordsInCall >= 8,
+           let key = currentAttemptKey,
            Cadence.leavesVoicemail(for: key),
            let said = voicemailScript?.say, voicemailFor == calling {
             DialHistory.logVoicemail(key, body: said)

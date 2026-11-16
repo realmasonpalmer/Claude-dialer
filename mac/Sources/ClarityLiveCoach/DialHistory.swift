@@ -56,7 +56,17 @@ enum DialHistory {
     private static var all: [String: Person] {
         get {
             if let cache { return cache }
-            let loaded = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([String: Person].self, from: $0) } ?? [:]
+            var loaded = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([String: Person].self, from: $0) } ?? [:]
+            // Once: forget voicemails the old rule logged without one being left (no drop, no words read).
+            if !UserDefaults.standard.bool(forKey: "voicemailLogReset1") {
+                UserDefaults.standard.set(true, forKey: "voicemailLogReset1")
+                for (k, var p) in loaded where !p.voicemails.isEmpty && !p.voicemailBodies.contains("(recorded voicemail dropped)") {
+                    p.voicemails = []
+                    p.voicemailBodies = []
+                    loaded[k] = p
+                }
+                if let data = try? JSONEncoder().encode(loaded) { try? data.write(to: file, options: .atomic) }
+            }
             cache = loaded
             return loaded
         }

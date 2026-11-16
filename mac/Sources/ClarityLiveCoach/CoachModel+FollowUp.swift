@@ -480,6 +480,9 @@ extension CoachModel {
     /// then click Aircall's voicemail drop button (the rep's recorded message). Only when the rep
     /// recorded one and turned it on (Set up > Voicemail drop).
     func scheduleVoicemailDrop() {
+        if !Prefs.voicemailDropOn, status == .live, currentAttempts >= maxAttempts {
+            ActivityLog.add("Voicemail drop: off in Settings, read the message yourself")
+        }
         guard Prefs.voicemailDropOn, autoDial, AircallPhone.isOn, status == .live, currentAttempts >= maxAttempts,
               !voicemailDropStarted, let key = currentAttemptKey,
               Cadence.leavesVoicemail(for: key) else { return }
