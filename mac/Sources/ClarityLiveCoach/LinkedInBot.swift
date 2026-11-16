@@ -316,19 +316,26 @@ enum LinkedInBot {
       if (phase === 'connect') {
         var c = btns(top).filter(function (e) { var l = label(e); return (l.indexOf('invite') >= 0 && l.indexOf('connect') >= 0) || text(e) === 'connect'; })[0];
         if (c) { c.click(); return 'CLICKED'; }
-        var more = btns(top).filter(function (e) { var l = label(e); return l.indexOf('more actions') >= 0 || text(e) === 'more'; })[0];
-        if (more) { more.click(); return 'MORE'; }
+        var tb = btns(top);
+        var more = tb.filter(function (e) { var l = label(e); return l.indexOf('more') >= 0 || /^(…|\.\.\.)$/.test(text(e)); })[0];
+        if (!more) {
+          // An icon-only button right after Message is the "…" menu.
+          var mi = tb.findIndex(function (e) { return label(e).indexOf('message') >= 0; });
+          more = mi >= 0 ? tb.slice(mi + 1).filter(function (e) { return e.tagName === 'BUTTON' && text(e) === ''; })[0] : null;
+        }
+        if (more) { var r = more.getBoundingClientRect(); window.__clarityMore = { x: r.left, y: r.bottom }; more.click(); return 'MORE'; }
         return 'NOCONNECT';
       }
       if (phase === 'menu') {
-        var menus = all(document, '.artdeco-dropdown__content--is-open, [role=menu]');
-        var m = null;
-        menus.forEach(function (menu) {
-          if (m) return;
-          m = btns(menu).filter(function (e) {
-            var l = label(e);
-            return (l.indexOf('invite') >= 0 && l.indexOf('connect') >= 0) || text(e) === 'connect';
-          })[0] || null;
+        // The "Connect" item closest to the "…" button just clicked (never one from the sidebar).
+        var at = window.__clarityMore || { x: 0, y: 0 };
+        var m = null, best = 1e9;
+        all(document, 'button, [role=button], [role=menuitem], a, li, div, span').forEach(function (e) {
+          var l = label(e);
+          if (!(text(e) === 'connect' || (l.indexOf('invite') >= 0 && l.indexOf('connect') >= 0))) return;
+          var r = e.getBoundingClientRect();
+          var d = Math.abs(r.left - at.x) + Math.abs(r.top - at.y);
+          if (d < best && d < 500) { best = d; m = e; }
         });
         if (m) { m.click(); return 'CLICKED'; }
         return 'NOCONNECT';
