@@ -44,10 +44,13 @@ enum ActivityLog {
     }
 
     /// The newest lines, for pasting.
-    static func recent(lines: Int = 400) -> String {
+    /// Call transcripts are in the log for you (paste it to Claude), but never go to the team Slack channel.
+    static func recent(lines: Int = 400, transcripts: Bool = true) -> String {
         queue.sync {
             let all = (try? String(contentsOf: file, encoding: .utf8)) ?? "(no log yet)"
-            return all.components(separatedBy: "\n").suffix(lines).joined(separator: "\n")
+            var rows = all.components(separatedBy: "\n")
+            if !transcripts { rows.removeAll { $0.contains("Transcript: ") } }
+            return rows.suffix(lines).joined(separator: "\n")
         }
     }
 

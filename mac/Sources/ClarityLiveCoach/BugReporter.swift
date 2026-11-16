@@ -63,7 +63,7 @@ enum BugReporter {
         Rep: \(rep) · Version: \(version) · macOS \(os)
         *Right now:* \(context())
         ```
-        \(ActivityLog.recent(lines: 80).suffix(3500))
+        \(ActivityLog.recent(lines: 80, transcripts: false).suffix(3500))
         ```
         """
         var req = URLRequest(url: url)

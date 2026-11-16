@@ -17,6 +17,8 @@ enum DialHistory {
         /// Voicemails left for them (when, and the words), oldest first.
         var voicemails: [Date] = []
         var voicemailBodies: [String] = []
+        /// Calls where they actually talked to us.
+        var talked: [Date] = []
         /// The carrier said the number doesn't work.
         var badNumber = false
         /// Calls that ended in seconds with nobody on the line (beeping tone, no connection).
@@ -36,6 +38,7 @@ enum DialHistory {
             linkedInMessageBodies = try c.decodeIfPresent([String].self, forKey: .linkedInMessageBodies) ?? []
             voicemails = try c.decodeIfPresent([Date].self, forKey: .voicemails) ?? []
             voicemailBodies = try c.decodeIfPresent([String].self, forKey: .voicemailBodies) ?? []
+            talked = try c.decodeIfPresent([Date].self, forKey: .talked) ?? []
             badNumber = try c.decodeIfPresent(Bool.self, forKey: .badNumber) ?? false
             failedConnects = try c.decodeIfPresent(Int.self, forKey: .failedConnects) ?? 0
         }
@@ -140,6 +143,13 @@ enum DialHistory {
         var p = person(id)
         p.linkedInMessages.append(Date())
         if !body.isEmpty { p.linkedInMessageBodies.append(body) }
+        all[key(id)] = p
+    }
+
+    /// They picked up and talked: no more calls to them today.
+    static func logTalked(_ id: String) {
+        var p = person(id)
+        p.talked.append(Date())
         all[key(id)] = p
     }
 

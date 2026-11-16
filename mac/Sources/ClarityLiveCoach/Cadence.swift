@@ -63,6 +63,13 @@ enum Cadence {
         return before < callDays.count ? Step(index: before) : nil
     }
 
+    /// Leave a voicemail today? On the plan's first call day, or any later day if the app has never
+    /// left them one (a lead first called on day 3 still gets their voicemail).
+    static func leavesVoicemail(for id: String) -> Bool {
+        guard let s = step(for: id) else { return true }
+        return s.leaveVoicemail || DialHistory.person(id).voicemails.isEmpty
+    }
+
     /// Day of the plan today (day 1 = their first call day).
     static func day(for id: String) -> Int {
         guard let first = callDates(id).first else { return 1 }
@@ -100,6 +107,7 @@ enum Cadence {
         let p = DialHistory.person(id)
         if pickedUp(id) { return "They picked up before, so the plan is done for them." }
         if p.badNumber || p.failedConnects >= 2 { return "Their number didn't work." }
+        if p.talked.contains(where: { cal.isDateInToday($0) }) { return "You just talked to them. No more calls to them today." }
         let dialsToday = p.dials.filter { cal.isDateInToday($0) }.count
         if dialsToday >= dialsPerDay { return "Already called \(dialsToday) times today. The plan is \(dialsPerDay)." }
         if dialsToday > 0 { return nil } // the 2nd dial today

@@ -39,7 +39,7 @@ extension CoachModel {
             show(Suggestion(say: currentAttempts < maxAttempts ? "Mailbox is full. Hang up and click Redial." : "Mailbox is full. Hang up. The next call starts by itself.",
                             cue: "No message possible.",
                             stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
-        } else if let step = currentAttemptKey.flatMap(Cadence.step(for:)), !step.leaveVoicemail {
+        } else if let step = currentAttemptKey.flatMap(Cadence.step(for:)), let k = currentAttemptKey, !Cadence.leavesVoicemail(for: k) {
             // Not a voicemail day in the 21-day plan.
             show(Suggestion(say: currentAttempts < maxAttempts ? "No voicemail today. Hang up. The redial starts by itself."
                                                      : "No voicemail today. Hang up and move on.",
@@ -165,7 +165,7 @@ extension CoachModel {
         guard let step = Cadence.step(for: key), !Cadence.pickedUp(key) else { return [] }
         let dialsToday = p.dials.filter { Calendar.current.isDateInToday($0) }.count
         var steps: [(String, Bool)] = [("2 dials (\(min(dialsToday, 2)) of 2)", dialsToday >= 2)]
-        if step.leaveVoicemail {
+        if Cadence.leavesVoicemail(for: key) {
             steps.append(("Voicemail on the 2nd dial", p.voicemails.contains { Calendar.current.isDateInToday($0) }))
         }
         if step.textToday {
@@ -404,7 +404,7 @@ extension CoachModel {
     func scheduleVoicemailDrop() {
         guard Prefs.voicemailDropOn, autoDial, AircallPhone.isOn, status == .live, currentAttempts >= maxAttempts,
               !voicemailDropStarted, let key = currentAttemptKey,
-              Cadence.step(for: key)?.leaveVoicemail ?? true else { return }
+              Cadence.leavesVoicemail(for: key) else { return }
         voicemailDropStarted = true
         let shownAt = Date()
         Task { [weak self] in

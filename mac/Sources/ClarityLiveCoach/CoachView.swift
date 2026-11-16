@@ -479,6 +479,11 @@ struct CoachView: View {
                     Button("Start a 50 min block") { coach.startBlock() }.buttonStyle(.bordered).controlSize(.small)
                         .help("50 minutes of calling, then a 10 minute break")
                 }
+                if coach.streak > 0 {
+                    Button("Reset streak") { coach.streak = 0; coach.lastDialAt = .distantPast }
+                        .buttonStyle(.link).font(.caption2)
+                        .help("Start the in-a-row count over")
+                }
                 Spacer(minLength: 0)
             }
             .padding(.leading, 13)

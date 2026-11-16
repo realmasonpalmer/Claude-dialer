@@ -129,7 +129,7 @@ extension CoachModel {
         guard status != .ready else { return }
         let hadVoicemail = sawVoicemail // for the log
         if hadVoicemail, !(currentAttempts < maxAttempts && autoDial), let key = currentAttemptKey,
-           Cadence.step(for: key)?.leaveVoicemail ?? true,
+           Cadence.leavesVoicemail(for: key),
            let said = voicemailScript?.say, voicemailFor == calling {
             DialHistory.logVoicemail(key, body: said)
         }
@@ -139,6 +139,10 @@ extension CoachModel {
             && Date().timeIntervalSince(callStartedAt) < 12
             && !turns.contains { $0.speaker == .prospect }
         ActivityLog.add("Call ended: \(calling ?? "?") after \(Int(Date().timeIntervalSince(callStartedAt))) s. voicemail=\(sawVoicemail) theySpoke=\(turns.contains(where: { $0.speaker == .prospect })) bad=\(badNumberThisCall)")
+        if !turns.isEmpty {
+            let words = turns.map { "\($0.speaker == .rep ? "Rep" : "Them"): \($0.text)" }.joined(separator: " | ")
+            ActivityLog.add("Transcript: \(words.prefix(6000))")
+        }
         if quickFail, let key = currentAttemptKey {
             outcomeSaved.insert(String(key.prefix(15))) // nothing to rate
             let fails = DialHistory.logFailedConnect(key)
@@ -223,7 +227,7 @@ extension CoachModel {
               !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
               let key = currentAttemptKey, !RemovedList.contains(key) else { return }
         let redialNext = currentAttempts < maxAttempts && !DialHistory.isMaxed(key)
-        let noVoicemailToday = Cadence.step(for: key)?.leaveVoicemail == false
+        let noVoicemailToday = !Cadence.leavesVoicemail(for: key)
         guard redialNext || noVoicemailToday else { return } // a voicemail day's last try: leave the message
         autoHangingUp = true
         autoHungUpThisCall = true
@@ -614,6 +618,7 @@ extension CoachModel {
         if usedOpener != nil {
             openers.record(score: score, kept: prospectTurns >= 3, goal: goalHit)
         }
+        if let key = currentAttemptKey { DialHistory.logTalked(key) }
         let record = CallRecord(
             campaignID: campaign.id, campaignVersion: campaign.version, openerID: usedOpener?.id,
             talkSeconds: talk, prospectTurns: prospectTurns, stages: Array(stagesSeen).sorted(),
