@@ -6,9 +6,22 @@ import Foundation
 
 /// A call from start to end: the tick, starting and ending calls, auto redial and auto next.
 extension CoachModel {
+    /// Whoever is up has a phone number outside the US and Canada: skip them, whatever loaded them.
+    /// Checked every half second, so no path (first lead, Back, reload, auto next) can miss it.
+    private func skipForeignLead() {
+        guard status == .ready, !dialing, leads.isActive, let d = leads.details, !d.doNotCall,
+              let n = d.callNumber, !Aircall.isNorthAmerican(n), foreignSkippedID != d.id else { return }
+        foreignSkippedID = d.id // once per person, so Back can still show them
+        ActivityLog.add("\(d.name) isn't a US or Canada number (\(n)): skipping and removing from the list")
+        RemovedList.add(d.id)
+        problem = "Not a US or Canada number. Skipped, on to the next person."
+        nextLead(dial: Prefs.autoDial)
+    }
+
     func tick() {
         guard active else { return }
         checkBlock()
+        skipForeignLead()
         if phase != loggedPhase {
             ActivityLog.add("Phase: \(loggedPhase.rawValue) -> \(phase.rawValue)")
             loggedPhase = phase

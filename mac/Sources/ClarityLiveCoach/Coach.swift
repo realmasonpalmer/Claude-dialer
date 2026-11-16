@@ -132,6 +132,7 @@ final class CoachModel: ObservableObject {
     /// The call list from a Salesforce list view. When active, Chrome isn't needed at all.
     let leads = LeadQueue()
     var appliedLeadID: String?
+    var foreignSkippedID: String?
     var pendingDialSince: Date?
     @Published var dialing = false
     @Published var dialError: String?
