@@ -566,8 +566,13 @@ extension CoachModel {
                 }
                 let quiet = Date().timeIntervalSince(self.lastWordsAt ?? shownAt)
                 let since = Date().timeIntervalSince(shownAt) - 8
-                if quiet > 1.6, since > 3 { quietSince = quietSince ?? Date() } else { quietSince = nil }
-                if let q = quietSince, Date().timeIntervalSince(q) > 4 { break }
+                // The greeting is over: its last words sound like an ending, then 2.5 s of quiet.
+                // No ending words heard: 4 s of quiet. (A pause mid-greeting never counts.)
+                let said = (self.turns.last { $0.speaker == .prospect }?.text ?? "").lowercased()
+                let endings = ["message", "tone", "beep", "as soon as", "get back to you", "return your call", "record", "options", "thank you"]
+                let ended = endings.contains { said.suffix(80).contains($0) }
+                if since > 3, quiet > (ended ? 2.5 : 4.0) { quietSince = quietSince ?? Date() } else { quietSince = nil }
+                if quietSince != nil { how = ended ? "after the greeting ended (no beep heard)" : "after 4 s of quiet (no beep heard)"; break }
                 if since > 25 { how = "no beep in 25 s"; break }
                 try? await Task.sleep(for: .milliseconds(100))
             }

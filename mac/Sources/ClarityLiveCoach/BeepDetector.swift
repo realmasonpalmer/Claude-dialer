@@ -47,13 +47,13 @@ final class BeepDetector: @unchecked Sendable {
                 let p = s1 * s1 + s2 * s2 - k * s1 * s2
                 if p > best { best = p; peakFreq = f }
             }
-            isTone = best / (energy * Double(frame) / 2) > 0.6 // most of the sound is one pitch
+            isTone = best / (energy * Double(frame) / 2) > 0.45 // most of the sound is one pitch (phone audio smears it a little)
         }
         if isTone, toneFrames == 0 || abs(peakFreq - toneFreq) <= 75 {
             if toneFrames == 0 { toneFreq = peakFreq }
             toneFrames += 1
         } else {
-            if (8...75).contains(toneFrames) { _lastBeepEnd = Date() } // 0.16 to 1.5 s: a beep
+            if (6...75).contains(toneFrames) { _lastBeepEnd = Date() } // 0.16 to 1.5 s: a beep
             toneFrames = isTone ? 1 : 0
             toneFreq = peakFreq
         }
