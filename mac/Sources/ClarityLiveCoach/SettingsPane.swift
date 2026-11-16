@@ -42,10 +42,11 @@ struct SettingsPane: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             section("Test the LinkedIn bot") {
-                Text("Paste a LinkedIn profile you're not connected to, and their company. It does everything except Send, then cancels. Nothing goes out.")
+                Text("Uses the person on screen now (their LinkedIn and company from Salesforce), or paste any profile. It does everything except Send, then cancels. Nothing goes out.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextField("https://www.linkedin.com/in/...", text: $testProfile)
-                TextField("Their company, as in Salesforce", text: $testCompany)
+                Text(testCompany.isEmpty ? "Company check: off (no company found)" : "Company check: \(testCompany) (from Salesforce)")
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button(testing ? "Testing..." : "Test it") {
                         guard let url = URL(string: testProfile.trimmingCharacters(in: .whitespaces)), url.host?.contains("linkedin.com") == true else {
@@ -71,6 +72,11 @@ struct SettingsPane: View {
                         }
                     }
                     .disabled(testing || LinkedInBot.running)
+                    .onAppear {
+                        let d = coach.leads.details
+                        if testProfile.isEmpty, let url = coach.followUp?.linkedinURL ?? d?.linkedIn { testProfile = url.absoluteString }
+                        if testCompany.isEmpty { testCompany = d?.company ?? coach.recordCompany ?? "" }
+                    }
                     if let testResult { Text(testResult).font(.caption).fixedSize(horizontal: false, vertical: true) }
                 }
             }
