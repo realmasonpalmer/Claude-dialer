@@ -487,16 +487,26 @@ extension CoachModel {
               !voicemailDropStarted, let key = currentAttemptKey,
               Cadence.leavesVoicemail(for: key) else { return }
         voicemailDropStarted = true
-        let shownAt = Date()
+        let shownAt = Date().addingTimeInterval(-8) // a beep a moment before the card counts too
         Task { [weak self] in
-            // The greeting finished (1.6 s of quiet) and at least 3 s passed; never wait over 25 s.
+            // Best: the beep itself was heard and has ended. Backup: the greeting went quiet and no
+            // beep came within 4 more seconds. Never wait over 25 s.
+            var how = "no beep heard, after the quiet"
+            var quietSince: Date?
             while let self, self.status == .live {
+                if let beep = BeepDetector.shared.lastBeepEnd, beep > shownAt {
+                    how = "right after the beep"
+                    break
+                }
                 let quiet = Date().timeIntervalSince(self.lastWordsAt ?? shownAt)
-                let since = Date().timeIntervalSince(shownAt)
-                if (quiet > 1.6 && since > 3) || since > 25 { break }
-                try? await Task.sleep(for: .milliseconds(300))
+                let since = Date().timeIntervalSince(shownAt) - 8
+                if quiet > 1.6, since > 3 { quietSince = quietSince ?? Date() } else { quietSince = nil }
+                if let q = quietSince, Date().timeIntervalSince(q) > 4 { break }
+                if since > 25 { how = "no beep in 25 s"; break }
+                try? await Task.sleep(for: .milliseconds(100))
             }
-            try? await Task.sleep(for: .milliseconds(900)) // the beep
+            try? await Task.sleep(for: .milliseconds(how == "right after the beep" ? 250 : 300))
+            ActivityLog.add("Voicemail drop: dropping \(how)")
             guard let self, self.status == .live else { return }
             let result = await AircallPhone.shared.dropVoicemail(dryRun: false)
             guard result.clicked else {
