@@ -557,6 +557,7 @@ extension CoachModel {
                 return false
             }
             if !Aircall.isNorthAmerican(mobile) {
+                if let key = recordKey() { RemovedList.add(key) } // never comes back
                 ActivityLog.add("Dial: \(calling ?? "?") at \(mobile) isn't a US or Canada number, skipping")
                 problem = "Not a US or Canada number. Skipped, on to the next person."
                 nextLead(dial: Prefs.autoDial)

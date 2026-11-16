@@ -224,7 +224,7 @@ final class CallList: ObservableObject {
         var best: (key: (Int, Int, Int, Int, String, String), index: Int)?
         for i in records.indices {
             let r = records[i]
-            guard r.id != openID, CalledToday.isCallable(r.id) else { continue }
+            guard r.id != openID, CalledToday.isCallable(r.id), !passedOver.contains(r.id) else { continue } // skipped today: gone for today
             let k = CallQueue.key(id: r.id, name: r.name, passedOver: passedOver.contains(r.id))
             if best == nil || k < best!.key { best = (k, i) }
         }
@@ -238,7 +238,12 @@ final class CallList: ObservableObject {
     }
 
     /// People the rep moved past today without calling (so Next doesn't keep bringing them back).
-    private var passedOver: Set<String> = []
+    /// Kept for the whole day, even if the app restarts.
+    private var passedOver: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: "passedOver-" + Self.today) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: "passedOver-" + Self.today) }
+    }
+    private static var today: String { Date().formatted(.iso8601.year().month().day()) }
     private var passedDay = ""
 
     /// Scrolls the Salesforce list so it loads more rows, then reads them. True if new people showed up.
@@ -312,7 +317,7 @@ final class CallList: ObservableObject {
         }
         // The person open now wasn't called: they go to the back for today.
         let today = Date().formatted(.iso8601.year().month().day())
-        if passedDay != today { passedDay = today; passedOver = [] }
+        if passedDay != today { passedDay = today }
         if let openID = currentIndex().map({ records[$0].id }) ?? lastOpenedID,
            openID != record.id, !CalledToday.ids.contains(openID) {
             passedOver.insert(openID)
