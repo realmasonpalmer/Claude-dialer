@@ -74,7 +74,8 @@ enum LinkedInBot {
         guard let tab = await openTab(profile), !tab.isEmpty, tab != "ERR" else {
             return .skipped("Chrome didn't open the tab")
         }
-        let result = await run(tab: tab, note: note, keys: [], onStatus: onStatus) // no company check
+        let vanity = profile.pathComponents.drop { $0 != "in" }.dropFirst().first
+        let result = await run(tab: tab, note: note, keys: [], vanity: vanity, onStatus: onStatus) // no company check
         switch result {
         case .sent: UserDefaults.standard.set(sentToday + 1, forKey: todayKey)
         case .blocked: pausedUntil = Date().addingTimeInterval(2 * 3600)
@@ -85,7 +86,7 @@ enum LinkedInBot {
         return result
     }
 
-    private static func run(tab: String, note: String, keys: [String], onStatus: (String) -> Void) async -> Result {
+    private static func run(tab: String, note: String, keys: [String], vanity: String?, onStatus: (String) -> Void) async -> Result {
         func step(_ phase: String) async -> String { await js(tab: tab, phase: phase, note: note, keys: keys) }
         func blocked(_ s: String) -> Result? { s.hasPrefix("BLOCKED:") ? .blocked(String(s.dropFirst(8))) : nil }
 
@@ -116,16 +117,24 @@ enum LinkedInBot {
             c = await step("menu")
         }
         if let b = blocked(c) { return b }
-        guard c == "CLICKED" else {
-            ActivityLog.add("LinkedIn bot page report: \(await step("report"))")
-            return .skipped("no Connect button on their profile (details in the Activity log)")
-        }
-
         var n = "WAIT"
-        for _ in 0..<10 {
-            await pause(1, 1.8)
-            n = await step("note")
-            if n != "WAIT" { break }
+        if c == "CLICKED" {
+            for _ in 0..<6 {
+                await pause(1, 1.8)
+                n = await step("note")
+                if n != "WAIT" { break }
+            }
+        }
+        // LinkedIn ignored the click, or there's no Connect button: use LinkedIn's own "connect with a note" page.
+        if n == "WAIT", let vanity, !vanity.contains("\""), !vanity.contains("\\") {
+            ActivityLog.add("LinkedIn bot: menu click didn't open the note box; using LinkedIn's direct invite page")
+            onStatus("LinkedIn: opening the invite page...")
+            _ = await apple(onTab(tab, "set URL of t to \"https://www.linkedin.com/preload/custom-invite/?vanityName=\(vanity)\"\n return \"OK\""))
+            for _ in 0..<12 {
+                await pause(1.2, 2)
+                n = await step("note")
+                if n != "WAIT" { break }
+            }
         }
         if let b = blocked(n) { return b }
         switch n {
