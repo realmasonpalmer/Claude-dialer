@@ -404,7 +404,7 @@ extension CoachModel {
             let note = LinkedInBot.note(f.linkedin, first: first)
             ActivityLog.add("LinkedIn bot: \(f.prospect ?? "?") at \(url.absoluteString), note: \(note)")
             LinkedInBot.personKey = key
-            let result = await LinkedInBot.connect(profile: url, note: note, company: company) { [weak self] status in
+            let result = await LinkedInBot.connect(profile: url, note: note, company: company, name: f.prospect) { [weak self] status in
                 self?.linkedInStatus = status
             }
             switch result {

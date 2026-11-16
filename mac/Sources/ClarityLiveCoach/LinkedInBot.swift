@@ -86,7 +86,7 @@ enum LinkedInBot {
         Task { await closeTab(last.tab) }
     }
 
-    static func connect(profile: URL, note: String, company: String?, onStatus: @escaping (String) -> Void) async -> Result {
+    static func connect(profile: URL, note: String, company: String?, name: String? = nil, onStatus: @escaping (String) -> Void) async -> Result {
         running = true
         defer { running = false }
         // A short random start (1 to 5 s), so it looks human but is done fast, even when the
@@ -99,7 +99,8 @@ enum LinkedInBot {
         let tab = parts[0]
         let backTo = parts.count > 1 ? Int(parts[1]) : nil
         let vanity = profile.pathComponents.drop { $0 != "in" }.dropFirst().first
-        let result = await run(tab: tab, note: note, keys: [], vanity: vanity, onStatus: onStatus) // no company check
+        let keys = (name ?? "").lowercased().split(separator: " ").map(String.init).filter { $0.count >= 3 }
+        let result = await run(tab: tab, note: note, keys: keys, vanity: vanity, onStatus: onStatus) // the profile must be this person
         switch result {
         case .sent: UserDefaults.standard.set(sentToday + 1, forKey: todayKey)
         case .blocked: pausedUntil = Date().addingTimeInterval(2 * 3600)
@@ -135,7 +136,7 @@ enum LinkedInBot {
         case "LOADING":
             ActivityLog.add("LinkedIn bot page report: \(await step("report"))")
             return .skipped("couldn't find their name on the page (details in the Activity log)")
-        case "NOMATCH": return .skipped("their current company on LinkedIn doesn't match Salesforce")
+        case "NOMATCH": return .skipped("the LinkedIn link in Salesforce is someone else's profile (name doesn't match). Fix their LinkedIn field")
         case "PENDING": return .pending
         case "CONNECTED": return .alreadyConnected
         default: break
@@ -352,7 +353,7 @@ enum LinkedInBot {
       }
       if (phase === 'check') {
         if (!top || !h1) return 'LOADING';
-        var t = (top.innerText || '').toLowerCase();
+        var t = ((top.innerText || '') + ' ' + document.title).toLowerCase();
         if (keys.length && !keys.some(function (k) { return t.indexOf(k) >= 0; })) return 'NOMATCH';
         if (btns(top).some(function (e) { var l = label(e); return l.indexOf('pending') >= 0 || l.indexOf('withdraw') >= 0; })) return 'PENDING';
         if (/(^|\W)1st(\W|$)/.test(t)) return 'CONNECTED';

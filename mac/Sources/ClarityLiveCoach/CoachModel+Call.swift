@@ -224,7 +224,7 @@ extension CoachModel {
     /// Clicks Aircall's hang-up button and waits until Aircall says the line is free.
     /// If anything is off (no button, line still busy), it does nothing and the rep hangs up as usual.
     func autoHangUpForRedial(why: String = "beep words") {
-        guard autoDial, AircallPhone.isOn, !autoHangingUp, !autoHungUpThisCall,
+        guard autoDial, AircallPhone.isOn, !autoHangingUp, !autoHungUpThisCall, !voicemailDropStarted, // the drop is playing
               !phoneTreeActive, !phoneTreeThisCall, // never hang up on a phone menu
               let key = currentAttemptKey, !RemovedList.contains(key) else { return }
         let redialNext = currentAttempts < maxAttempts && !DialHistory.isMaxed(key)
