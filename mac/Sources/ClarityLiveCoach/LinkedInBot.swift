@@ -266,7 +266,7 @@ enum LinkedInBot {
       var href = location.href;
       var body = ((document.body && document.body.innerText) || '').toLowerCase();
       if (/checkpoint|authwall|\/login|uas\/|challenge/.test(href)) return 'BLOCKED:LinkedIn wants you to sign in or pass a check';
-      var profileShown = !!(document.querySelector('h1'));
+      var profileShown = /\| linkedin/i.test(document.title) && !/sign in|log in|security/i.test(document.title);
       if (!profileShown && (body.indexOf('security verification') >= 0 || body.indexOf('captcha') >= 0 || body.indexOf('quick security check') >= 0))
         return 'BLOCKED:LinkedIn showed a security check';
       if (body.indexOf('weekly invitation limit') >= 0 || body.indexOf('reached the weekly') >= 0) return 'BLOCKED:weekly invitation limit reached';
@@ -278,7 +278,17 @@ enum LinkedInBot {
       function text(e) { return ((e.innerText || '').trim()).toLowerCase(); }
       var main = document.querySelector('main') || document.body;
       // Their name: the page's h1, wherever LinkedIn puts it this month.
-      var h1 = all(document, 'h1')[0] || all(document, '.text-heading-xlarge')[0] || document.querySelector('h1');
+      var h1 = all(document, 'h1')[0] || all(document, '.text-heading-xlarge')[0] || null;
+      if (!h1) {
+        // No heading on the new layout: their name is the page title ("Jane Doe | LinkedIn").
+        var name = (document.title || '').split('|')[0].replace(/^\(\d+\)\s*/, '').trim().toLowerCase();
+        if (name.length > 2) {
+          var hits = all(main, 'h1, h2, h3, span, div, p, a').filter(function (e) {
+            return (e.innerText || '').trim().toLowerCase() === name;
+          });
+          h1 = hits[0] || null;
+        }
+      }
       // The top card: the nearest box around the name that also holds the action buttons.
       var top = null;
       if (h1) {
