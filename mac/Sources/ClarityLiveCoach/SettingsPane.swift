@@ -15,9 +15,34 @@ struct SettingsPane: View {
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     @AppStorage(PrefKey.autoLinkedIn) private var autoLinkedIn = false
     @AppStorage(PrefKey.autoText) private var autoText = true
+    private func runLinkedInTest(really: Bool) {
+        guard let url = URL(string: testProfile.trimmingCharacters(in: .whitespaces)), url.host?.contains("linkedin.com") == true else {
+            testResult = "That doesn't look like a LinkedIn profile link."
+            return
+        }
+        testing = true
+        testResult = nil
+        Task { @MainActor in
+            LinkedInBot.testRun = !really
+            let r = await LinkedInBot.connect(profile: url, note: LinkedInBot.note("", first: Screener.firstName(coach.followUp?.prospect) ?? "there"),
+                                              company: testCompany.isEmpty ? nil : testCompany) { testResult = $0 }
+            LinkedInBot.testRun = false
+            testing = false
+            switch r {
+            case .sent: testResult = "SENT. The connection request went out with the note."
+            case .alreadyConnected: testResult = "Already connected. Try someone you're not connected to."
+            case .pending: testResult = "Request already pending. Try someone else."
+            case .skipped(let why): testResult = why
+            case .blocked(let why): testResult = "Stopped: \(why)"
+            }
+            ActivityLog.add("LinkedIn bot \(really ? "real send" : "test"): \(testResult ?? "")")
+        }
+    }
+
     @State private var testProfile = ""
     @State private var testCompany = ""
     @State private var testing = false
+    @State private var confirmSend = false
     @State private var testResult: String?
     @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
     @State private var confirmReset = false
@@ -46,35 +71,20 @@ struct SettingsPane: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextField("https://www.linkedin.com/in/...", text: $testProfile)
                 HStack {
-                    Button(testing ? "Testing..." : "Test it") {
-                        guard let url = URL(string: testProfile.trimmingCharacters(in: .whitespaces)), url.host?.contains("linkedin.com") == true else {
-                            testResult = "That doesn't look like a LinkedIn profile link."
-                            return
-                        }
-                        testing = true
-                        testResult = nil
-                        Task { @MainActor in
-                            LinkedInBot.testRun = true
-                            let r = await LinkedInBot.connect(profile: url, note: LinkedInBot.note("", first: "there"),
-                                                              company: testCompany.isEmpty ? nil : testCompany) { testResult = $0 }
-                            LinkedInBot.testRun = false
-                            testing = false
-                            switch r {
-                            case .sent: testResult = "Sent (should never happen in a test)."
-                            case .alreadyConnected: testResult = "Already connected. Try someone you're not connected to."
-                            case .pending: testResult = "Request already pending. Try someone else."
-                            case .skipped(let why): testResult = why
-                            case .blocked(let why): testResult = "Stopped: \(why)"
-                            }
-                            ActivityLog.add("LinkedIn bot test: \(testResult ?? "")")
-                        }
-                    }
+                    Button(testing ? "Testing..." : "Test it") { runLinkedInTest(really: false) }
                     .disabled(testing || LinkedInBot.running)
                     .onAppear {
                         let d = coach.leads.details
                         if testProfile.isEmpty, let url = coach.followUp?.linkedinURL ?? d?.linkedIn { testProfile = url.absoluteString }
                         if testCompany.isEmpty { testCompany = d?.company ?? coach.recordCompany ?? "" }
                     }
+                    Button("Send for real") { confirmSend = true }
+                        .disabled(testing || LinkedInBot.running)
+                        .help("Sends one real connection request with the note.")
+                        .confirmationDialog("Send a real LinkedIn connection request to this person?", isPresented: $confirmSend) {
+                            Button("Send it") { runLinkedInTest(really: true) }
+                            Button("Cancel", role: .cancel) {}
+                        }
                     if let testResult { Text(testResult).font(.caption).fixedSize(horizontal: false, vertical: true) }
                 }
             }
