@@ -201,6 +201,7 @@ final class CoachModel: ObservableObject {
     /// People the bot already took on this session (once each).
     var linkedInTried: Set<String> = []
     var linkedInWaitingNote: Set<String> = []
+    var linkedInWhyLogged: Set<String> = []
     /// A short note that fades by itself ("Text sent to Neal").
     @Published var toast: String?
     var toastTask: Task<Void, Never>?

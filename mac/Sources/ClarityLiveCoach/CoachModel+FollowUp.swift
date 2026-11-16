@@ -9,10 +9,20 @@ extension CoachModel {
     /// The moment a lead opens (any lead we haven't sent a request to yet): the bot sends the connection
     /// note in the background, while the call goes on. Waits up to 8 s for Claude's note, then uses the plain one.
     private func autoLinkedInNow() {
-        guard LinkedInBot.autoSend, status == .ready, let f = followUp, let key = f.key, !f.linkedinDone,
-              DialHistory.person(key).linkedIns.isEmpty, // every lead, unless a request already went out
-              !linkedInTried.contains(key), !RemovedList.contains(key),
-              leads.details?.foreignNumber == nil else { return }
+        guard LinkedInBot.autoSend, let f = followUp, let key = f.key, !linkedInTried.contains(key) else { return }
+        // Why not, said once per person in the log, so a skip is never a mystery.
+        var why: String?
+        if f.linkedinDone { why = "LinkedIn already marked done for today" }
+        else if !DialHistory.person(key).linkedIns.isEmpty { why = "a connection request already went out on an earlier day" }
+        else if RemovedList.contains(key) { why = "they're off the list" }
+        else if leads.details?.foreignNumber != nil { why = "non-US number (skipped lead)" }
+        if let why {
+            if !linkedInWhyLogged.contains(key) {
+                linkedInWhyLogged.insert(key)
+                ActivityLog.add("LinkedIn bot: not running for \(f.prospect ?? "?"): \(why)")
+            }
+            return
+        }
         if !f.linkedin.isEmpty { queueLinkedIn(f); return }
         guard !linkedInWaitingNote.contains(key) else { return }
         linkedInWaitingNote.insert(key)
@@ -324,7 +334,7 @@ extension CoachModel {
     /// The next person just loaded and Salesforce has their LinkedIn link: open the profile in a
     /// background Chrome tab, once per person, so it's ready when the rep looks. Never during a call.
     private func autoOpenLinkedIn() {
-        guard Prefs.autoLinkedIn, status == .ready, let f = followUp, let key = f.key, let url = f.linkedinURL,
+        guard Prefs.autoLinkedIn, !LinkedInBot.autoSend, // the bot opens LinkedIn itself status == .ready, let f = followUp, let key = f.key, let url = f.linkedinURL,
               linkedInOpenedFor != key else { return }
         linkedInOpenedFor = key
         SalesforceChrome.openInBackground(url.absoluteString)
