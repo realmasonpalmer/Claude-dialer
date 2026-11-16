@@ -37,6 +37,18 @@ enum BugReporter {
         return await post(title: "Report from the rep" + (note.isEmpty ? "" : ": \(note)")) ? "Sent. Thanks!" : "Couldn't send it. Check the Slack link in Setup."
     }
 
+    /// A plain message to the same Slack channel (the daily call-learning digest).
+    static func digest(_ text: String) async -> Bool {
+        guard let url = webhook else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 15
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        guard let (_, response) = try? await URLSession.shared.data(for: req) else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
+    }
+
     private static func send(title: String) {
         Task { _ = await post(title: title) }
     }

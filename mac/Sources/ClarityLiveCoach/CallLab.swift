@@ -126,6 +126,7 @@ final class CallLab: ObservableObject {
                     records[i].summary = summary
                     save()
                 }
+                CallLessons.afterSummary(records)
             }
             await autoAnalyze(campaign)
         }
@@ -244,7 +245,7 @@ final class CallLab: ObservableObject {
 
     // MARK: Claude
 
-    private static func ask(system: String, user: String, effort: String) async throws -> [String: Any] {
+    static func ask(system: String, user: String, effort: String) async throws -> [String: Any] {
         guard let key = Keychain.read(.anthropic) else { throw ClaudeClient.APIError(message: "No Anthropic key") }
         var client = ClaudeClient(apiKey: key)
         client.effort = effort

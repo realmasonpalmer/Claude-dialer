@@ -503,6 +503,7 @@ enum ScriptWriter {
         Call segment: \(segment.isEmpty ? "Not named" : segment)
         The rep's description (this leads): \(audience.trimmed.isEmpty ? "Not given. Use the list below." : audience.trimmed)
         \(guidance.trimmed.isEmpty ? "" : "The rep's special instructions (follow these closely, work them into the script): " + guidance.trimmed)
+        \(CallLessons.text.isEmpty ? "" : "Lessons from this team's real calls (use the ones that fit this segment; they never override the facts):\n" + CallLessons.text)
         \(sample.isEmpty ? "" : "Titles and companies from the Salesforce list (a hint only; the description wins):\n\(sample)")
         """
         var text = ""
