@@ -17,7 +17,7 @@ enum LinkedInBot {
         case blocked(String)
     }
 
-    static let dailyCap = 50
+    static let dailyCap = 30
     static var running = false
 
     static var isOn: Bool { true }
