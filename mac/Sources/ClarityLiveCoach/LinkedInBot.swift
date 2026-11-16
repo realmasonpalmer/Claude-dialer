@@ -65,6 +65,9 @@ enum LinkedInBot {
 
     // MARK: The run
 
+    /// Test mode: everything up to the typed note, then Cancel. Nothing is sent.
+    static var testRun = false
+
     static func connect(profile: URL, note: String, company: String?, onStatus: @escaping (String) -> Void) async -> Result {
         running = true
         defer { running = false }
@@ -132,6 +135,12 @@ enum LinkedInBot {
         guard await step("type") == "TYPED" else {
             _ = await step("close")
             return .skipped("couldn't type the note")
+        }
+
+        if testRun {
+            await pause(2, 3)
+            _ = await step("close")
+            return .skipped("TEST OK: found Connect, opened Add a note and typed the note. Nothing was sent")
         }
 
         if autoSend {
@@ -250,7 +259,8 @@ enum LinkedInBot {
       var href = location.href;
       var body = ((document.body && document.body.innerText) || '').toLowerCase();
       if (/checkpoint|authwall|\/login|uas\/|challenge/.test(href)) return 'BLOCKED:LinkedIn wants you to sign in or pass a check';
-      if (body.indexOf('security verification') >= 0 || body.indexOf('captcha') >= 0 || body.indexOf('quick security check') >= 0)
+      var profileShown = !!(document.querySelector('main h1'));
+      if (!profileShown && (body.indexOf('security verification') >= 0 || body.indexOf('captcha') >= 0 || body.indexOf('quick security check') >= 0))
         return 'BLOCKED:LinkedIn showed a security check';
       if (body.indexOf('weekly invitation limit') >= 0 || body.indexOf('reached the weekly') >= 0) return 'BLOCKED:weekly invitation limit reached';
       if (body.indexOf('restricted') >= 0 && body.indexOf('account') >= 0 && body.indexOf('temporarily') >= 0) return 'BLOCKED:LinkedIn account warning';
@@ -260,7 +270,8 @@ enum LinkedInBot {
       function label(e) { return (((e.getAttribute('aria-label') || '') + ' ' + (e.innerText || '')).trim()).toLowerCase(); }
       function text(e) { return ((e.innerText || '').trim()).toLowerCase(); }
       var main = document.querySelector('main');
-      var top = main ? (main.querySelector('section') || main) : null;
+      var h1 = main && main.querySelector('h1');
+      var top = h1 ? (h1.closest('section') || main) : null;
       var modal = all(document, '[role=dialog]')[0] || null;
       if (phase === 'check') {
         if (!top || !top.querySelector('h1')) return 'LOADING';
@@ -278,22 +289,26 @@ enum LinkedInBot {
         return 'NOCONNECT';
       }
       if (phase === 'menu') {
-        var m = btns(document).filter(function (e) {
-          var l = label(e);
-          return !(top && top.contains(e) && e.tagName === 'BUTTON' && text(e) === 'more') &&
-            ((l.indexOf('invite') >= 0 && l.indexOf('connect') >= 0) || text(e) === 'connect');
-        })[0];
+        var menus = all(document, '.artdeco-dropdown__content--is-open, [role=menu]');
+        var m = null;
+        menus.forEach(function (menu) {
+          if (m) return;
+          m = btns(menu).filter(function (e) {
+            var l = label(e);
+            return (l.indexOf('invite') >= 0 && l.indexOf('connect') >= 0) || text(e) === 'connect';
+          })[0] || null;
+        });
         if (m) { m.click(); return 'CLICKED'; }
         return 'NOCONNECT';
       }
       if (phase === 'note') {
         if (!modal) return 'WAIT';
         if (modal.querySelector('input[type=email], input[name=email]')) return 'EMAIL';
-        var mt = (modal.innerText || '').toLowerCase();
-        if (mt.indexOf('premium') >= 0 && (mt.indexOf('personalized') >= 0 || mt.indexOf('note') >= 0) && !modal.querySelector('textarea')) return 'NONOTE';
         if (modal.querySelector('textarea')) return 'TEXTAREA';
         var add = btns(modal).filter(function (e) { return label(e).indexOf('add a note') >= 0; })[0];
-        if (add) add.click();
+        if (add && !add.__clarityTried) { add.__clarityTried = true; add.click(); return 'WAIT'; }
+        var mt = (modal.innerText || '').toLowerCase();
+        if (mt.indexOf('premium') >= 0) return 'NONOTE';
         return 'WAIT';
       }
       if (phase === 'type') {

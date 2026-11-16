@@ -15,6 +15,10 @@ struct SettingsPane: View {
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     @AppStorage(PrefKey.autoLinkedIn) private var autoLinkedIn = false
     @AppStorage(PrefKey.autoText) private var autoText = true
+    @State private var testProfile = ""
+    @State private var testCompany = ""
+    @State private var testing = false
+    @State private var testResult: String?
     @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
     @State private var confirmReset = false
     @State private var note: String?
@@ -36,6 +40,39 @@ struct SettingsPane: View {
                 Toggle("Drop my recorded voicemail by itself", isOn: $dropOn)
                 Text("Set it up first: gear, then Voicemail drop.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            section("Test the LinkedIn bot") {
+                Text("Paste a LinkedIn profile you're not connected to, and their company. It does everything except Send, then cancels. Nothing goes out.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                TextField("https://www.linkedin.com/in/...", text: $testProfile)
+                TextField("Their company, as in Salesforce", text: $testCompany)
+                HStack {
+                    Button(testing ? "Testing..." : "Test it") {
+                        guard let url = URL(string: testProfile.trimmingCharacters(in: .whitespaces)), url.host?.contains("linkedin.com") == true else {
+                            testResult = "That doesn't look like a LinkedIn profile link."
+                            return
+                        }
+                        testing = true
+                        testResult = nil
+                        Task { @MainActor in
+                            LinkedInBot.testRun = true
+                            let r = await LinkedInBot.connect(profile: url, note: LinkedInBot.note("", first: "there"),
+                                                              company: testCompany.isEmpty ? nil : testCompany) { testResult = $0 }
+                            LinkedInBot.testRun = false
+                            testing = false
+                            switch r {
+                            case .sent: testResult = "Sent (should never happen in a test)."
+                            case .alreadyConnected: testResult = "Already connected. Try someone you're not connected to."
+                            case .pending: testResult = "Request already pending. Try someone else."
+                            case .skipped(let why): testResult = why
+                            case .blocked(let why): testResult = "Stopped: \(why)"
+                            }
+                            ActivityLog.add("LinkedIn bot test: \(testResult ?? "")")
+                        }
+                    }
+                    .disabled(testing || LinkedInBot.running)
+                    if let testResult { Text(testResult).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                }
             }
 
             section("Coach") {
