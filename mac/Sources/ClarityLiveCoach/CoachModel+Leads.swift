@@ -302,7 +302,10 @@ extension CoachModel {
         cancelAutoNext()
         guard status == .ready else { return }
         if autoDial, let f = followUp, f.linkedInDue, !f.linkedinDone {
-            if !waitingForLinkedIn { ActivityLog.add("Waiting: LinkedIn note for \(f.prospect ?? "?") before the next person") }
+            if !waitingForLinkedIn {
+                ActivityLog.add("Waiting: LinkedIn note for \(f.prospect ?? "?") before the next person")
+                runLinkedInBot(f)
+            }
             waitingForLinkedIn = true
             return
         }

@@ -194,6 +194,8 @@ final class CoachModel: ObservableObject {
     var voicemailDropStarted = false
     /// The LinkedIn note is due for this person: the next call waits until it's sent or skipped.
     @Published var waitingForLinkedIn = false
+    /// What the LinkedIn bot is doing right now, for the line under the top bar.
+    @Published var linkedInStatus: String?
     /// A short note that fades by itself ("Text sent to Neal").
     @Published var toast: String?
     var toastTask: Task<Void, Never>?

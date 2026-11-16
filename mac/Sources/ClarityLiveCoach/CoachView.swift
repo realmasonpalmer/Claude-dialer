@@ -489,12 +489,15 @@ struct CoachView: View {
             .padding(.leading, 13)
             if coach.waitingForLinkedIn {
                 HStack(spacing: 8) {
-                    Text("Send the LinkedIn note, then the next call starts.").font(.caption2.weight(.semibold))
+                    Text(coach.linkedInStatus ?? "Send the LinkedIn note, then the next call starts.").font(.caption2.weight(.semibold))
                     Button("Skip LinkedIn") {
                         ActivityLog.add("LinkedIn skipped by the rep")
                         coach.followUp?.linkedinDone = true
                     }.buttonStyle(.link).font(.caption2)
                 }.padding(.leading, 13)
+            }
+            if !coach.waitingForLinkedIn, let s = coach.linkedInStatus {
+                Text(s).font(.caption2).foregroundStyle(.secondary).padding(.leading, 13)
             }
             if let toast = coach.toast {
                 Text(toast).font(.caption2.weight(.semibold)).foregroundStyle(Color.green).padding(.leading, 13)

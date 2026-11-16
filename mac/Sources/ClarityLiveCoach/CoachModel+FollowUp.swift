@@ -312,6 +312,64 @@ extension CoachModel {
         SalesforceChrome.openInBackground(url.absoluteString)
     }
 
+    /// Sends the connection note in Chrome (see LinkedInBot), then lets the flow move on.
+    /// Whatever happens (sent, already connected, skipped, blocked) it's logged and the calls keep going.
+    func runLinkedInBot(_ f: FollowUp) {
+        guard let key = f.key else { return }
+        if let why = LinkedInBot.whyNot {
+            ActivityLog.add("LinkedIn bot: not running (\(why)). Send the note by hand or click Skip LinkedIn.")
+            linkedInStatus = LinkedInBot.isOn ? "LinkedIn bot \(why). Send the note by hand or Skip." : nil
+            return
+        }
+        let company = leads.details?.company ?? recordCompany
+        Task { [weak self] in
+            guard let self else { return }
+            var url = f.linkedinURL
+            if url == nil, Salesforce.isConnected { url = await Salesforce.linkedIn(of: key) }
+            guard let url else {
+                ActivityLog.add("LinkedIn bot: no LinkedIn link in Salesforce for \(f.prospect ?? "?"): skipped")
+                self.finishLinkedIn(key, note: "no LinkedIn link in Salesforce")
+                return
+            }
+            let first = Screener.firstName(f.prospect) ?? "there"
+            let note = LinkedInBot.note(f.linkedin, first: first)
+            ActivityLog.add("LinkedIn bot: \(f.prospect ?? "?") at \(url.absoluteString), note: \(note)")
+            let result = await LinkedInBot.connect(profile: url, note: note, company: company) { [weak self] status in
+                self?.linkedInStatus = status
+            }
+            switch result {
+            case .sent:
+                ActivityLog.add("LinkedIn bot: connection note SENT to \(f.prospect ?? "?") (\(LinkedInBot.sentToday) of \(LinkedInBot.dailyCap) today)")
+                self.touchpoints.log(.linkedin)
+                DialHistory.logLinkedIn(key)
+                self.showToast("LinkedIn note sent")
+                self.finishLinkedIn(key, note: nil)
+            case .alreadyConnected:
+                ActivityLog.add("LinkedIn bot: already connected to \(f.prospect ?? "?")")
+                self.finishLinkedIn(key, note: "already connected")
+            case .pending:
+                ActivityLog.add("LinkedIn bot: request already pending for \(f.prospect ?? "?")")
+                self.finishLinkedIn(key, note: "request already sent")
+            case .skipped(let why):
+                ActivityLog.add("LinkedIn bot: skipped \(f.prospect ?? "?"): \(why)")
+                self.finishLinkedIn(key, note: why)
+            case .blocked(let why):
+                ActivityLog.problem("LinkedIn bot: STOPPED. \(why). Paused for 2 hours. The tab is left open for you.")
+                self.problem = "LinkedIn: \(why). The bot is paused for 2 hours. Calls keep going."
+                self.finishLinkedIn(key, note: why)
+            }
+        }
+    }
+
+    private func finishLinkedIn(_ key: String, note: String?) {
+        linkedInStatus = note.map { "LinkedIn skipped: \($0)" }
+        if followUp?.key == key { followUp?.linkedinDone = true } // the flow moves on
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            self?.linkedInStatus = nil
+        }
+    }
+
     /// The "LinkedIn profile" link on the card: opens it any day, without copying or counting anything.
     func openLinkedInProfile() {
         guard let f = followUp else { return }
