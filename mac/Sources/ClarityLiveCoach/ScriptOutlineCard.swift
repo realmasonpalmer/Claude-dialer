@@ -64,15 +64,16 @@ struct ScriptOutlineCard: View {
     /// Which part the call is on right now.
     private var currentID: String {
         if coach.status == .ready { return "opening" }
-        switch coach.suggestion.stage {
-        case "Opener", "Screener", "Gatekeeper", "Voicemail", "Phone tree": return "opening"
-        case "Discovery": return "discovery"
-        case "Value": return "value"
-        case "Closing", "Goal reached": return "closing"
-        case "Objection": return "objection"
-        case "Exit": return "exit"
-        default: return "opening"
-        }
+        let stage = coach.suggestion.stage.lowercased()
+        let theySpoke = coach.turns.contains { $0.speaker == .prospect }
+        if stage.contains("objection") { return "objection" }
+        if stage.contains("goal") || stage.contains("clos") || stage.contains("ask") || stage.contains("book") { return "closing" }
+        if stage.contains("discover") || stage.contains("question") { return "discovery" }
+        if stage.contains("value") || stage.contains("reason") || stage.contains("why") || stage.contains("problem") { return "value" }
+        if stage.contains("exit") { return "exit" }
+        // Still on the opener, but they answered it: the next thing to say is why you're calling.
+        if (stage.contains("opener") || stage.isEmpty), theySpoke, !coach.sawVoicemail, !coach.screenerActive { return "value" }
+        return "opening"
     }
 
     var body: some View {
