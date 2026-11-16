@@ -72,6 +72,13 @@ enum LinkedInBot {
     static var lastTab: (tab: String, key: String?)?
     static var personKey: String?
 
+    /// Just shows their profile in front (no clicks), for people the bot already handled.
+    static func showProfile(_ url: URL, key: String) async {
+        guard lastTab?.key != key, !running else { return }
+        guard let opened = await openTab(url), opened != "ERR" else { return }
+        lastTab = (String(opened.split(separator: "|")[0]), key)
+    }
+
     /// Closes the last person's LinkedIn tab, unless it's this person's.
     static func closeLast(keeping key: String?) {
         guard let last = lastTab, last.key != key || key == nil else { return }

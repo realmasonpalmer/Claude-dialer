@@ -6,6 +6,17 @@ import Foundation
 
 /// Voicemail, the text and LinkedIn card, and the follow-up plan.
 extension CoachModel {
+    /// Brings their LinkedIn (from Salesforce) up in Chrome, no clicks. Closes when the next person opens.
+    private func showLinkedIn(_ f: FollowUp, key: String) {
+        guard LinkedInBot.lastTab?.key != key else { return }
+        Task { [weak self] in
+            var url = f.linkedinURL
+            if url == nil, Salesforce.isConnected { url = await Salesforce.linkedIn(of: key) }
+            guard let url, let self, self.isOnScreen(key) else { return }
+            await LinkedInBot.showProfile(url, key: key)
+        }
+    }
+
     /// The record open right now is this person (and their details are loaded).
     func isOnScreen(_ key: String) -> Bool {
         guard let now = recordKey() else { return false }
@@ -15,8 +26,8 @@ extension CoachModel {
     /// The moment a lead opens (any lead we haven't sent a request to yet): the bot sends the connection
     /// note in the background, while the call goes on. Waits up to 8 s for Claude's note, then uses the plain one.
     private func autoLinkedInNow() {
-        guard LinkedInBot.autoSend, let f = followUp, let key = f.key, !linkedInTried.contains(key),
-              isOnScreen(key) else { return } // only the person on screen, never one written ahead
+        guard LinkedInBot.autoSend, let f = followUp, let key = f.key, isOnScreen(key) else { return } // only the person on screen
+        if linkedInTried.contains(key) { showLinkedIn(f, key: key); return }
         // Why not, said once per person in the log, so a skip is never a mystery.
         var why: String?
         if f.linkedinDone { why = "LinkedIn already marked done for today" }
@@ -24,6 +35,7 @@ extension CoachModel {
         else if RemovedList.contains(key) { why = "they're off the list" }
         else if leads.details?.foreignNumber != nil { why = "non-US number (skipped lead)" }
         if let why {
+            if !RemovedList.contains(key), leads.details?.foreignNumber == nil { showLinkedIn(f, key: key) } // already sent: just show it
             if !linkedInWhyLogged.contains(key) {
                 linkedInWhyLogged.insert(key)
                 ActivityLog.add("LinkedIn bot: not running for \(f.prospect ?? "?"): \(why)")
