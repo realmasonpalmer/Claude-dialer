@@ -6,10 +6,11 @@ import Foundation
 
 /// Voicemail, the text and LinkedIn card, and the follow-up plan.
 extension CoachModel {
-    /// The moment a lead opens (and their plan says LinkedIn today): the bot sends the connection
+    /// The moment a lead opens (any lead we haven't sent a request to yet): the bot sends the connection
     /// note in the background, while the call goes on. Waits up to 8 s for Claude's note, then uses the plain one.
     private func autoLinkedInNow() {
-        guard LinkedInBot.autoSend, status == .ready, let f = followUp, let key = f.key, f.linkedInDue, !f.linkedinDone,
+        guard LinkedInBot.autoSend, status == .ready, let f = followUp, let key = f.key, !f.linkedinDone,
+              DialHistory.person(key).linkedIns.isEmpty, // every lead, unless a request already went out
               !linkedInTried.contains(key), !RemovedList.contains(key),
               leads.details?.foreignNumber == nil else { return }
         if !f.linkedin.isEmpty { queueLinkedIn(f); return }
