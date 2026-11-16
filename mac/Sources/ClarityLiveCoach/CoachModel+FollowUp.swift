@@ -6,8 +6,25 @@ import Foundation
 
 /// Voicemail, the text and LinkedIn card, and the follow-up plan.
 extension CoachModel {
+    /// The moment a lead opens (and their plan says LinkedIn today): the bot sends the connection
+    /// note in the background, while the call goes on. Waits up to 8 s for Claude's note, then uses the plain one.
+    private func autoLinkedInNow() {
+        guard LinkedInBot.autoSend, status == .ready, let f = followUp, let key = f.key, f.linkedInDue, !f.linkedinDone,
+              !linkedInTried.contains(key), !RemovedList.contains(key),
+              leads.details?.foreignNumber == nil else { return }
+        if !f.linkedin.isEmpty { queueLinkedIn(f); return }
+        guard !linkedInWaitingNote.contains(key) else { return }
+        linkedInWaitingNote.insert(key)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let self, let cur = self.followUp, cur.key == key, !cur.linkedinDone else { return }
+            self.queueLinkedIn(cur)
+        }
+    }
+
     func followUpChanged() {
         autoOpenLinkedIn()
+        autoLinkedInNow()
         if waitingForLinkedIn, status == .ready, followUp?.linkedinDone ?? true {
             waitingForLinkedIn = false
             ActivityLog.add("LinkedIn note done: on to the next person")
@@ -314,7 +331,8 @@ extension CoachModel {
 
     /// Automatic mode: notes wait their turn here and go out one at a time while the rep keeps calling.
     func queueLinkedIn(_ f: FollowUp) {
-        guard f.key != nil, !linkedInQueue.contains(where: { $0.key == f.key }) else { return }
+        guard let key = f.key, !linkedInTried.contains(key) else { return }
+        linkedInTried.insert(key)
         linkedInQueue.append(f)
         ActivityLog.add("LinkedIn bot: queued \(f.prospect ?? "?") (\(linkedInQueue.count) waiting)")
         drainLinkedInQueue()
