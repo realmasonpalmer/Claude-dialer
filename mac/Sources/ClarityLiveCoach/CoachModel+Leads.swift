@@ -301,6 +301,12 @@ extension CoachModel {
     func startNextSequence() {
         cancelAutoNext()
         guard status == .ready else { return }
+        if autoDial, let f = followUp, f.linkedInDue, !f.linkedinDone {
+            if !waitingForLinkedIn { ActivityLog.add("Waiting: LinkedIn note for \(f.prospect ?? "?") before the next person") }
+            waitingForLinkedIn = true
+            return
+        }
+        waitingForLinkedIn = false
         followUp = nil // the last person's follow-ups are done
         if leads.isActive {
             // Nobody left: Next reloads the list, or says the list is done for today.

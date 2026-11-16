@@ -372,7 +372,7 @@ struct CoachView: View {
         switch coach.phase {
         case .live:
             switch coach.kind {
-            case .voicemail: return ("Voicemail. Read after the beep.", warning)
+            case .voicemail: return (coach.voicemailDropStarted ? "Voicemail. Your recorded message drops after the beep." : "Voicemail. Read after the beep.", warning)
             case .screener: return ("A robot answered. Say the line below.", warning)
             default: return ("On a call. Read the big line out loud.", listening)
             }
@@ -487,6 +487,15 @@ struct CoachView: View {
                 Spacer(minLength: 0)
             }
             .padding(.leading, 13)
+            if coach.waitingForLinkedIn {
+                HStack(spacing: 8) {
+                    Text("Send the LinkedIn note, then the next call starts.").font(.caption2.weight(.semibold))
+                    Button("Skip LinkedIn") {
+                        ActivityLog.add("LinkedIn skipped by the rep")
+                        coach.followUp?.linkedinDone = true
+                    }.buttonStyle(.link).font(.caption2)
+                }.padding(.leading, 13)
+            }
             if let toast = coach.toast {
                 Text(toast).font(.caption2.weight(.semibold)).foregroundStyle(Color.green).padding(.leading, 13)
             }

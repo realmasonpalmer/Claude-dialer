@@ -8,6 +8,11 @@ import Foundation
 extension CoachModel {
     func followUpChanged() {
         autoOpenLinkedIn()
+        if waitingForLinkedIn, status == .ready, followUp?.linkedinDone ?? true {
+            waitingForLinkedIn = false
+            ActivityLog.add("LinkedIn note done: on to the next person")
+            Task { @MainActor [weak self] in self?.startNextSequence() } // not inside followUp's didSet
+        }
         if followUp?.textEdited == true, textSendIn != nil { stopTextCountdown() } // the rep is typing
         let done = followUp?.textDone == true
         defer { textWasDone = done }
@@ -427,11 +432,12 @@ extension CoachModel {
             DialHistory.logVoicemail(key, body: "(recorded voicemail dropped)")
             self.showToast("Voicemail dropped")
             // The message plays (about 20 seconds) and the call ends. If it doesn't, hang up.
-            for _ in 0..<60 {
+            for i in 0..<60 {
                 try? await Task.sleep(for: .seconds(1))
-                if self.status != .live { return }
-                if await Aircall.lineIsOnCall() == false { break }
+                if self.status != .live { return } // the call ended by itself after the message
+                if i >= 25, await Aircall.lineIsOnCall() == false { break } // never cut the message short
             }
+            ActivityLog.add("Voicemail drop: message had time to play, hanging up")
             if self.status == .live {
                 _ = await AircallPhone.shared.hangUp()
                 self.endCall()
