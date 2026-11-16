@@ -71,9 +71,12 @@ enum LinkedInBot {
     static func connect(profile: URL, note: String, company: String?, onStatus: @escaping (String) -> Void) async -> Result {
         running = true
         defer { running = false }
-        guard let tab = await openTab(profile), !tab.isEmpty, tab != "ERR" else {
+        guard let opened = await openTab(profile), !opened.isEmpty, opened != "ERR" else {
             return .skipped("Chrome didn't open the tab")
         }
+        let parts = opened.split(separator: "|").map(String.init)
+        let tab = parts[0]
+        let backTo = parts.count > 1 ? Int(parts[1]) : nil
         let vanity = profile.pathComponents.drop { $0 != "in" }.dropFirst().first
         let result = await run(tab: tab, note: note, keys: [], vanity: vanity, onStatus: onStatus) // no company check
         switch result {
@@ -82,7 +85,12 @@ enum LinkedInBot {
         default: break
         }
         // A blocked page stays open so the rep can see it; everything else closes.
-        if case .blocked = result {} else { await closeTab(tab) }
+        if case .blocked = result {} else {
+            await closeTab(tab)
+            if let backTo { // back to the tab the rep was on
+                _ = await apple("tell application \"Google Chrome\" to set active tab index of window 1 to \(backTo)")
+            }
+        }
         return result
     }
 
@@ -216,8 +224,8 @@ enum LinkedInBot {
             set w to window 1
             set oldIndex to active tab index of w
             set t to make new tab at end of tabs of w with properties {URL:"\(link)"}
-            set active tab index of w to oldIndex
-            return (id of t) as text
+            set active tab index of w to (count of tabs of w)
+            return ((id of t) as text) & "|" & (oldIndex as text)
         end tell
         """)
     }
