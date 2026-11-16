@@ -78,6 +78,7 @@ extension CoachModel {
                Date().timeIntervalSince(callStartedAt) > 30 {
                 hangUpUnanswered()
             }
+            if sawVoicemail || voicemailActive || kind == .voicemail { scheduleVoicemailDrop() } // whichever part spotted it
             checkAircallEveryFewSeconds()
             if aircallTicks % 2 == 0, Date().timeIntervalSince(callStartedAt) < 30 { followCallAudio() }
             if AudioProcess.doubleCall(in: AudioProcess.others()) {
@@ -480,6 +481,7 @@ extension CoachModel {
         streak = Date().timeIntervalSince(lastDialAt) < 180 ? streak + 1 : 1
         lastDialAt = Date()
         voicemailDropStarted = false
+        dropWhyLogged = false
         if let key = currentAttemptKey { outcomeSaved.remove(String(key.prefix(15))) } // a new call: rate it again
         prewarmNext() // get the next person ready while this call rings
         quietTicks = 0

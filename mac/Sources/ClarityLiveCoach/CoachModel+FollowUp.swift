@@ -536,13 +536,23 @@ extension CoachModel {
     /// then click Aircall's voicemail drop button (the rep's recorded message). Only when the rep
     /// recorded one and turned it on (Set up > Voicemail drop).
     func scheduleVoicemailDrop() {
-        if !Prefs.voicemailDropOn, status == .live, currentAttempts >= maxAttempts {
-            ActivityLog.add("Voicemail drop: off in Settings, read the message yourself")
+        guard status == .live, !voicemailDropStarted, currentAttempts >= maxAttempts else { return }
+        // Why not, said once per call.
+        var why: String?
+        if !Prefs.voicemailDropOn { why = "off in Settings" }
+        else if !autoDial { why = "Auto dial is off" }
+        else if !AircallPhone.isOn { why = "the Aircall phone isn't inside the app" }
+        else if currentAttemptKey == nil { why = "no lead on screen" }
+        else if let k = currentAttemptKey, !Cadence.leavesVoicemail(for: k) { why = "they already got a voicemail" }
+        if let why {
+            if !dropWhyLogged { dropWhyLogged = true; ActivityLog.add("Voicemail drop: not dropping (\(why))") }
+            return
         }
-        guard Prefs.voicemailDropOn, autoDial, AircallPhone.isOn, status == .live, currentAttempts >= maxAttempts,
-              !voicemailDropStarted, let key = currentAttemptKey,
-              Cadence.leavesVoicemail(for: key) else { return }
+        guard let key = currentAttemptKey else { return }
         voicemailDropStarted = true
+        seq += 1
+        show(Suggestion(say: "Waiting for the beep. Your recorded voicemail drops by itself.",
+                        cue: "Voicemail drop. Nothing to read.", stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
         let shownAt = Date().addingTimeInterval(-8) // a beep a moment before the card counts too
         Task { [weak self] in
             // Best: the beep itself was heard and has ended. Backup: the greeting went quiet and no
