@@ -82,9 +82,9 @@ enum LinkedInBot {
     static func connect(profile: URL, note: String, company: String?, onStatus: @escaping (String) -> Void) async -> Result {
         running = true
         defer { running = false }
-        // A random 3 to 25 s start, so it looks human. Start plus run (~15 s) still fits inside
-        // two dials to voicemail (~60 s), so it's done before the next person.
-        if !testRun { await pause(6, 50) }
+        // A short random start (1 to 5 s), so it looks human but is done fast, even when the
+        // first dial goes straight to voicemail or the number is bad.
+        if !testRun { await pause(2, 10) }
         guard let opened = await openTab(profile), !opened.isEmpty, opened != "ERR" else {
             return .skipped("Chrome didn't open the tab")
         }
