@@ -74,7 +74,7 @@ enum LinkedInBot {
         guard let tab = await openTab(profile), !tab.isEmpty, tab != "ERR" else {
             return .skipped("Chrome didn't open the tab")
         }
-        let result = await run(tab: tab, note: note, keys: companyKeys(company), onStatus: onStatus)
+        let result = await run(tab: tab, note: note, keys: [], onStatus: onStatus) // no company check
         switch result {
         case .sent: UserDefaults.standard.set(sentToday + 1, forKey: todayKey)
         case .blocked: pausedUntil = Date().addingTimeInterval(2 * 3600)

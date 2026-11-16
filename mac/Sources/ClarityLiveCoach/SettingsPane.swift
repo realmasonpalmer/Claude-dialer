@@ -42,11 +42,9 @@ struct SettingsPane: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             section("Test the LinkedIn bot") {
-                Text("Uses the person on screen now (their LinkedIn and company from Salesforce), or paste any profile. It does everything except Send, then cancels. Nothing goes out.")
+                Text("Uses the person on screen now (their LinkedIn from Salesforce), or paste any profile. It does everything except Send, then cancels. Nothing goes out.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextField("https://www.linkedin.com/in/...", text: $testProfile)
-                Text(testCompany.isEmpty ? "Company check: off (no company found)" : "Company check: \(testCompany) (from Salesforce)")
-                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button(testing ? "Testing..." : "Test it") {
                         guard let url = URL(string: testProfile.trimmingCharacters(in: .whitespaces)), url.host?.contains("linkedin.com") == true else {
