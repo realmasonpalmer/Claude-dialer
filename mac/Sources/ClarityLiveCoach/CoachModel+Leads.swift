@@ -362,7 +362,13 @@ extension CoachModel {
         callList.refreshUpNext()
         objectWillChange.send()
         // During a call the person on the line stays put; Next uses the new time zone afterwards.
-        if status == .ready { Task { await leads.timeZoneChanged() } }
+        guard status == .ready else { return }
+        if leads.isActive { Task { await leads.timeZoneChanged() }; return }
+        // The Chrome list: the person on screen isn't in the new time zone: open the first one who is.
+        if let key = recordKey(), !TimeZoneFilter.allows(key) {
+            ActivityLog.add("Time zone: \(calling ?? key) isn't in \(zone?.label ?? "all time zones"), opening the next person")
+            nextLead(dial: false)
+        }
     }
 
     /// Call East Coast leads first (then Central, Mountain, Pacific). Works on both call lists.
