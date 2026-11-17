@@ -248,6 +248,35 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
 
     /// Hangs up the call in the phone by clicking Aircall's own hang-up button, like the rep would.
     /// Never touches the call's audio connection. True if it found and clicked the button.
+    /// Is Aircall's red hang-up button on the phone's screen right now? (nil = couldn't tell.)
+    /// The button vanishes the moment a call ends, a few seconds before Aircall's API says so.
+    func hangUpButtonVisible() async -> Bool? {
+        let js = #"""
+        (function () {
+          function deep(root, out) {
+            var l = root.querySelectorAll('button,[role=button]');
+            for (var i = 0; i < l.length; i++) out.push(l[i]);
+            var all = root.querySelectorAll('*');
+            for (var j = 0; j < all.length; j++) if (all[j].shadowRoot) deep(all[j].shadowRoot, out);
+            return out;
+          }
+          var re = /hang[ _-]?up|end[ _-]?call|end the call/i;
+          var buttons = deep(document, []);
+          for (var i = 0; i < buttons.length; i++) {
+            var b = buttons[i];
+            if (!b.getClientRects().length || b.disabled) continue;
+            var own = (b.textContent || '').trim();
+            var words = [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
+                         b.getAttribute('data-testid'), own.length < 20 ? own : ''].join(' ');
+            if (re.test(words)) return 'yes';
+          }
+          return 'no';
+        })()
+        """#
+        guard let r = try? await webView.evaluateJavaScript(js) as? String else { return nil }
+        return r == "yes"
+    }
+
     func hangUp() async -> Bool {
         let js = #"""
         (function () {

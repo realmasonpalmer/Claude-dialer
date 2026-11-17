@@ -112,10 +112,9 @@ extension CoachModel {
     func hangUpAndEnd() {
         guard status != .ready else { return }
         autoHungUpThisCall = true
-        Task { [weak self] in
-            if AircallPhone.isOn { _ = await AircallPhone.shared.hangUp() }
-            self?.endCall()
-        }
+        // Reset right now, don't wait for Aircall: the hang-up click happens in the background.
+        if AircallPhone.isOn { Task { _ = await AircallPhone.shared.hangUp() } }
+        endCall()
     }
 
     /// 20 seconds of ringing and nobody spoke: hang up, then the normal flow (redial, or the next person).
@@ -446,7 +445,27 @@ extension CoachModel {
         }
     }
 
+    /// A second, faster signal: the phone's red hang-up button disappears the moment the call ends.
+    /// Only trusted after it has been seen once in this call, and gone for 3 checks in a row (about 1.5 s).
+    func checkPhoneButton() {
+        guard AircallPhone.isOn, phoneButtonCheck == nil else { return }
+        phoneButtonCheck = Task { [weak self] in
+            let visible = await AircallPhone.shared.hangUpButtonVisible()
+            guard let self else { return }
+            self.phoneButtonCheck = nil
+            guard self.status == .live, let visible else { return }
+            if visible { self.phoneSawHangUp = true; self.phoneButtonGone = 0; return }
+            guard self.phoneSawHangUp else { return }
+            self.phoneButtonGone += 1
+            if self.phoneButtonGone >= 3 {
+                ActivityLog.add("The phone's hang-up button is gone: the call is over")
+                self.endCall()
+            }
+        }
+    }
+
     func checkAircallEveryFewSeconds() {
+        checkPhoneButton()
         aircallTicks += 1
         guard aircallTicks % 4 == 0, aircallCheck == nil, Aircall.isSetUp else { return }
         // Give Aircall a moment to register a brand-new call before trusting a "no".
@@ -536,6 +555,8 @@ extension CoachModel {
         callMessage = nil
         pendingDialSince = nil // this dial is now the live call
         BeepDetector.shared.reset()
+        phoneSawHangUp = false
+        phoneButtonGone = 0
         CoachPrompt.liveSummary = ""
         CoachPrompt.blockerHints = BlockerBook.hints(campaign.id)
         ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
