@@ -55,7 +55,7 @@ final class BeepDetector: @unchecked Sendable {
         var energy = 0.0
         for v in x { energy += Double(v * v) }
         _lastFrameAt = Date()
-        if energy / Double(frame) > 2e-4 { _lastSoundAt = Date(); _voicedFrames += 1 } // louder than line hiss
+        if energy / Double(frame) > 4e-5 { _lastSoundAt = Date(); _voicedFrames += 1 } // any voice, even soft; above line hiss
         var isTone = false
         var peakFreq = 0.0
         if energy / Double(frame) > 1e-5 { // not silence

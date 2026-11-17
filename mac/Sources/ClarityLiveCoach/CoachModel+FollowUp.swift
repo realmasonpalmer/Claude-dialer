@@ -563,34 +563,37 @@ extension CoachModel {
             // 3. No audio reaching the app: the old transcript timing, a little longer.
             // Never before 3 s (a pause mid-greeting), never after 30 s (it would be recording silence).
             let beep = BeepDetector.shared
-            var how = "no beep in 30 s"
+            var how = "no beep in 40 s"
             while let self, self.status == .live {
                 let now = Date()
                 let since = now.timeIntervalSince(detectedAt)
-                if let end = beep.lastBeepEnd, beep.voicedSeconds >= 1.5 || since >= 2 {
-                    how = String(format: "right after the beep (%.0f Hz)", beep.lastBeepFreq)
-                    // Already a while ago (card came late): the recording is running, drop now.
-                    if now.timeIntervalSince(end) < 0.35 { try? await Task.sleep(for: .milliseconds(350)) }
+                // The beep: only after real greeting (3+ s), and only once the line stayed quiet after it
+                // (a tone at the start of a greeting, followed by more talking, doesn't count).
+                if let end = beep.lastBeepEnd, beep.voicedSeconds >= 3,
+                   now.timeIntervalSince(end) >= 0.5, (beep.lastSoundAt ?? .distantPast) <= end.addingTimeInterval(0.2) {
+                    how = String(format: "after the beep (%.0f Hz)", beep.lastBeepFreq)
                     break
                 }
                 let said = (self.turns.last { $0.speaker == .prospect }?.text ?? "").lowercased()
                 let endings = ["message", "tone", "beep", "as soon as", "get back to you", "return your call",
                                "record", "options", "thank you", "after the", "call you back"]
                 let ended = endings.contains { said.suffix(90).contains($0) }
+                // No beep: the greeting is over only when BOTH the sound and the words stopped.
+                let wordsQuiet = now.timeIntervalSince(self.lastWordsAt ?? detectedAt)
                 if beep.hearing || beep.voicedSeconds > 0 {
                     let quiet = now.timeIntervalSince(beep.lastSoundAt ?? detectedAt)
-                    if since >= 3, beep.voicedSeconds >= 2, quiet >= (ended ? 2.0 : 3.5) {
+                    if since >= 5, beep.voicedSeconds >= 3, wordsQuiet >= 2.5, quiet >= (ended ? 3.0 : 4.5) {
                         how = String(format: "after the greeting's sound stopped for %.1f s (no beep heard, %@)", quiet, ended ? "ending words heard" : "no ending words")
                         break
                     }
                 } else {
                     let quiet = now.timeIntervalSince(self.lastWordsAt ?? detectedAt)
-                    if since >= 4, quiet >= (ended ? 3.0 : 4.5) {
+                    if since >= 6, quiet >= (ended ? 3.5 : 5.0) {
                         how = "after the transcript went quiet (no audio to listen to)"
                         break
                     }
                 }
-                if since > 30 { break }
+                if since > 40 { break }
                 try? await Task.sleep(for: .milliseconds(100))
             }
             guard let self, self.status == .live else { return }
