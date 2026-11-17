@@ -227,7 +227,8 @@ extension CoachModel {
         guard let key = currentAttemptKey else { return }
         RemovedList.add(key)
         outcomeSaved.insert(String(key.prefix(15))) // nothing more to log
-        ActivityLog.add("Opt out from \(calling ?? key): \"\(said)\". Off every list, writing DoNotCall")
+        followUp = nil // no text, no LinkedIn
+        ActivityLog.add("Opt out from \(calling ?? key): \"\(said)\". Off every list, no text, writing DoNotCall and status")
         CallTrace.event("intent", ["intent": "opt_out", "said": said, "why": "opt-out phrase in their words", "action": "goodbye line, DoNotCall, hang up"])
         Task { [weak self] in
             do {
@@ -235,6 +236,14 @@ extension CoachModel {
                 ActivityLog.add("Opt out: DoNotCall saved in Salesforce for \(self?.calling ?? key)")
             } catch {
                 ActivityLog.problem("Opt out: couldn't save DoNotCall in Salesforce: \(error.localizedDescription)")
+            }
+            // Status too: Leads go Unqualified, Contacts go Negative. Both keep them off every list.
+            let status = key.hasPrefix("00Q") ? "Unqualified" : "Negative"
+            do {
+                try await Salesforce.setStatus(of: key, to: status, note: "Asked not to be called again: \"\(said.prefix(200))\"")
+                ActivityLog.add("Opt out: status set to \(status)")
+            } catch {
+                ActivityLog.problem("Opt out: couldn't set status to \(status): \(error.localizedDescription)")
             }
             try? await Task.sleep(for: .seconds(6)) // time to say goodbye
             guard let self, self.status == .live, AircallPhone.isOn else { return }
