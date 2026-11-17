@@ -39,6 +39,7 @@ struct SettingsPane: View {
         }
     }
 
+    @State private var audioRecording = false
     @State private var testProfile = ""
     @State private var testCompany = ""
     @State private var testing = false
@@ -62,6 +63,21 @@ struct SettingsPane: View {
                 Toggle("Drop my recorded voicemail by itself", isOn: $dropOn)
                 Text("Set it up first: gear, then Voicemail drop.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            section("Audio problems") {
+                Text("Records 60 seconds of everything your Mac plays (what you hear), plus the call audio the app gets, and a report of your audio devices and their speeds. Start it, then make a call. Saved in Documents, Clarity Audio Debug. Nothing is sent anywhere.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button(audioRecording ? "Recording..." : "Record audio for debugging (60 s)") {
+                        audioRecording = true
+                        Task { @MainActor in
+                            let dir = await AudioDebug.shared.record()
+                            audioRecording = false
+                            if let dir { NSWorkspace.shared.open(dir) }
+                        }
+                    }
+                    .disabled(audioRecording)
+                }
             }
             section("Test the LinkedIn bot") {
                 Text("Uses the person on screen now (their LinkedIn from Salesforce), or paste any profile. It does everything except Send, then cancels. Nothing goes out.")

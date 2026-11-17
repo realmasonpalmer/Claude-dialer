@@ -15,10 +15,12 @@ final class ProcessTap {
     /// onBuffer runs on a background queue (one at a time, in order) with a copy of the audio.
     /// The audio thread itself only copies the samples: it's shared with the rep's headset,
     /// so any slow work there makes the call crackle.
-    func start(processes: [AudioObjectID], onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
+    func start(processes: [AudioObjectID], everything: Bool = false, onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
         stop()
         do {
-            let description = CATapDescription(stereoMixdownOfProcesses: processes)
+            // everything: all sound the Mac plays (for audio debugging), not just the call app.
+            let description = everything ? CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+                                         : CATapDescription(stereoMixdownOfProcesses: processes)
             description.uuid = UUID()
             description.muteBehavior = .unmuted // the rep still hears the call
             description.isPrivate = true

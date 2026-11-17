@@ -72,12 +72,15 @@ final class MicCapture {
         guard let stream = try inputStreams(of: id).first else {
             throw CoreAudioError(status: -1, what: "Open microphone (no input on this device)")
         }
-        var asbd = try readProperty(stream, kAudioStreamPropertyVirtualFormat, AudioStreamBasicDescription())
-        guard asbd.mSampleRate > 0, asbd.mBytesPerFrame > 0,
-              let format = AVAudioFormat(streamDescription: &asbd) else {
-            throw CoreAudioError(status: -1, what: "Read microphone format")
+        let asbd = try readProperty(stream, kAudioStreamPropertyVirtualFormat, AudioStreamBasicDescription())
+        let isFloat = asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0 && asbd.mBitsPerChannel == 32
+        guard asbd.mSampleRate > 0, asbd.mBytesPerFrame > 0, asbd.mChannelsPerFrame > 0, isFloat,
+              let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: asbd.mSampleRate, channels: 1, interleaved: false) else {
+            throw CoreAudioError(status: -1, what: "Read microphone format (\(asbd.mChannelsPerFrame) ch, \(asbd.mBitsPerChannel) bit, \(Int(asbd.mSampleRate)) Hz)")
         }
         let bytesPerFrame = asbd.mBytesPerFrame
+        // Interleaved: channels side by side, step over them. Not interleaved: one channel per buffer.
+        let channels = asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved != 0 ? 1 : Int(asbd.mChannelsPerFrame)
         let work = self.work
         var proc: AudioDeviceIOProcID?
         // Only reads inputData. Never writes outputData, so no speaker is ever used.
@@ -85,11 +88,12 @@ final class MicCapture {
             let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
             guard list.count > 0, let src = list[0].mData else { return } // the first input stream
             let frames = AVAudioFrameCount(list[0].mDataByteSize / bytesPerFrame)
-            guard frames > 0, let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
+            guard frames > 0, let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames),
+                  let dst = copy.floatChannelData?[0] else { return }
             copy.frameLength = frames
-            let to = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
-            guard to.count > 0, let dst = to[0].mData else { return }
-            memcpy(dst, src, Int(min(list[0].mDataByteSize, to[0].mDataByteSize)))
+            // Interleaved floats: keep the first channel.
+            let samples = src.assumingMemoryBound(to: Float.self)
+            for i in 0..<Int(frames) { dst[i] = samples[i * channels] }
             work.async { onBuffer(copy) }
         }, "Open microphone")
         deviceID = id

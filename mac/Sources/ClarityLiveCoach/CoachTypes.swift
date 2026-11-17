@@ -179,6 +179,7 @@ final class StreamBox: @unchecked Sendable {
         let stream = lock.withLockValue { isRep ? rep : prospect }
         stream?.send(data)
         if !isRep { BeepDetector.shared.feed(data); VoicemailSamples.shared.feed(data) } // the beep, and greeting samples
+        AudioDebug.shared.feed(data, isRep: isRep)
     }
 
     func closeAll() {
