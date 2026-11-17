@@ -85,3 +85,39 @@ final class CoachCoreTests: XCTestCase {
         XCTAssertNil(a.match("We use Salesforce for everything"))
     }
 }
+
+final class QuestionTrackerTests: XCTestCase {
+    func testAskedThenAnswered() {
+        var t = QuestionTracker()
+        _ = t.add(turn: "How many reps are on the team?", from: .rep)
+        let c = t.add(turn: "About twelve.", from: .prospect)
+        XCTAssertEqual(t.questions.first?.status, .answered)
+        XCTAssertEqual(c.count, 1)
+        XCTAssertTrue(t.promptText.contains("never ask again"))
+    }
+
+    func testUhHuhIsNotAnAnswer() {
+        var t = QuestionTracker()
+        _ = t.add(turn: "Who handles the CRM?", from: .rep)
+        _ = t.add(turn: "Mhm", from: .prospect)
+        XCTAssertEqual(t.questions.first?.status, .open)
+    }
+
+    func testInterruptedAndAbandoned() {
+        var t = QuestionTracker()
+        _ = t.add(turn: "Is that you guys?", from: .rep)
+        _ = t.add(turn: "Wait who is this", from: .prospect, overlapped: true)
+        XCTAssertEqual(t.questions.first?.status, .interrupted)
+        _ = t.add(turn: "Sorry, quick one. Do you use Salesforce?", from: .rep)
+        XCTAssertEqual(t.questions.first?.status, .abandoned)
+        XCTAssertEqual(t.questions.last?.status, .open)
+    }
+
+    func testProspectQuestionStaysOpenUntilRepAnswers() {
+        var t = QuestionTracker()
+        _ = t.add(turn: "What does it cost?", from: .prospect)
+        XCTAssertTrue(t.promptText.contains("NOT yet answered"))
+        _ = t.add(turn: "The health check is free.", from: .rep)
+        XCTAssertEqual(t.questions.first?.status, .answered)
+    }
+}

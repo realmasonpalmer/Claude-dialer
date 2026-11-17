@@ -154,7 +154,11 @@ extension CoachModel {
         // Started early on exactly these words? Then the answer is already on its way.
         if let basis = specBasis {
             specBasis = nil
+            if basis != normalized(said) {
+                CallTrace.event("early.wasted", ["basis": basis, "said": said, "why": "they kept talking after the early draft started"])
+            }
             if basis == normalized(said) {
+                CallTrace.event("early.used", ["basis": basis, "said": said, "why": "their final words matched the early draft"])
                 uncoached = ""
                 latestProspect = said
                 confirmedAt = Date()
@@ -257,6 +261,7 @@ extension CoachModel {
         seq += 1
         let id = seq
         let askedAt = Date()
+        if kind == .reply { CoachPrompt.questionFacts = questionTracker.promptText }
         if kind == .reply { ActivityLog.add("Coach #\(id): asking Claude\(early == nil ? "" : " early, from their words so far")") }
         CallTrace.event("claude.request", [
             "kind": "\(kind)", "early": early != nil, "early_basis": early ?? "",

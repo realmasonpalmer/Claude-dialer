@@ -143,3 +143,92 @@ public struct ScriptAnswers: Sendable {
         return best?.0
     }
 }
+
+/// Questions asked on the call and what happened to each, tracked in code from the transcript
+/// (not inferred by the model). Fed to Haiku as facts: what's still open, what's already answered.
+public struct QuestionTracker: Sendable {
+    public enum Speaker: String, Sendable { case rep, prospect }
+    public enum Status: String, Sendable { case open, answered, interrupted, abandoned }
+    public struct Question: Sendable, Equatable {
+        public let id: Int
+        public let asker: Speaker
+        public let text: String
+        public var status: Status
+        public var answer: String
+    }
+    public enum Change: Sendable, Equatable {
+        case asked(Question), answered(Question), interrupted(Question), abandoned(Question)
+    }
+
+    public private(set) var questions: [Question] = []
+    private var nextID = 1
+    public init() {}
+
+    private static let filler: Set<String> = ["uh", "um", "hmm", "mm", "mhm", "uh-huh", "huh"]
+    private static let starts = ["who", "what", "when", "where", "why", "how", "do", "does", "did", "is", "are", "can",
+                                 "could", "would", "will", "should", "have", "has", "any", "which"]
+
+    /// The questions in a turn: sentences ending in "?" (or starting like a question when no punctuation came through).
+    static func questions(in text: String) -> [String] {
+        var out: [String] = []
+        var current = ""
+        for ch in text {
+            current.append(ch)
+            if ".?!".contains(ch) {
+                let s = current.trimmingCharacters(in: .whitespaces)
+                if ch == "?" { out.append(s) }
+                current = ""
+            }
+        }
+        if out.isEmpty, !text.contains("."), let first = text.lowercased().split(separator: " ").first,
+           starts.contains(String(first)), text.split(separator: " ").count >= 4 {
+            out.append(text.trimmingCharacters(in: .whitespaces))
+        }
+        return out
+    }
+
+    /// One finished turn. `overlapped`: the other person was still talking when this turn started.
+    public mutating func add(turn text: String, from speaker: Speaker, overlapped: Bool = false) -> [Change] {
+        var changes: [Change] = []
+        let words = text.lowercased().split(separator: " ").map { String($0).trimmingCharacters(in: .punctuationCharacters) }
+        let substantive = words.contains { !Self.filler.contains($0) && !$0.isEmpty }
+        // The other side's open questions: answered by this turn, or cut off if this turn talked over them.
+        for i in questions.indices where questions[i].asker != speaker && questions[i].status == .open && substantive {
+            if overlapped {
+                questions[i].status = .interrupted
+                changes.append(.interrupted(questions[i]))
+            } else {
+                questions[i].status = .answered
+                questions[i].answer = text
+                changes.append(.answered(questions[i]))
+            }
+        }
+        let asked = Self.questions(in: text)
+        // Asking again before getting an answer abandons the earlier one.
+        if !asked.isEmpty {
+            for i in questions.indices where questions[i].asker == speaker && (questions[i].status == .open || questions[i].status == .interrupted) {
+                questions[i].status = .abandoned
+                changes.append(.abandoned(questions[i]))
+            }
+        }
+        for q in asked {
+            let new = Question(id: nextID, asker: speaker, text: q, status: .open, answer: "")
+            nextID += 1
+            questions.append(new)
+            changes.append(.asked(new))
+        }
+        return changes
+    }
+
+    /// For the model: hard facts about questions, so it never re-asks or forgets one.
+    public var promptText: String {
+        let repAnswered = questions.filter { $0.asker == .rep && $0.status == .answered }
+        let theirsOpen = questions.filter { $0.asker == .prospect && $0.status == .open }
+        let repOpen = questions.filter { $0.asker == .rep && ($0.status == .open || $0.status == .interrupted) }
+        var lines: [String] = []
+        if !theirsOpen.isEmpty { lines.append("Prospect questions NOT yet answered (answer these first): " + theirsOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
+        if !repOpen.isEmpty { lines.append("Rep questions still waiting for an answer: " + repOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
+        if !repAnswered.isEmpty { lines.append("Already asked AND answered (never ask again): " + repAnswered.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
+        return lines.joined(separator: "\n")
+    }
+}

@@ -577,6 +577,8 @@ extension CoachModel {
         pendingDialSince = nil // this dial is now the live call
         BeepDetector.shared.reset()
         CallTrace.beginCall(lead: calling, attempt: currentAttempts)
+        questionTracker = QuestionTracker()
+        CallTrace.event("context.system", ["text": system]) // the full static instructions + script Claude gets this call
         phoneSawHangUp = false
         holdLine = false
         pending = nil

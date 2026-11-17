@@ -168,6 +168,8 @@ enum CoachPrompt {
     static var liveSummary = ""
     /// What has worked on this call list's common blockers (set at call start).
     static var blockerHints = ""
+    /// Open and answered questions, tracked in code (set before each request).
+    static var questionFacts = ""
 
     static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?) -> String {
         // Fast: the last ~60 seconds word for word, plus a short summary of everything before.
@@ -181,7 +183,7 @@ enum CoachPrompt {
         \(history)
 
         The prospect just said: "\(latest)"
-        \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")
+        \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")
         What should the rep say next? SAY is 1 to 2 short sentences, 25 words at most, ending in one question
         (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through
         better, use it and add a line OFF SCRIPT: yes.

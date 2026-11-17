@@ -258,6 +258,16 @@ extension CoachModel {
         }
         if speaker == .prospect { lastHeardThemAt = Date() }
         if turns.last?.speaker != speaker { CallTrace.turn += 1 }
+        let overlapped = speaker == .prospect ? repSpeaking && Date().timeIntervalSince(lastRepSpeechAt) < 0.5
+                                              : prospectSpeaking && Date().timeIntervalSince(lastProspectSpeechAt) < 0.5
+        for change in questionTracker.add(turn: text, from: speaker == .rep ? .rep : .prospect, overlapped: overlapped) {
+            switch change {
+            case .asked(let q): CallTrace.event("question.asked", ["id": q.id, "by": q.asker.rawValue, "text": q.text])
+            case .answered(let q): CallTrace.event("question.answered", ["id": q.id, "by": q.asker.rawValue, "text": q.text, "answer": q.answer])
+            case .interrupted(let q): CallTrace.event("question.interrupted", ["id": q.id, "by": q.asker.rawValue, "text": q.text, "cut_off_by": text])
+            case .abandoned(let q): CallTrace.event("question.abandoned", ["id": q.id, "by": q.asker.rawValue, "text": q.text])
+            }
+        }
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
         } else {

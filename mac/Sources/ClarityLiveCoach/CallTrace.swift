@@ -142,6 +142,10 @@ enum CallTrace {
     - resolution: the prospect answered after delivery
     - state: screen state change (Listening, Ready, Reading, Delivering, Interrupted, Resolved, Outdated, Idle)
     - manual: Hold, Release, Next, Different line
+    - question.asked / question.answered / question.interrupted / question.abandoned: tracked in code (CoachCore
+      QuestionTracker) from finished turns; the open/answered list is sent to Claude as facts (see user_message)
+    - early.used / early.wasted: whether a draft started before they finished was the one used (proves generating ahead)
+    - context.system: the full static instructions + script Claude had for this call (once per call)
     - log: every plain activity-log line during the call, for context
 
     ## Latency to compute
