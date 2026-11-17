@@ -94,7 +94,7 @@ extension CoachModel {
             if autoDial, AircallPhone.isOn, !startedByHand, !autoHungUpThisCall, !autoHangingUp,
                !phoneTreeActive, !phoneTreeThisCall, !sawVoicemail, !screenerActive, !voicemailDropStarted,
                !turns.contains(where: { $0.speaker == .prospect }),
-               Date().timeIntervalSince(callStartedAt) > 20 {
+               Date().timeIntervalSince(callStartedAt) > ringLimit {
                 hangUpUnanswered()
             }
             if sawVoicemail || voicemailActive || kind == .voicemail { scheduleVoicemailDrop() } // whichever part spotted it
@@ -117,10 +117,17 @@ extension CoachModel {
         endCall()
     }
 
+    /// How long to let it ring: 20 s on the first try (it hangs up on voicemail anyway), but on the try
+    /// that leaves a voicemail, long enough (45 s) for their voicemail to answer so the drop goes out.
+    var ringLimit: TimeInterval {
+        guard currentAttempts >= maxAttempts, let key = currentAttemptKey, Cadence.leavesVoicemail(for: key) else { return 20 }
+        return 45
+    }
+
     /// 20 seconds of ringing and nobody spoke: hang up, then the normal flow (redial, or the next person).
     func hangUpUnanswered() {
         autoHungUpThisCall = true
-        ActivityLog.add("Rang 20 s with no answer for \(calling ?? "?"): hanging up")
+        ActivityLog.add("Rang \(Int(ringLimit)) s with no answer for \(calling ?? "?"): hanging up")
         Task { [weak self] in
             guard let self, self.status == .live else { return }
             let done = await AircallPhone.shared.hangUp()
