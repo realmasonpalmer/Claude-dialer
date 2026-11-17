@@ -75,6 +75,9 @@ extension CoachModel {
                 syncRecord()
             }
         }
+        // In-app phone, call placed on the phone itself (not the Dial button): its red hang-up
+        // button showing is the sign of a real call. Its open mic alone never is.
+        if status == .ready, AircallPhone.isOn, pendingDialSince == nil { checkPhoneForNewCall() }
         switch status {
         case .ready where onCall:
             if waitingForNewCall || AircallPhone.isOn {
@@ -464,6 +467,25 @@ extension CoachModel {
             self.aircallCheck = nil
             if onCall == true, self.status == .ready, self.waitingForNewCall {
                 self.waitingForNewCall = false
+                self.startCall()
+            }
+        }
+    }
+
+    /// Between calls: the hang-up button seen on 2 checks in a row (and not just the last call's
+    /// button fading out) = a call started on the phone. Start listening.
+    func checkPhoneForNewCall() {
+        guard phoneButtonCheck == nil, Date().timeIntervalSince(endedAt) > 3 else { return }
+        phoneButtonCheck = Task { [weak self] in
+            let visible = await AircallPhone.shared.hangUpButtonVisible()
+            guard let self else { return }
+            self.phoneButtonCheck = nil
+            guard self.status == .ready, self.pendingDialSince == nil else { return }
+            self.phoneCallSeen = visible == true ? self.phoneCallSeen + 1 : 0
+            if self.phoneCallSeen >= 2 {
+                self.phoneCallSeen = 0
+                self.waitingForNewCall = false
+                ActivityLog.add("Call placed on the phone itself: listening")
                 self.startCall()
             }
         }
