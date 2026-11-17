@@ -25,18 +25,24 @@ public struct CoachSignals: Sendable {
     public var prospectAnsweredSince: Bool // prospect spoke after the rep delivered it
     public var queued: Bool              // a newer line is waiting
     public var queuedIsForNewTopic: Bool // the prospect moved on (interrupt/new question)
+    public var lineWords: Int            // words in the line on screen (to protect silent reading)
 
     public init(hasLine: Bool, prospectSpeaking: Bool, repSpeaking: Bool, secondsSinceShown: Double,
-                repStarted: Bool, delivered: Bool, prospectAnsweredSince: Bool, queued: Bool, queuedIsForNewTopic: Bool) {
+                repStarted: Bool, delivered: Bool, prospectAnsweredSince: Bool, queued: Bool, queuedIsForNewTopic: Bool,
+                lineWords: Int = 0) {
         self.hasLine = hasLine; self.prospectSpeaking = prospectSpeaking; self.repSpeaking = repSpeaking
         self.secondsSinceShown = secondsSinceShown; self.repStarted = repStarted; self.delivered = delivered
         self.prospectAnsweredSince = prospectAnsweredSince; self.queued = queued; self.queuedIsForNewTopic = queuedIsForNewTopic
+        self.lineWords = lineWords
     }
 }
 
 public enum CoachMachine {
     /// How long a brand-new line is protected for reading before an un-started line can be swapped.
     public static let readingGrace = 1.2
+
+    /// Silent reading can't be seen, so protect it by length: about 4 words a second, 1.2 to 5 seconds.
+    public static func readingTime(words: Int) -> Double { min(5, max(readingGrace, Double(words) / 4)) }
 
     public static func state(_ s: CoachSignals) -> CoachState {
         if s.repSpeaking && s.prospectSpeaking { return .interrupted }
@@ -45,7 +51,7 @@ public enum CoachMachine {
         if s.prospectSpeaking { return .listening }
         guard s.hasLine else { return .idle }
         if s.delivered && s.prospectAnsweredSince { return .resolved }
-        if !s.repStarted { return s.secondsSinceShown < readingGrace ? .ready : .reading }
+        if !s.repStarted { return s.secondsSinceShown < readingTime(words: s.lineWords) ? .ready : .reading }
         return .reading
     }
 
@@ -55,7 +61,7 @@ public enum CoachMachine {
     public static func canReplace(_ s: CoachSignals) -> Bool {
         guard s.hasLine else { return true }
         if s.repSpeaking { return false }
-        if !s.repStarted { return s.secondsSinceShown >= readingGrace || s.queuedIsForNewTopic }
+        if !s.repStarted { return s.secondsSinceShown >= readingTime(words: s.lineWords) }
         return s.delivered || s.queuedIsForNewTopic
     }
 

@@ -338,7 +338,8 @@ final class CoachModel: ObservableObject {
         CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: prospectSpeaking, repSpeaking: repSpeaking,
                      secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty,
                      delivered: lineDelivered, prospectAnsweredSince: answeredAfterDelivery,
-                     queued: pending != nil, queuedIsForNewTopic: lineSuperseded)
+                     queued: pending != nil, queuedIsForNewTopic: lineSuperseded,
+                     lineWords: suggestion.say.split(separator: " ").count)
     }
     var holdTask: Task<Void, Never>?
     var timedID = 0

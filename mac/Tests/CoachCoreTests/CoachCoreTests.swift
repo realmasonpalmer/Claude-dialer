@@ -3,9 +3,35 @@ import XCTest
 
 final class CoachCoreTests: XCTestCase {
     func sig(line: Bool = true, prospect: Bool = false, rep: Bool = false, shown: Double = 5, started: Bool = false,
-             delivered: Bool = false, answered: Bool = false, queued: Bool = false, newTopic: Bool = false) -> CoachSignals {
+             delivered: Bool = false, answered: Bool = false, queued: Bool = false, newTopic: Bool = false, words: Int = 0) -> CoachSignals {
         CoachSignals(hasLine: line, prospectSpeaking: prospect, repSpeaking: rep, secondsSinceShown: shown, repStarted: started,
-                     delivered: delivered, prospectAnsweredSince: answered, queued: queued, queuedIsForNewTopic: newTopic)
+                     delivered: delivered, prospectAnsweredSince: answered, queued: queued, queuedIsForNewTopic: newTopic,
+                     lineWords: words)
+    }
+
+    // Silent reading: a 20-word line is protected for ~5 s even with nobody speaking.
+    func testSilentReadingProtectedByLength() {
+        XCTAssertFalse(CoachMachine.canReplace(sig(shown: 3, words: 20)))
+        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 5.1, words: 20)))
+        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 1.3, words: 4)))
+    }
+
+    // Started but not delivered, and the prospect hasn't moved on: keep it.
+    func testStartedLineKeptUntilDeliveredOrMovedOn() {
+        XCTAssertFalse(CoachMachine.canReplace(sig(started: true)))
+        XCTAssertTrue(CoachMachine.canReplace(sig(started: true, delivered: true)))
+    }
+
+    // Asking is not the same as being answered.
+    func testDeliveryAndResolutionSeparate() {
+        XCTAssertEqual(CoachMachine.state(sig(started: true, delivered: true, answered: false)), .reading)
+        XCTAssertEqual(CoachMachine.state(sig(started: true, delivered: true, answered: true)), .resolved)
+    }
+
+    // Both talking at once.
+    func testOverlap() {
+        XCTAssertEqual(CoachMachine.state(sig(prospect: true, rep: true)), .interrupted)
+        XCTAssertFalse(CoachMachine.canReplace(sig(prospect: true, rep: true, queued: true, newTopic: true)))
     }
 
     // Never cut off the rep.
@@ -23,6 +49,8 @@ final class CoachCoreTests: XCTestCase {
         XCTAssertEqual(CoachMachine.state(sig(prospect: true, rep: true, started: true)), .interrupted)
         XCTAssertEqual(CoachMachine.state(sig(started: true, queued: true, newTopic: true)), .superseded)
         XCTAssertTrue(CoachMachine.canReplace(sig(started: true, queued: true, newTopic: true)))
+        // Flagged, but never swapped while the rep is still mid-sentence.
+        XCTAssertFalse(CoachMachine.canReplace(sig(rep: true, started: true, queued: true, newTopic: true)))
     }
 
     func testResolvedAfterDeliveryAndAnswer() {

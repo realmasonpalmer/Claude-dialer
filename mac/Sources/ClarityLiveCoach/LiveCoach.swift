@@ -6,7 +6,7 @@ enum LiveCoach {
         var c = ClaudeClient(apiKey: key)
         c.model = model
         c.effort = "low"
-        c.maxTokens = 160          // SAY + CUE + STAGE: a 1 to 2 sentence line
+        c.maxTokens = 120          // SAY + CUE + STAGE: a 1 to 2 sentence line
         c.idleTimeout = 8
         c.totalTimeout = 15
         if model.contains("haiku") {

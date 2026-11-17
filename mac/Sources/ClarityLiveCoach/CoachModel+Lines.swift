@@ -114,7 +114,7 @@ extension CoachModel {
     /// start Claude now instead of waiting for the end-of-speech signal.
     func scheduleEarlyStart() {
         specTimer?.cancel()
-        guard status == .live, !screenerActive, !voicemailActive, !lineIsFresh else { return }
+        guard status == .live, !screenerActive, !voicemailActive else { return } // prepare even while a line is up
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
         guard isMeaningful(text) else { return }
         // Known objection mid-sentence: the approved answer is ready the moment they stop.
@@ -176,12 +176,8 @@ extension CoachModel {
                 return
             }
         }
-        // The rep hasn't said the line on screen yet: keep it. Their words stay queued
-        // and are answered once the rep has spoken and they reply.
-        if lineIsFresh {
-            latestProspect = said
-            return
-        }
+        // Always prepare an answer. Whether it shows now or waits is the display controller's call
+        // (CoachMachine.canReplace): the line being read is never swapped out from under the rep.
         uncoached = ""
         latestProspect = said
         // A plain "Hello?" is already answered by the opener on screen.
