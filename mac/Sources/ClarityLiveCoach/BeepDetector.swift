@@ -15,6 +15,7 @@ final class BeepDetector: @unchecked Sendable {
     private var _lastSoundAt: Date?
     private var _lastFrameAt: Date?
     private var _voicedFrames = 0
+    private var noiseFloor = 1e-3
 
     private let rate = 16_000.0
     private let frame = 320 // 20 ms
@@ -36,6 +37,7 @@ final class BeepDetector: @unchecked Sendable {
     func reset() {
         lock.lock()
         buffer = []; toneFrames = 0; _lastBeepEnd = nil; _lastSoundAt = nil; _lastFrameAt = nil; _voicedFrames = 0
+        noiseFloor = 1e-3
         lock.unlock()
     }
 
@@ -55,7 +57,9 @@ final class BeepDetector: @unchecked Sendable {
         var energy = 0.0
         for v in x { energy += Double(v * v) }
         _lastFrameAt = Date()
-        if energy / Double(frame) > 4e-5 { _lastSoundAt = Date(); _voicedFrames += 1 } // any voice, even soft; above line hiss
+        // The line's own hiss, learned per call: drops to the quietest slice fast, creeps up slowly.
+        let level = energy / Double(frame)
+        if level < noiseFloor { noiseFloor = max(level, 1e-9) } else { noiseFloor *= 1.003 }
         var isTone = false
         var peakFreq = 0.0
         if energy / Double(frame) > 1e-5 { // not silence
@@ -69,6 +73,7 @@ final class BeepDetector: @unchecked Sendable {
             }
             isTone = best / (energy * Double(frame) / 2) > 0.45 // most of the sound is one pitch (phone audio smears it a little)
         }
+        if !isTone, level > max(noiseFloor * 8, 2e-6) { _lastSoundAt = Date(); _voicedFrames += 1 } // a voice, not hiss or the beep
         if isTone, toneFrames == 0 || abs(peakFreq - toneFreq) <= 75 {
             if toneFrames == 0 { toneFreq = peakFreq }
             toneFrames += 1

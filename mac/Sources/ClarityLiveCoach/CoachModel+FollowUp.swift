@@ -563,7 +563,7 @@ extension CoachModel {
             // 3. No audio reaching the app: the old transcript timing, a little longer.
             // Never before 3 s (a pause mid-greeting), never after 30 s (it would be recording silence).
             let beep = BeepDetector.shared
-            var how = "no beep in 40 s"
+            var how = "no beep in 35 s"
             while let self, self.status == .live {
                 let now = Date()
                 let since = now.timeIntervalSince(detectedAt)
@@ -580,6 +580,11 @@ extension CoachModel {
                 let ended = endings.contains { said.suffix(90).contains($0) }
                 // No beep: the greeting is over only when BOTH the sound and the words stopped.
                 let wordsQuiet = now.timeIntervalSince(self.lastWordsAt ?? detectedAt)
+                // Backup from the words: the greeting's ending words were heard and nothing new for 4 s.
+                if since >= 5, ended, wordsQuiet >= 4 {
+                    how = String(format: "after the greeting's last words (%.1f s with no new words)", wordsQuiet)
+                    break
+                }
                 if beep.hearing || beep.voicedSeconds > 0 {
                     let quiet = now.timeIntervalSince(beep.lastSoundAt ?? detectedAt)
                     if since >= 5, beep.voicedSeconds >= 3, wordsQuiet >= 2.5, quiet >= (ended ? 3.0 : 4.5) {
@@ -593,7 +598,7 @@ extension CoachModel {
                         break
                     }
                 }
-                if since > 40 { break }
+                if since > 35 { break }
                 try? await Task.sleep(for: .milliseconds(100))
             }
             guard let self, self.status == .live else { return }
