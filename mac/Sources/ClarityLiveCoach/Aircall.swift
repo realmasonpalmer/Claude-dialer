@@ -318,3 +318,55 @@ struct AircallSetupView: View {
         }
     }
 }
+
+// MARK: - Call transcripts (for the Script Lab)
+
+extension Aircall {
+    struct PastCall {
+        let id: Int
+        let date: Date
+        let contact: String?
+        let transcript: String
+    }
+
+    /// The rep's own outbound calls since `since` that have an Aircall transcript and a real
+    /// conversation (40+ words). Paced at about 80 requests a minute (Aircall allows 120).
+    static func pullTranscripts(since: Date, skip: Set<Int>) async -> [PastCall] {
+        guard isSetUp else { return [] }
+        var calls: [[String: Any]] = []
+        var path: String? = "/calls?from=\(Int(since.timeIntervalSince1970))&to=\(Int(Date().timeIntervalSince1970))&per_page=50&order=asc&fetch_contact=true"
+        while let p = path {
+            guard let json = try? await request(p) else { break }
+            calls += (json["calls"] as? [[String: Any]]) ?? []
+            let next = (json["meta"] as? [String: Any])?["next_page_link"] as? String
+            path = next.map { $0.replacingOccurrences(of: "https://api.aircall.io/v1", with: "") }
+            try? await Task.sleep(for: .milliseconds(750))
+        }
+        var out: [PastCall] = []
+        for c in calls {
+            guard let id = c["id"] as? Int, !skip.contains(id),
+                  (c["direction"] as? String) == "outbound",
+                  ((c["duration"] as? Int) ?? 0) >= 20 else { continue }
+            if let userID, ((c["user"] as? [String: Any])?["id"] as? Int) != userID { continue } // only my calls
+            try? await Task.sleep(for: .milliseconds(750))
+            guard let json = try? await request("/calls/\(id)/transcription"),
+                  let content = (json["transcription"] as? [String: Any])?["content"] as? [String: Any],
+                  let utterances = content["utterances"] as? [[String: Any]] else { continue }
+            var lines: [String] = []
+            var last = ""
+            for u in utterances {
+                let text = ((u["text"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+                guard !text.isEmpty else { continue }
+                let who = (u["participant_type"] as? String) == "internal" ? "Rep" : "Them"
+                if who == last, !lines.isEmpty { lines[lines.count - 1] += " " + text } else { lines.append("\(who): \(text)"); last = who }
+            }
+            let transcript = lines.joined(separator: "\n")
+            guard transcript.split(separator: " ").count >= 40 else { continue } // voicemails and hang-ups
+            let contact = c["contact"] as? [String: Any]
+            let name = [contact?["first_name"] as? String, contact?["last_name"] as? String].compactMap { $0 }.joined(separator: " ")
+            let started = (c["started_at"] as? Double) ?? (c["started_at"] as? Int).map(Double.init) ?? Date().timeIntervalSince1970
+            out.append(PastCall(id: id, date: Date(timeIntervalSince1970: started), contact: name.isEmpty ? nil : name, transcript: transcript))
+        }
+        return out
+    }
+}

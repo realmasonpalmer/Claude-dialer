@@ -205,6 +205,7 @@ final class CallLab: ObservableObject {
         analyzing = true
         analysisError = nil
         defer { analyzing = false }
+        await Self.pullAircall(into: campaign)
         do {
             let found = try await Self.suggest(campaign: campaign, stats: stats(for: campaign), calls: calls, apiKey: key)
             suggestions.removeAll { $0.campaignID == campaign.id }
@@ -246,6 +247,23 @@ final class CallLab: ObservableObject {
     }
 
     // MARK: Claude
+
+    /// Adds the rep's Aircall call transcripts (new ones only; the first time, the last 60 days) to the call library.
+    static func pullAircall(into campaign: Campaign) async {
+        let d = UserDefaults.standard
+        let since = (d.object(forKey: "aircallPullAt") as? Date) ?? Date().addingTimeInterval(-60 * 86400)
+        var pulled = Set((d.array(forKey: "aircallPulledIDs") as? [Int]) ?? [])
+        let started = Date()
+        let calls = await Aircall.pullTranscripts(since: since, skip: pulled)
+        for c in calls {
+            CallLibrary.save(.init(id: UUID(), date: c.date, campaignID: campaign.id, person: c.contact,
+                                   score: 0, goal: false, stages: ["Aircall"], transcript: c.transcript))
+            pulled.insert(c.id)
+        }
+        d.set(Array(pulled), forKey: "aircallPulledIDs")
+        d.set(started, forKey: "aircallPullAt")
+        ActivityLog.add("Script Lab: pulled \(calls.count) call transcripts from Aircall")
+    }
 
     static func ask(system: String, user: String, effort: String, model: String? = nil) async throws -> [String: Any] {
         guard let key = Keychain.read(.anthropic) else { throw ClaudeClient.APIError(message: "No Anthropic key") }
@@ -312,7 +330,7 @@ final class CallLab: ObservableObject {
             lines.append("Full transcripts of the last \(library.count) answered calls (oldest first):")
             for e in library { lines.append("--- score \(e.score)\(e.goal ? ", goal" : ""):\n" + String(e.transcript.prefix(1500))) }
         }
-        let json = try await ask(system: system, user: lines.joined(separator: "\n"), effort: "high", model: "claude-opus-5-5")
+        let json = try await ask(system: system, user: lines.joined(separator: "\n"), effort: "high", model: "claude-sonnet-5-5")
         if let fb = json["feedback"] as? [String] {
             UserDefaults.standard.set(fb.map { "• " + $0 }.joined(separator: "\n"), forKey: "labFeedback-\(campaign.id.uuidString)")
         }
