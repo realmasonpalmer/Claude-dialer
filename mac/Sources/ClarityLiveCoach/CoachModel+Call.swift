@@ -637,7 +637,7 @@ extension CoachModel {
             goal: goalHit, score: score
         )
         let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
-        lab.add(record, campaign: campaign, transcript: transcript)
+        lab.add(record, campaign: campaign, transcript: transcript, person: calling)
     }
 
     func togglePause() {

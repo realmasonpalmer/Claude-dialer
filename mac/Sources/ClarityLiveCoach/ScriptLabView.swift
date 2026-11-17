@@ -123,6 +123,10 @@ struct ScriptLabView: View {
             if let error = lab.analysisError {
                 Text(error).font(.callout).foregroundStyle(.orange)
             }
+            if let fb = UserDefaults.standard.string(forKey: "labFeedback-\(campaign.id.uuidString)"), !fb.isEmpty {
+                Text("What Claude learned from your calls").font(.subheadline.weight(.semibold))
+                Text(fb).font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
             ForEach(mine) { suggestion in
                 card(suggestion)
             }

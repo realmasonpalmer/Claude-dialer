@@ -85,7 +85,7 @@ final class CallLab: ObservableObject {
     /// Fewest answered calls before Claude suggests edits.
     static let minimumCalls = 10
     /// After the first analysis, run again automatically every this many new calls.
-    static let autoEvery = 20
+    static let autoEvery = 100
 
     private let folder: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -115,7 +115,9 @@ final class CallLab: ObservableObject {
     }
 
     /// Saves a finished call. The summary arrives a few seconds later.
-    func add(_ record: CallRecord, campaign: Campaign, transcript: String) {
+    func add(_ record: CallRecord, campaign: Campaign, transcript: String, person: String? = nil) {
+        CallLibrary.save(.init(id: record.id, date: record.date, campaignID: record.campaignID, person: person,
+                               score: record.score, goal: record.goal, stages: record.stages, transcript: transcript))
         guard learning else { return }
         records.append(record)
         prune()
@@ -245,9 +247,10 @@ final class CallLab: ObservableObject {
 
     // MARK: Claude
 
-    static func ask(system: String, user: String, effort: String) async throws -> [String: Any] {
+    static func ask(system: String, user: String, effort: String, model: String? = nil) async throws -> [String: Any] {
         guard let key = Keychain.read(.anthropic) else { throw ClaudeClient.APIError(message: "No Anthropic key") }
         var client = ClaudeClient(apiKey: key)
+        if let model { client.model = model; client.maxTokens = 16000 }
         client.effort = effort
         client.totalTimeout = 180
         return try await client.json(system: system, user: user)
@@ -286,7 +289,9 @@ final class CallLab: ObservableObject {
         - Keep the campaign's objective and facts. Never invent features, prices, results or claims.
         - Lines must be easy to say out loud: short, plain, human.
         - "suggested" is the complete new text for that section, ready to use.
-        Return only JSON: {"suggestions": [{"section": one of \(keys.joined(separator: ", ")), "suggested": "", "why": "", "confidence": "low" | "medium" | "high"}]}
+        Also read the full transcripts below and write "feedback": 5 to 8 short, plain lessons for the rep (what to keep
+        doing, what to change, the most common objections and the best way through each), each citing how often it happened.
+        Return only JSON: {"feedback": ["", ...], "suggestions": [{"section": one of \(keys.joined(separator: ", ")), "suggested": "", "why": "", "confidence": "low" | "medium" | "high"}]}
         """
         var lines = [
             "Campaign (version \(campaign.version)):\n\(campaign.promptText)",
@@ -301,7 +306,16 @@ final class CallLab: ObservableObject {
             let s = call.summary
             lines.append("- score \(call.score), \(Int(call.talkSeconds))s, stages \(call.stages.joined(separator: "/")), opener \(call.openerID ?? "campaign"), objections \(s?.objections.joined(separator: ", ") ?? "?"), worked: \(s?.worked ?? ""), stalled: \(s?.failed ?? ""), outcome: \(s?.outcome ?? "")")
         }
-        let json = try await ask(system: system, user: lines.joined(separator: "\n"), effort: "high")
+        // The full transcripts of the last 100 calls (trimmed), so Claude reads what was really said.
+        let library = CallLibrary.recent(campaignID: campaign.id, limit: 100)
+        if !library.isEmpty {
+            lines.append("Full transcripts of the last \(library.count) answered calls (oldest first):")
+            for e in library { lines.append("--- score \(e.score)\(e.goal ? ", goal" : ""):\n" + String(e.transcript.prefix(1500))) }
+        }
+        let json = try await ask(system: system, user: lines.joined(separator: "\n"), effort: "high", model: "claude-opus-5-5")
+        if let fb = json["feedback"] as? [String] {
+            UserDefaults.standard.set(fb.map { "• " + $0 }.joined(separator: "\n"), forKey: "labFeedback-\(campaign.id.uuidString)")
+        }
         let raw = (json["suggestions"] as? [[String: Any]]) ?? []
         return raw.compactMap { item in
             guard let section = item["section"] as? String, keys.contains(section),

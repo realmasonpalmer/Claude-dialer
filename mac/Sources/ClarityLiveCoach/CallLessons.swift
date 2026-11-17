@@ -9,7 +9,7 @@ import Foundation
 @MainActor
 enum CallLessons {
     /// New summarized calls between lesson refreshes.
-    static let every = 200
+    static let every = 100
     private static var refreshing = false
 
     /// The current lessons, one per line, or "". Safe to read from anywhere.

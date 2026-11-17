@@ -29,10 +29,11 @@ enum ActivityLog {
             } else {
                 try? Data(line.utf8).write(to: url)
             }
-            // Keep it small: when it passes 2 MB, keep the newest half.
-            if let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int, size > 2_000_000,
-               let all = try? String(contentsOf: url, encoding: .utf8) {
-                try? String(all.suffix(1_000_000)).write(to: url, atomically: true, encoding: .utf8)
+            // Keep everything: past 5 MB the file is archived (activity-2026-11-17-1530.log) and a new one starts.
+            if let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int, size > 5_000_000 {
+                let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"
+                let archive = url.deletingLastPathComponent().appendingPathComponent("activity-\(f.string(from: Date())).log")
+                try? FileManager.default.moveItem(at: url, to: archive)
             }
         }
     }
