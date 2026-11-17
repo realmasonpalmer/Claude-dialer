@@ -468,6 +468,7 @@ struct AircallPhoneView: NSViewRepresentable {
 struct AircallPhonePanel: View {
     @ObservedObject var phone = AircallPhone.shared
     @AppStorage(PrefKey.aircallNumberID) private var numberID = 0
+    @AppStorage("aircallTextNumberID") private var textNumberID = 0
     @State private var numbers: [Aircall.Number] = []
     @AppStorage(PrefKey.nextDials) private var autoDial = true
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
@@ -485,9 +486,22 @@ struct AircallPhonePanel: View {
                     }
                     .labelsHidden()
                     .frame(maxWidth: 200)
-                    .help("Calls and texts go out from this Aircall number")
+                    .help("Calls go out from this Aircall number")
                 }
                 Spacer(minLength: 0)
+            }
+            if !numbers.isEmpty {
+                HStack(spacing: 12) {
+                    Text("Texts go out from").font(.caption).foregroundStyle(.secondary).fixedSize()
+                    Picker("Texts", selection: $textNumberID) {
+                        Text("Same as calls").tag(0)
+                        ForEach(numbers) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 200)
+                    .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
+                    Spacer(minLength: 0)
+                }
             }
             // The two dialing switches, always in reach (Mason: not buried in Settings).
             HStack(spacing: 14) {
@@ -503,7 +517,11 @@ struct AircallPhonePanel: View {
             }
             .font(.callout)
         }
-        .task { numbers = (try? await Aircall.numbers()) ?? [] }
+        .task {
+            numbers = (try? await Aircall.numbers()) ?? []
+            Aircall.pickTextNumber(from: numbers)
+            textNumberID = UserDefaults.standard.integer(forKey: "aircallTextNumberID")
+        }
     }
 }
 

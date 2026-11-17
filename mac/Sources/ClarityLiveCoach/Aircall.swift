@@ -135,9 +135,22 @@ enum Aircall {
         return mine.contains { ["initial", "answered"].contains($0["status"] as? String ?? "") }
     }
 
-    /// Sends one text, from the chosen Aircall number to one person.
+    /// The number texts go out from (it must be A2P registered): its own setting, else the calling number.
+    static var textNumberID: Int? {
+        let id = UserDefaults.standard.integer(forKey: "aircallTextNumberID")
+        return id == 0 ? numberID : id
+    }
+
+    /// First run: texts default to Oliver's Portland number (A2P verified), if it's on the account.
+    static func pickTextNumber(from list: [Number]) {
+        guard UserDefaults.standard.integer(forKey: "aircallTextNumberID") == 0,
+              let portland = list.first(where: { $0.name.lowercased().contains("portland") }) else { return }
+        UserDefaults.standard.set(portland.id, forKey: "aircallTextNumberID")
+    }
+
+    /// Sends one text, from the texting number to one person.
     static func sendText(to phone: String, body: String) async throws {
-        guard let numberID else { throw AircallError(message: "Pick which Aircall number sends texts.") }
+        guard let numberID = textNumberID else { throw AircallError(message: "Pick which Aircall number sends texts.") }
         guard let to = e164(phone) else { throw AircallError(message: "That phone number doesn't look right.") }
         // Aircall API reference: "Send Message in agent conversation".
         // POST /v1/numbers/:id/messages/native/send  { to, body }. No setup needed on the number;
