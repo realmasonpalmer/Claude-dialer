@@ -22,7 +22,11 @@ enum LiveCoach {
     private static let optOut = ["take me off your list", "take me off the list", "remove me from your list",
                                  "remove me from the list", "don't call me again", "do not call me again",
                                  "stop calling me", "put me on your do not call", "do not call list",
-                                 "don't ever call", "never call me", "quit calling", "lose my number"]
+                                 "don't ever call", "never call me", "quit calling", "lose my number",
+                                 "don't call me back", "do not call me back", "don't call back", "don't call here",
+                                 "don't call this number", "never call here", "never call this number", "remove my number",
+                                 "take my number off", "delete my number", "don't contact me", "do not contact me",
+                                 "stop contacting me", "never call again", "don't call again", "do not call again"]
 
     static func isOptOut(_ text: String) -> Bool {
         let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
