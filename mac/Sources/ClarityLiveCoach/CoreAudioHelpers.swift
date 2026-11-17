@@ -90,7 +90,9 @@ struct AudioProcess: Identifiable, Hashable {
 
     /// Same check for the Aircall desktop app.
     static func aircallAppOnCall(in processes: [AudioProcess]) -> Bool {
-        let app = processes.filter(\.isAircallApp)
+        // The phone inside this app holds the mic open all session (one headset mode), so its mic and
+        // sound no longer mean "on a call". Its calls are known from the Dial button and Aircall itself.
+        let app = processes.filter { $0.isAircallApp && !$0.isAppPhone }
         return app.contains(where: \.isRunningInput) && app.contains(where: \.isRunningOutput)
     }
 
