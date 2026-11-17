@@ -402,6 +402,12 @@ extension CoachModel {
             self.textSendIn = nil
             ActivityLog.add("Text: sending by itself after the countdown")
             self.sendFollowUpText()
+            // Failsafe: if nothing was sent (no text written, or it couldn't go), move on after 20 s.
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled, self.waitingForText, self.status == .ready else { return }
+            ActivityLog.problem("Text: nothing went out for \(self.followUp?.prospect ?? "?") after 25 s, moving on to the next person")
+            self.waitingForText = false
+            self.startNextSequence()
         }
     }
 

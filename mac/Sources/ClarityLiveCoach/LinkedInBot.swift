@@ -182,14 +182,19 @@ enum LinkedInBot {
         default: break
         }
 
-        onStatus("LinkedIn: clicking Connect...")
-        await pause(1.5, 3)
-        var c = await step("connect")
-        if c == "MORE" {
-            await pause(1, 2)
-            c = await step("menu")
+        // The menu click has failed every time in your logs, so when we have their LinkedIn address we go
+        // straight to LinkedIn's own invite page: fewer clicks, faster, and safer for the account.
+        var c = "SKIPPED"
+        if vanity == nil {
+            onStatus("LinkedIn: clicking Connect...")
+            await pause(1.5, 3)
+            c = await step("connect")
+            if c == "MORE" {
+                await pause(1, 2)
+                c = await step("menu")
+            }
+            if let b = blocked(c) { return b }
         }
-        if let b = blocked(c) { return b }
         var n = "WAIT"
         if c == "CLICKED" {
             for _ in 0..<6 {
@@ -200,7 +205,7 @@ enum LinkedInBot {
         }
         // LinkedIn ignored the click, or there's no Connect button: use LinkedIn's own "connect with a note" page.
         if n == "WAIT", let vanity, !vanity.contains("\""), !vanity.contains("\\") {
-            ActivityLog.add("LinkedIn bot: menu click didn't open the note box; using LinkedIn's direct invite page")
+            ActivityLog.add("LinkedIn bot: opening LinkedIn's invite page for the note")
             onStatus("LinkedIn: opening the invite page...")
             _ = await apple(onTab(tab, "set URL of t to \"https://www.linkedin.com/preload/custom-invite/?vanityName=\(vanity)\"\n return \"OK\""))
             for _ in 0..<12 {

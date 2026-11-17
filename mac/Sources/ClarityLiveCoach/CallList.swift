@@ -73,7 +73,7 @@ final class CallList: ObservableObject {
         case .list(let onScreen):
             if chromeBlocked { chromeBlocked = false }
             // No Mobile and no Phone in Salesforce: never on the list.
-            let found = onScreen.filter { !CallHistory.noNumber($0.id) }
+            let found = onScreen.filter { !CallHistory.noNumber($0.id) && !RemovedList.contains($0.id) && !MobileOnly.excluded($0.id) }
             guard !found.isEmpty else { return }
             // Which list is this? (From the address bar while the list page shows.)
             let key = SalesforceChrome.url().flatMap(Self.listKey)
