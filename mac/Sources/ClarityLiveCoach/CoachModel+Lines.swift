@@ -1,4 +1,5 @@
 import AppKit
+import CoachCore
 import AVFoundation
 import Combine
 import CoreAudio
@@ -115,9 +116,22 @@ extension CoachModel {
         specTimer?.cancel()
         guard status == .live, !screenerActive, !voicemailActive, !lineIsFresh else { return }
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
-        guard let last = text.last, ".?!".contains(last), isMeaningful(text) else { return }
+        guard isMeaningful(text) else { return }
+        // Known objection mid-sentence: the approved answer is ready the moment they stop.
+        if scriptAnswers.match(text) != nil {
+            specTimer = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, !Task.isCancelled else { return }
+                _ = self.instantAnswer(text)
+            }
+            return
+        }
+        // Draft early once their meaning is clear: a finished sentence (200 ms), or 6+ words that
+        // stopped changing (450 ms). Each new word cancels the wait, so there's no flood of requests.
+        let finished = text.last.map { ".?!".contains($0) } ?? false
+        guard finished || text.split(separator: " ").count >= 6 else { return }
         specTimer = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .milliseconds(finished ? 200 : 450))
             guard let self, !Task.isCancelled,
                   (self.uncoached + " " + (self.interim[.prospect] ?? "")).trimmed == text,
                   normalized(text) != self.specBasis else { return }
@@ -175,6 +189,7 @@ extension CoachModel {
         // "Sure" or "Yes" is filler while the rep talks, but a real answer to the rep's question.
         let repAsked = turns.last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
         guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else { return }
+        if instantAnswer(said) { return }
         ask(.reply, user: CoachPrompt.reply(
             turns: turns, latest: said, calling: calling, details: recordDetails, style: callOpener,
             openTimes: bookingText()
@@ -240,7 +255,7 @@ extension CoachModel {
         seq += 1
         let id = seq
         let askedAt = Date()
-        if kind == .reply { ActivityLog.add("Coach: asking Claude\(early == nil ? "" : " early (they may still be talking)")") }
+        if kind == .reply { ActivityLog.add("Coach #\(id): asking Claude\(early == nil ? "" : " early, from their words so far")") }
         specBasis = early.map(normalized)
         specHeld = nil
         confirmedAt = nil
@@ -254,7 +269,13 @@ extension CoachModel {
             do {
                 var finalText = ""
                 let gate = LineGate()
+                let started = Date()
+                var firstToken = false
                 try await client.stream(system: system, user: user) { text in
+                    if !firstToken, kind == .reply {
+                        firstToken = true
+                        ActivityLog.add("Coach #\(id): first words from Claude after \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+                    }
                     finalText = text
                     let s = Suggestion.parse(text)
                     Task { @MainActor in
@@ -266,6 +287,7 @@ extension CoachModel {
                         if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }
                     }
                 }
+                if kind == .reply { ActivityLog.add("Coach #\(id): Claude done after \(Int(Date().timeIntervalSince(started) * 1000)) ms") }
                 var last = Suggestion.parse(finalText)
                 last.sayComplete = true
                 if kind == .reply, !last.skip, !last.say.isEmpty, !Self.lineProblems(last).isEmpty {
@@ -336,19 +358,36 @@ extension CoachModel {
         if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect }) { return }
         // The AI thinks ahead, the screen follows the conversation: never swap the line while the rep is
         // speaking. Queue it, flag the old one as outdated, and show it the moment they stop.
-        if kind == .opener || kind == .voicemail || shownID == 0 || !repSpeaking {
+        // A new prospect turn since the line appeared = the conversation moved on.
+        if kind == .reply, turns.last?.speaker == .prospect, !repSaidSinceShown.isEmpty { lineSuperseded = true }
+        if kind == .opener || kind == .voicemail || shownID == 0 || (!holdLine && CoachMachine.canReplace(signals())) {
             show(s, id: id, kind: kind)
         } else {
-            if pending?.id != id { ActivityLog.add("Coach: next line ready, held while you speak") }
+            if pending?.id != id { ActivityLog.add("Coach #\(id): line queued (\(holdLine ? "held by you" : repSpeaking ? "you're speaking" : "you may be reading"))") }
             pending = (id, s)
-            if turns.last?.speaker == .prospect { lineSuperseded = true }
         }
+    }
+
+    /// The approved script answer for what they said, shown with no AI wait. True if one matched.
+    func instantAnswer(_ said: String) -> Bool {
+        guard status == .live, let e = scriptAnswers.match(said) else { return false }
+        if suggestion.say == e.say || pending?.suggestion.say == e.say { return true } // already up
+        coachTask?.cancel() // any slower AI draft for this is stale now
+        thinking = false
+        specBasis = nil
+        specHeld = nil
+        seq += 1
+        ActivityLog.add("Coach #\(seq): instant answer from your script (\(e.id)), no AI")
+        offer(Suggestion(say: e.say, cue: "From your script: \(e.id)", stage: "Objection", sayComplete: true),
+              id: seq, kind: .reply, askedAt: Date())
+        return true
     }
 
     /// Called twice a second: a queued line shows once the rep stops speaking.
     func promotePendingIfReady() {
-        guard status == .live, let p = pending, p.id == seq, !repSpeaking else { return }
-        ActivityLog.add("Coach: queued line shown (you stopped speaking)")
+        guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq),
+              !holdLine, CoachMachine.canReplace(signals()) else { return }
+        ActivityLog.add("Coach #\(p.id): queued line shown")
         show(p.suggestion, id: p.id, kind: .reply)
     }
 
@@ -367,8 +406,12 @@ extension CoachModel {
         var s = s
         s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
         if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
+        if let old = pending, old.id != id { ActivityLog.add("Coach #\(old.id): queued line discarded (newer one shown)") }
         pending = nil
         lineSuperseded = false
+        repSaidSinceShown = ""
+        lineDelivered = false
+        answeredAfterDelivery = false
         shownID = id
         shownAt = Date()
         repWordsSinceShown = 0

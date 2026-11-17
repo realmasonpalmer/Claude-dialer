@@ -1,4 +1,5 @@
 import AppKit
+import CoachCore
 import AVFoundation
 import SwiftUI
 
@@ -871,6 +872,10 @@ struct CoachView: View {
                     Button("Latest") { coach.showLatest() }
                         .buttonStyle(.link).font(.caption2)
                 } else if coach.status == .live {
+                    Text(coach.coachState.rawValue).font(.caption2).foregroundStyle(.secondary)
+                    Button(coach.holdLine ? "Release" : "Hold") { coach.holdLine.toggle() }
+                        .buttonStyle(.link).font(.caption2)
+                        .help("Hold keeps this line on screen until you release it.")
                     if coach.pending != nil {
                         Text(coach.lineSuperseded ? "They moved on. New line ready" : "Next line ready")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.orange)

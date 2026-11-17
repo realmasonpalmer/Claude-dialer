@@ -1,4 +1,5 @@
 import AppKit
+import CoachCore
 import AVFoundation
 import Combine
 import CoreAudio
@@ -313,6 +314,32 @@ final class CoachModel: ObservableObject {
     var repSpeaking: Bool { Date().timeIntervalSince(lastRepSpeechAt) < 0.9 }
     /// The prospect moved on while the rep was talking: the line on screen is outdated (a new one is queued).
     @Published var lineSuperseded = false
+    /// The coach's screen state (one state machine, see CoachCore).
+    @Published var coachState: CoachState = .idle
+    var lastProspectSpeechAt = Date.distantPast
+    var prospectSpeaking: Bool { Date().timeIntervalSince(lastProspectSpeechAt) < 0.9 }
+    /// What the rep has said since the line appeared (for paraphrase-friendly delivery checks).
+    var repSaidSinceShown = ""
+    var lineDelivered = false
+    var answeredAfterDelivery = false
+    /// Hold: the rep pinned the current line; nothing replaces it until they release.
+    @Published var holdLine = false
+    /// Approved script answers, re-read when the script changes.
+    var scriptAnswersCache: (text: String, answers: ScriptAnswers)?
+    var scriptAnswers: ScriptAnswers {
+        let text = campaign.pastedScript
+        if let c = scriptAnswersCache, c.text == text { return c.answers }
+        let a = ScriptAnswers(script: text)
+        scriptAnswersCache = (text, a)
+        return a
+    }
+
+    func signals() -> CoachSignals {
+        CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: prospectSpeaking, repSpeaking: repSpeaking,
+                     secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty,
+                     delivered: lineDelivered, prospectAnsweredSince: answeredAfterDelivery,
+                     queued: pending != nil, queuedIsForNewTopic: lineSuperseded)
+    }
     var holdTask: Task<Void, Never>?
     var timedID = 0
 

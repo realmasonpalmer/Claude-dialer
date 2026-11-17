@@ -1,4 +1,5 @@
 import AppKit
+import CoachCore
 import AVFoundation
 import Combine
 import CoreAudio
@@ -185,7 +186,11 @@ extension CoachModel {
                     showScreenerLine()
                 }
             }
-            if speaker == .rep, !text.isEmpty { lastRepSpeechAt = Date() }
+            if !text.isEmpty {
+                let wasSpeaking = speaker == .rep ? repSpeaking : prospectSpeaking
+                if !wasSpeaking { ActivityLog.add("Speech start (\(speaker == .rep ? "Rep" : "Them"), transcript arrival)") }
+                if speaker == .rep { lastRepSpeechAt = Date() } else { lastProspectSpeechAt = Date() }
+            }
             if isFinal {
                 reconnects = 0
                 interim[speaker] = nil
@@ -224,7 +229,18 @@ extension CoachModel {
             repWordsInCall += count
         }
         if speaker == .prospect, firstProspectAt == nil { firstProspectAt = Date() }
-        ActivityLog.add("Heard \(speaker == .rep ? "Rep" : "Them"): \(text)")
+        ActivityLog.add("Heard \(speaker == .rep ? "Rep" : "Them") (final): \(text)")
+        if speaker == .rep, status == .live, !suggestion.say.isEmpty {
+            repSaidSinceShown += " " + text
+            if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown) {
+                lineDelivered = true
+                ActivityLog.add(String(format: "Coach: line delivered (meaning %.0f%% said)", Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown) * 100))
+            }
+        }
+        if speaker == .prospect, lineDelivered, !answeredAfterDelivery {
+            answeredAfterDelivery = true
+            ActivityLog.add("Coach: they answered the delivered line (resolved)")
+        }
         if speaker == .prospect { lastHeardThemAt = Date() }
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text

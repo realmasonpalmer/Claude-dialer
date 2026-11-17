@@ -5,6 +5,8 @@ let package = Package(
     name: "ClarityLiveCoach",
     platforms: [.macOS("14.4")], // Core Audio process taps need macOS 14.4+
     targets: [
-        .executableTarget(name: "ClarityLiveCoach", path: "Sources/ClarityLiveCoach")
+        .target(name: "CoachCore", path: "Sources/CoachCore"),
+        .executableTarget(name: "ClarityLiveCoach", dependencies: ["CoachCore"], path: "Sources/ClarityLiveCoach"),
+        .testTarget(name: "CoachCoreTests", dependencies: ["CoachCore"], path: "Tests/CoachCoreTests")
     ]
 )

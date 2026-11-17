@@ -1,4 +1,5 @@
 import AppKit
+import CoachCore
 import AVFoundation
 import Combine
 import CoreAudio
@@ -42,6 +43,10 @@ extension CoachModel {
         checkBlock()
         skipForeignLead()
         promotePendingIfReady()
+        if status == .live {
+            let next = CoachMachine.state(signals())
+            if next != coachState { ActivityLog.add("Coach state: \(coachState.rawValue) -> \(next.rawValue)"); coachState = next }
+        } else if coachState != .idle { coachState = .idle }
         if phase != loggedPhase {
             ActivityLog.add("Phase: \(loggedPhase.rawValue) -> \(phase.rawValue)")
             loggedPhase = phase
@@ -565,6 +570,8 @@ extension CoachModel {
         pendingDialSince = nil // this dial is now the live call
         BeepDetector.shared.reset()
         phoneSawHangUp = false
+        holdLine = false
+        pending = nil
         phoneButtonGone = 0
         CoachPrompt.liveSummary = ""
         CoachPrompt.blockerHints = BlockerBook.hints(campaign.id)
