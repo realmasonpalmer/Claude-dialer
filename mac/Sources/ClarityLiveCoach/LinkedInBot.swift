@@ -17,7 +17,8 @@ enum LinkedInBot {
         case blocked(String)
     }
 
-    static let dailyCap = 30
+    static let dailyCap = 20
+    static let weeklyCap = 100
     static var running = false
 
     static var isOn: Bool { true }
@@ -32,11 +33,35 @@ enum LinkedInBot {
     private static var todayKey: String { "linkedInBotSent-" + Date().formatted(.iso8601.year().month().day()) }
     static var sentToday: Int { UserDefaults.standard.integer(forKey: todayKey) }
 
+    /// Sends in the last 7 days.
+    static var sentThisWeek: Int {
+        let cal = Calendar.current
+        return (0..<7).reduce(0) { sum, back in
+            guard let d = cal.date(byAdding: .day, value: -back, to: Date()) else { return sum }
+            return sum + UserDefaults.standard.integer(forKey: "linkedInBotSent-" + d.formatted(.iso8601.year().month().day()))
+        }
+    }
+
+    /// Last send, and a random 1 to 4 minute gap before the next one.
+    static var lastSentAt: Date? {
+        get { UserDefaults.standard.object(forKey: "linkedInBotLastSent") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "linkedInBotLastSent") }
+    }
+    static var gap: TimeInterval = .random(in: 60...240)
+    /// Steps that failed in a row: two and the bot pauses.
+    static var missesInARow = 0
+
+    /// Seconds left before the next request may go out (0 = now).
+    static var waitLeft: TimeInterval { lastSentAt.map { max(0, gap - Date().timeIntervalSince($0)) } ?? 0 }
+
     /// Why the bot won't run right now, or nil if it can.
     static var whyNot: String? {
         if running { return "already busy" }
-        if let until = pausedUntil, until > Date() { return "paused after a LinkedIn warning until \(until.formatted(date: .omitted, time: .shortened))" }
+        if let until = pausedUntil, until > Date() { return "paused until \(until.formatted(date: .omitted, time: .shortened))" }
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        if weekday == 1 || weekday == 7 { return "off on weekends" }
         if sentToday >= dailyCap { return "hit today's limit of \(dailyCap)" }
+        if sentThisWeek >= weeklyCap { return "hit this week's limit of \(weeklyCap)" }
         return nil
     }
 
@@ -104,8 +129,21 @@ enum LinkedInBot {
         let keys = (name ?? "").lowercased().split(separator: " ").map(String.init).filter { $0.count >= 3 }
         let result = await run(tab: tab, note: note, keys: keys, vanity: vanity, onStatus: onStatus) // the profile must be this person
         switch result {
-        case .sent: UserDefaults.standard.set(sentToday + 1, forKey: todayKey)
-        case .blocked: pausedUntil = Date().addingTimeInterval(2 * 3600)
+        case .sent:
+            UserDefaults.standard.set(sentToday + 1, forKey: todayKey)
+            lastSentAt = Date()
+            gap = .random(in: 60...240)
+            missesInARow = 0
+        case .blocked:
+            pausedUntil = Date().addingTimeInterval(2 * 3600)
+        case .skipped(let why) where !why.contains("already") && !why.contains("someone else") && !why.contains("no LinkedIn"):
+            // A step didn't work (page changed, button missing): two in a row and the bot stops for 2 hours.
+            missesInARow += 1
+            if missesInARow >= 2 {
+                pausedUntil = Date().addingTimeInterval(2 * 3600)
+                missesInARow = 0
+                ActivityLog.problem("LinkedIn bot: two misses in a row, paused for 2 hours (\(why))")
+            }
         default: break
         }
         // A blocked page stays open so the rep can see it; everything else closes.

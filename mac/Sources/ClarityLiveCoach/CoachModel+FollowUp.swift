@@ -266,7 +266,9 @@ extension CoachModel {
         }
         let step = Cadence.step(for: key)
         let washington = Cadence.isWashington(f.phone)
-        f.textDue = (step?.textToday ?? false) && !washington && !f.noMobile
+        let failedBefore = f.key.map(TextFailed.contains) ?? false
+        f.textDue = (step?.textToday ?? false) && !washington && !f.noMobile && !failedBefore
+        if failedBefore, step?.textToday == true, !f.textDone { f.textStatus = "No text: an earlier text to them failed." }
         if washington, step?.textToday == true, !f.textDone { f.textStatus = "No text: Washington number (texts need consent there)." }
         if f.noMobile, step?.textToday == true, !f.textDone { f.textStatus = "No text: no Mobile in Salesforce (texts only go to mobiles, never office lines)." }
         f.linkedInDue = (step?.linkedInConnect ?? false) || (step?.linkedInMessage ?? false)
@@ -340,7 +342,9 @@ extension CoachModel {
                 self?.followUp?.sending = false
                 self?.followUp?.textDone = true
             } catch {
-                ActivityLog.problem("Text failed: \(error.localizedDescription)")
+                // A failed text is never retried for this person (the number can't take texts, or opted out).
+                if let key = f.key { TextFailed.add(key) }
+                ActivityLog.problem("Text failed: \(error.localizedDescription). Won't text them again.")
                 if background { self?.showToast("Text didn't send: \(error.localizedDescription)") }
                 guard self?.followUp?.key == f.key else { return }
                 self?.followUp?.textStatus = error.localizedDescription
@@ -395,6 +399,20 @@ extension CoachModel {
 
     private func drainLinkedInQueue() {
         guard !LinkedInBot.running, !linkedInQueue.isEmpty else { return }
+        // A human-like 1 to 4 minute gap between requests: wait, then send to whoever is on screen then.
+        let wait = LinkedInBot.waitLeft
+        if wait > 0 {
+            guard !linkedInGapWaiting else { return }
+            linkedInGapWaiting = true
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self else { return }
+                self.linkedInGapWaiting = false
+                self.linkedInQueue.removeAll { !self.isOnScreen($0.key ?? "") }
+                self.drainLinkedInQueue()
+            }
+            return
+        }
         let f = linkedInQueue.removeFirst()
         runLinkedInBot(f)
     }
