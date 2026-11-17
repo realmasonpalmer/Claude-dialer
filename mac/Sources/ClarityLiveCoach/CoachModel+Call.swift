@@ -41,6 +41,7 @@ extension CoachModel {
         guard active else { return }
         checkBlock()
         skipForeignLead()
+        promotePendingIfReady()
         if phase != loggedPhase {
             ActivityLog.add("Phase: \(loggedPhase.rawValue) -> \(phase.rawValue)")
             loggedPhase = phase

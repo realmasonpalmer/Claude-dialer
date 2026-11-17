@@ -185,6 +185,7 @@ extension CoachModel {
                     showScreenerLine()
                 }
             }
+            if speaker == .rep, !text.isEmpty { lastRepSpeechAt = Date() }
             if isFinal {
                 reconnects = 0
                 interim[speaker] = nil

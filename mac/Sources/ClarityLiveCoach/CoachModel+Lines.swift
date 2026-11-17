@@ -334,19 +334,29 @@ extension CoachModel {
         }
         // The call is live and someone already talked: keep the opener the rep is reading.
         if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect }) { return }
-        let waited = Date().timeIntervalSince(shownAt)
-        if kind == .opener || kind == .voicemail || shownID == 0 || waited >= hold {
+        // The AI thinks ahead, the screen follows the conversation: never swap the line while the rep is
+        // speaking. Queue it, flag the old one as outdated, and show it the moment they stop.
+        if kind == .opener || kind == .voicemail || shownID == 0 || !repSpeaking {
             show(s, id: id, kind: kind)
         } else {
+            if pending?.id != id { ActivityLog.add("Coach: next line ready, held while you speak") }
             pending = (id, s)
-            holdTask?.cancel()
-            let delay = hold - waited
-            holdTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(delay))
-                guard let self, !Task.isCancelled, let next = self.pending, next.id == self.seq else { return }
-                self.show(next.suggestion, id: next.id, kind: kind)
-            }
+            if turns.last?.speaker == .prospect { lineSuperseded = true }
         }
+    }
+
+    /// Called twice a second: a queued line shows once the rep stops speaking.
+    func promotePendingIfReady() {
+        guard status == .live, let p = pending, p.id == seq, !repSpeaking else { return }
+        ActivityLog.add("Coach: queued line shown (you stopped speaking)")
+        show(p.suggestion, id: p.id, kind: .reply)
+    }
+
+    /// The Next button: show the queued line now.
+    func promoteNow() {
+        guard let p = pending else { return }
+        ActivityLog.add("Coach: Next clicked, queued line shown")
+        show(p.suggestion, id: p.id, kind: .reply)
     }
 
     func show(_ s: Suggestion, id: Int, kind: Kind) {
@@ -358,6 +368,7 @@ extension CoachModel {
         s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
         if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
         pending = nil
+        lineSuperseded = false
         shownID = id
         shownAt = Date()
         repWordsSinceShown = 0

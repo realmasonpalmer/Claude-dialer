@@ -871,6 +871,13 @@ struct CoachView: View {
                     Button("Latest") { coach.showLatest() }
                         .buttonStyle(.link).font(.caption2)
                 } else if coach.status == .live {
+                    if coach.pending != nil {
+                        Text(coach.lineSuperseded ? "They moved on. New line ready" : "Next line ready")
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                        Button("Next") { coach.promoteNow() }
+                            .buttonStyle(.link).font(.caption2)
+                            .help("Show the new line now. It shows by itself when you stop talking.")
+                    }
                     Button("Different line ⌘J") { coach.newLine() }
                         .buttonStyle(.link).font(.caption2)
                         .help("Don't like this line? Get a new one right now.")

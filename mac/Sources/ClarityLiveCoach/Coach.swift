@@ -307,7 +307,12 @@ final class CoachModel: ObservableObject {
     var coachTask: Task<Void, Never>?
     var shownID = 0
     var shownAt = Date.distantPast
-    var pending: (id: Int, suggestion: Suggestion)?
+    @Published var pending: (id: Int, suggestion: Suggestion)?
+    /// The rep's words last arrived (live, even mid-sentence). The display never changes while they speak.
+    var lastRepSpeechAt = Date.distantPast
+    var repSpeaking: Bool { Date().timeIntervalSince(lastRepSpeechAt) < 0.9 }
+    /// The prospect moved on while the rep was talking: the line on screen is outdated (a new one is queued).
+    @Published var lineSuperseded = false
     var holdTask: Task<Void, Never>?
     var timedID = 0
 
