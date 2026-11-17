@@ -221,7 +221,9 @@ extension CoachModel {
                 startTextCountdown() // waits for its words, then sends by itself in 5 seconds (or the rep sends it)
             }
         } else if lastCallAnswered, autoDial, currentAttemptKey != nil {
-            // A real talk just ended: 10 seconds to save how it went, then the next person. Wait stops it.
+            // A real talk just ended: Claude fills "How did it go?" from the transcript (you can change it),
+            // then 10 seconds, then the next person. Wait stops it.
+            autoOutcome()
             afterHangUp { [weak self] in self?.startMoveOn(after: 10) }
         } else if moveOn {
             afterHangUp { [weak self] in self?.startNextSequence() }
@@ -304,6 +306,41 @@ extension CoachModel {
 
     /// Counts down, then moves to the next person (and calls them). Used after a real talk and
     /// after "How did it go?" is saved. Wait stops it.
+    /// Reads the call and picks "How did it go?" (Interested, Not now, Not a fit, or nothing if unclear).
+    /// Saves after 4 s unless the rep picked one first. Uses Haiku: fast and cheap.
+    func autoOutcome() {
+        guard let key = currentAttemptKey, turns.contains(where: { $0.speaker == .prospect }) else { return }
+        let object = key.hasPrefix("003") ? "Contact" : "Lead"
+        let options = Outcomes.quick(object)
+        let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Them"): \($0.text)" }.joined(separator: "\n")
+        let who = calling
+        Task { [weak self] in
+            let system = """
+            You read a finished cold call and pick how it went. Options: \(options.map(\.label).joined(separator: ", ")), or None.
+            Interested: they agreed to a meeting or asked to hear more. Not now: bad timing, call back later, send an email.
+            Not a fit: clearly not interested, wrong person or company, no need. None: only a front desk, a hang-up, or too short to tell.
+            If Not a fit, also pick the closest reason from: \(Salesforce.unqualifiedReasons.joined(separator: ", ")), or "".
+            Return only JSON: {"outcome": "", "reason": "", "why": "one short sentence"}
+            """
+            guard let json = try? await CallLab.ask(system: system, user: transcript, effort: "low", model: "claude-haiku-5-5"),
+                  let label = json["outcome"] as? String, let pick = options.first(where: { $0.label == label }) else {
+                ActivityLog.add("How did it go: left for you (Claude wasn't sure for \(who ?? "?"))")
+                return
+            }
+            let reason = (json["reason"] as? String).flatMap { Salesforce.unqualifiedReasons.contains($0) ? $0 : nil }
+            guard let self else { return }
+            ActivityLog.add("How did it go: Claude picked \(pick.label) for \(who ?? "?") (\((json["why"] as? String) ?? ""))")
+            self.showToast("How did it go: \(pick.label). Saving in 4 s, click another to change.")
+            try? await Task.sleep(for: .seconds(4))
+            guard !self.outcomeSaved.contains(String(key.prefix(15))), self.statusRecordID?.prefix(15) == key.prefix(15), !self.savingStatus else { return }
+            if pick.value == "Unqualified", object == "Lead", reason == nil { // Salesforce needs a reason
+                ActivityLog.add("How did it go: Not a fit needs a reason, left for you")
+                return
+            }
+            self.saveStatus(pick.value, unqualifiedReason: reason)
+        }
+    }
+
     func startMoveOn(after seconds: Int) {
         guard status == .ready else { return }
         autoNextTask?.cancel()
