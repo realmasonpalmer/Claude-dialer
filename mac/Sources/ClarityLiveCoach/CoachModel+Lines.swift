@@ -380,8 +380,10 @@ extension CoachModel {
         // speaking. Queue it, flag the old one as outdated, and show it the moment they stop.
         // A new prospect turn since the line appeared = the conversation moved on.
         // Only a real reply moves the conversation on (3+ words or a question), not "uh-huh" or "yeah".
+        // Any answer to a question you asked counts too, even "yes" or "nope", so you never have to press Next.
+        let youAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
         if kind == .reply, let last = turns.last, last.speaker == .prospect,
-           last.text.split(separator: " ").count >= 3 || last.text.contains("?") { lineSuperseded = true }
+           youAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?") { lineSuperseded = true }
         if kind == .opener || kind == .voicemail || shownID == 0 || (!holdLine && CoachMachine.canReplace(signals())) {
             show(s, id: id, kind: kind)
         } else {
