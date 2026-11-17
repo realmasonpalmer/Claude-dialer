@@ -61,7 +61,8 @@ public enum CoachMachine {
     public static func canReplace(_ s: CoachSignals) -> Bool {
         guard s.hasLine else { return true }
         if s.repSpeaking { return false }
-        if !s.repStarted { return s.secondsSinceShown >= readingTime(words: s.lineWords) }
+        // Not started: only something new from the prospect replaces it, never the clock alone.
+        if !s.repStarted { return s.queuedIsForNewTopic && s.secondsSinceShown >= 2 }
         return s.delivered || s.queuedIsForNewTopic
     }
 

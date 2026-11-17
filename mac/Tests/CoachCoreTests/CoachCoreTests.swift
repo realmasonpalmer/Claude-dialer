@@ -10,10 +10,10 @@ final class CoachCoreTests: XCTestCase {
     }
 
     // Silent reading: a 20-word line is protected for ~5 s even with nobody speaking.
-    func testSilentReadingProtectedByLength() {
-        XCTAssertFalse(CoachMachine.canReplace(sig(shown: 3, words: 20)))
-        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 5.1, words: 20)))
-        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 1.3, words: 4)))
+    // An unstarted line never times out: only something new from the prospect replaces it.
+    func testUnstartedLineNeverTimesOut() {
+        XCTAssertFalse(CoachMachine.canReplace(sig(shown: 60, words: 20)))
+        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 3, newTopic: true, words: 20)))
     }
 
     // Started but not delivered, and the prospect hasn't moved on: keep it.
@@ -41,8 +41,8 @@ final class CoachCoreTests: XCTestCase {
     }
 
     func testProtectsFirstMomentOfReading() {
-        XCTAssertFalse(CoachMachine.canReplace(sig(shown: 0.4)))
-        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 2)))
+        XCTAssertFalse(CoachMachine.canReplace(sig(shown: 0.4, newTopic: true)))
+        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 2, newTopic: true)))
     }
 
     func testInterruptionFlagsOutdatedWithoutReplacingMidSentence() {
