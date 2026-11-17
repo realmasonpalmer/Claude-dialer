@@ -89,12 +89,12 @@ extension CoachModel {
                 quietTicks = onCall ? 0 : quietTicks + 1
                 if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
             }
-            // Rang 30 seconds and nobody spoke (no person, no recording): hang up for the rep, so the
+            // Rang 20 seconds and nobody spoke (no person, no recording): hang up for the rep, so the
             // redial or the next person starts by itself.
             if autoDial, AircallPhone.isOn, !startedByHand, !autoHungUpThisCall, !autoHangingUp,
                !phoneTreeActive, !phoneTreeThisCall, !sawVoicemail, !screenerActive, !voicemailDropStarted,
                !turns.contains(where: { $0.speaker == .prospect }),
-               Date().timeIntervalSince(callStartedAt) > 30 {
+               Date().timeIntervalSince(callStartedAt) > 20 {
                 hangUpUnanswered()
             }
             if sawVoicemail || voicemailActive || kind == .voicemail { scheduleVoicemailDrop() } // whichever part spotted it
@@ -118,10 +118,10 @@ extension CoachModel {
         }
     }
 
-    /// 30 seconds of ringing and nobody spoke: hang up, then the normal flow (redial, or the next person).
+    /// 20 seconds of ringing and nobody spoke: hang up, then the normal flow (redial, or the next person).
     func hangUpUnanswered() {
         autoHungUpThisCall = true
-        ActivityLog.add("Rang 30 s with no answer for \(calling ?? "?"): hanging up")
+        ActivityLog.add("Rang 20 s with no answer for \(calling ?? "?"): hanging up")
         Task { [weak self] in
             guard let self, self.status == .live else { return }
             let done = await AircallPhone.shared.hangUp()
@@ -298,7 +298,7 @@ extension CoachModel {
     }
 
     /// Counts down 5 seconds, then loads the next lead (and calls them, if "Next calls right away" is on).
-    func startAutoNext(seconds: Int = 3) {
+    func startAutoNext(seconds: Int = 1) {
         guard nextLeadName != nil else { return }
         autoNextTask?.cancel()
         autoNextTask = Task { [weak self] in

@@ -316,14 +316,14 @@ extension CoachModel {
         followUp = nil // the last person's follow-ups are done
         if leads.isActive {
             // Nobody left: Next reloads the list, or says the list is done for today.
-            if autoDial, nextLeadName != nil { startAutoNext(seconds: nextIsReady ? 1 : 3) } else { nextLead(dial: false) }
+            if autoDial, nextLeadName != nil { startAutoNext(seconds: 1) } else { nextLead(dial: false) }
             return
         }
         guard openNextInChrome() else {
             nextLead(dial: autoDial) // loads more of the list, or says the list is done
             return
         }
-        if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: nextIsReady ? 1 : 3) }
+        if autoDial { dialFromSalesforcePage(expecting: callList.lastOpenedID, countdown: 1) }
     }
 
     /// Aircall wouldn't start the call. With auto dial on: one more try, then the next person. By hand: say so.
