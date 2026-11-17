@@ -16,6 +16,7 @@ final class BeepDetector: @unchecked Sendable {
     private var _lastFrameAt: Date?
     private var _voicedFrames = 0
     private var noiseFloor = 1e-3
+    private var tuning = VMTuning.current
 
     private let rate = 16_000.0
     private let frame = 320 // 20 ms
@@ -38,6 +39,7 @@ final class BeepDetector: @unchecked Sendable {
         lock.lock()
         buffer = []; toneFrames = 0; _lastBeepEnd = nil; _lastSoundAt = nil; _lastFrameAt = nil; _voicedFrames = 0
         noiseFloor = 1e-3
+        tuning = VMTuning.current // the latest tuned settings, each call
         lock.unlock()
     }
 
@@ -54,33 +56,20 @@ final class BeepDetector: @unchecked Sendable {
     }
 
     private func step(_ x: [Float]) {
-        var energy = 0.0
-        for v in x { energy += Double(v * v) }
         _lastFrameAt = Date()
+        let p = tuning
+        let m = SliceMeter.measure(x[...])
         // The line's own hiss, learned per call: drops to the quietest slice fast, creeps up slowly.
-        let level = energy / Double(frame)
-        if level < noiseFloor { noiseFloor = max(level, 1e-9) } else { noiseFloor *= 1.003 }
-        var isTone = false
-        var peakFreq = 0.0
-        if energy / Double(frame) > 1e-5 { // not silence
-            var best = 0.0
-            for f in freqs { // Goertzel: how much of the sound sits at this one pitch
-                let k = 2 * cos(2 * Double.pi * f / rate)
-                var s1 = 0.0, s2 = 0.0
-                for v in x { let s0 = Double(v) + k * s1 - s2; s2 = s1; s1 = s0 }
-                let p = s1 * s1 + s2 * s2 - k * s1 * s2
-                if p > best { best = p; peakFreq = f }
-            }
-            isTone = best / (energy * Double(frame) / 2) > 0.45 // most of the sound is one pitch (phone audio smears it a little)
-        }
-        if !isTone, level > max(noiseFloor * 8, 2e-6) { _lastSoundAt = Date(); _voicedFrames += 1 } // a voice, not hiss or the beep
-        if isTone, toneFrames == 0 || abs(peakFreq - toneFreq) <= 75 {
-            if toneFrames == 0 { toneFreq = peakFreq }
+        if m.level < noiseFloor { noiseFloor = max(m.level, 1e-9) } else { noiseFloor *= 1.003 }
+        let isTone = m.ratio > p.toneRatio
+        if !isTone, m.level > max(noiseFloor * p.voiceFactor, 2e-6) { _lastSoundAt = Date(); _voicedFrames += 1 } // a voice, not hiss or the beep
+        if isTone, toneFrames == 0 || abs(m.freq - toneFreq) <= 75 {
+            if toneFrames == 0 { toneFreq = m.freq }
             toneFrames += 1
         } else {
-            if (6...75).contains(toneFrames) { _lastBeepEnd = Date(); _lastBeepFreq = toneFreq } // 0.12 to 1.5 s: a beep
+            if (p.minToneFrames...75).contains(toneFrames) { _lastBeepEnd = Date(); _lastBeepFreq = toneFreq }
             toneFrames = isTone ? 1 : 0
-            toneFreq = peakFreq
+            toneFreq = m.freq
         }
     }
 }

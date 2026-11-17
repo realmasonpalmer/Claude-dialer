@@ -487,6 +487,11 @@ struct CoachView: View {
                 Spacer(minLength: 0)
             }
             .padding(.leading, 13)
+            if coach.status == .live, coach.voicemailDropStarted {
+                Button("Drop now") { coach.dropNow() }
+                    .buttonStyle(.bordered).controlSize(.small).padding(.leading, 13)
+                    .help("Drop your recorded voicemail right now (the beep already played)")
+            }
             if coach.waitingForLinkedIn {
                 HStack(spacing: 8) {
                     Text(coach.linkedInStatus ?? "Send the LinkedIn note, then the next call starts.").font(.caption2.weight(.semibold))

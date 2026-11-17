@@ -73,6 +73,28 @@ extension CoachModel {
         }
     }
 
+    /// The rep clicked Drop now on the voicemail card.
+    func dropNow() {
+        guard voicemailDropStarted, status == .live else { return }
+        dropNowRequested = true
+        ActivityLog.add("Voicemail drop: Drop now clicked")
+    }
+
+    /// Saves this greeting; every 20th one, the app re-tunes the drop timing from all saved greetings.
+    func saveVoicemailSample(droppedAt: Double?, how: String, transcript: String) {
+        let total = VoicemailSamples.shared.finish(droppedAt: droppedAt, how: how, transcript: transcript)
+        guard total > 0, total % 20 == 0 else { return }
+        Task { [weak self] in
+            guard let r = await VoicemailTuner.run() else { return }
+            let line = String(format: "Voicemail timing check (%d greetings): too early %d → %d, average wait after the beep %.1f s → %.1f s. %@",
+                              r.samples, r.earlyBefore, r.earlyAfter, r.waitBefore, r.waitAfter,
+                              r.applied ? "New settings: \(r.tuning.summary)" : "Current settings are already best.")
+            ActivityLog.add(line)
+            _ = await BugReporter.digest(":telephone_receiver: " + line)
+            if r.applied { self?.showToast("Voicemail drop timing improved from your last 20 voicemails.") }
+        }
+    }
+
     /// Instant voicemail card: the script written before the call, or "mailbox full, move on".
     func showVoicemail(mailboxFull: Bool) {
         if !sawVoicemail { UserDefaults.standard.set(UserDefaults.standard.integer(forKey: PrefKey.voicemailsSeen) + 1, forKey: PrefKey.voicemailsSeen) }
@@ -563,14 +585,17 @@ extension CoachModel {
             // 3. No audio reaching the app: the old transcript timing, a little longer.
             // Never before 3 s (a pause mid-greeting), never after 30 s (it would be recording silence).
             let beep = BeepDetector.shared
+            let tune = VMTuning.current
+            VoicemailSamples.shared.start() // the greeting, saved to tune the timing
             var how = "no beep in 35 s"
             while let self, self.status == .live {
+                if self.dropNowRequested { how = "you clicked Drop now"; break }
                 let now = Date()
                 let since = now.timeIntervalSince(detectedAt)
                 // The beep: only after real greeting (3+ s), and only once the line stayed quiet after it
                 // (a tone at the start of a greeting, followed by more talking, doesn't count).
                 if let end = beep.lastBeepEnd, beep.voicedSeconds >= 3,
-                   now.timeIntervalSince(end) >= 0.5, (beep.lastSoundAt ?? .distantPast) <= end.addingTimeInterval(0.2) {
+                   now.timeIntervalSince(end) >= tune.afterBeep, (beep.lastSoundAt ?? .distantPast) <= end.addingTimeInterval(0.2) {
                     how = String(format: "after the beep (%.0f Hz)", beep.lastBeepFreq)
                     break
                 }
@@ -587,7 +612,7 @@ extension CoachModel {
                 }
                 if beep.hearing || beep.voicedSeconds > 0 {
                     let quiet = now.timeIntervalSince(beep.lastSoundAt ?? detectedAt)
-                    if since >= 5, beep.voicedSeconds >= 3, wordsQuiet >= 2.5, quiet >= (ended ? 3.0 : 4.5) {
+                    if since >= 5, beep.voicedSeconds >= 3, wordsQuiet >= 2.5, quiet >= (ended ? tune.quietWithEnding : tune.quietNoEnding) {
                         how = String(format: "after the greeting's sound stopped for %.1f s (no beep heard, %@)", quiet, ended ? "ending words heard" : "no ending words")
                         break
                     }
@@ -601,12 +626,20 @@ extension CoachModel {
                 if since > 35 { break }
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            guard let self, self.status == .live else { return }
+            guard let self else { return }
+            self.dropNowRequested = false
+            let transcript = (self.turns.last { $0.speaker == .prospect }?.text) ?? ""
+            guard self.status == .live else {
+                self.saveVoicemailSample(droppedAt: nil, how: "call ended first", transcript: transcript)
+                return
+            }
             // Last check: still on the line.
             if await Aircall.lineIsOnCall() == false {
                 ActivityLog.add("Voicemail drop: the call ended before the drop")
+                self.saveVoicemailSample(droppedAt: nil, how: "call ended first", transcript: transcript)
                 return
             }
+            let droppedAt = VoicemailSamples.shared.now
             ActivityLog.add(String(format: "Voicemail drop: heard %.1f s of greeting audio", BeepDetector.shared.voicedSeconds))
             ActivityLog.add("Voicemail drop: dropping \(how)")
             guard self.status == .live else { return }
@@ -617,6 +650,11 @@ extension CoachModel {
                 return
             }
             ActivityLog.add("Voicemail drop: clicked (\(result.info))")
+            let finalHow = how
+            Task { [weak self] in // 3 more seconds of the line, then save the sample
+                try? await Task.sleep(for: .seconds(3))
+                self?.saveVoicemailSample(droppedAt: droppedAt, how: finalHow, transcript: transcript)
+            }
             DialHistory.logVoicemail(key, body: "(recorded voicemail dropped)")
             self.showToast("Voicemail dropped")
             // The message plays (about 20 seconds) and the call ends. If it doesn't, hang up.
