@@ -223,6 +223,8 @@ extension CoachModel {
             repWordsInCall += count
         }
         if speaker == .prospect, firstProspectAt == nil { firstProspectAt = Date() }
+        ActivityLog.add("Heard \(speaker == .rep ? "Rep" : "Them"): \(text)")
+        if speaker == .prospect { lastHeardThemAt = Date() }
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
         } else {

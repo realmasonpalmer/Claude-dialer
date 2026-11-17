@@ -7,7 +7,7 @@ enum ActivityLog {
     private static let queue = DispatchQueue(label: "clarity.activity-log", qos: .utility)
     private static let stampFormat: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return f
     }()
 

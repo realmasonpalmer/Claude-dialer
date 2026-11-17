@@ -196,6 +196,8 @@ final class CoachModel: ObservableObject {
     var dropWhyLogged = false
     var dropNowRequested = false
     var phoneButtonCheck: Task<Void, Never>?
+    /// When the prospect's last words arrived (to time how fast the coach answered).
+    var lastHeardThemAt: Date?
     var phoneSawHangUp = false
     var phoneButtonGone = 0
     /// The LinkedIn note is due for this person: the next call waits until it's sent or skipped.

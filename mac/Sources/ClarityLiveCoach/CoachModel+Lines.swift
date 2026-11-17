@@ -240,6 +240,7 @@ extension CoachModel {
         seq += 1
         let id = seq
         let askedAt = Date()
+        if kind == .reply { ActivityLog.add("Coach: asking Claude\(early == nil ? "" : " early (they may still be talking)")") }
         specBasis = early.map(normalized)
         specHeld = nil
         confirmedAt = nil
@@ -349,6 +350,10 @@ extension CoachModel {
     }
 
     func show(_ s: Suggestion, id: Int, kind: Kind) {
+        if status == .live, !s.say.isEmpty {
+            let ms = lastHeardThemAt.map { Int(Date().timeIntervalSince($0) * 1000) }
+            ActivityLog.add("Coach line shown (\(kind)\(ms.map { ", \($0) ms after their last words" } ?? "")): \(s.say)")
+        }
         var s = s
         s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
         if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
