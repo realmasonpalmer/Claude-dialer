@@ -8,7 +8,8 @@ import Foundation
 extension CoachModel {
     /// Brings their LinkedIn (from Salesforce) up in Chrome, no clicks. Closes when the next person opens.
     private func showLinkedIn(_ f: FollowUp, key: String) {
-        guard LinkedInBot.lastTab?.key != key else { return }
+        guard LinkedInBot.lastTab?.key != key, !linkedInShowing.contains(key) else { return }
+        linkedInShowing = [key] // once per person on screen, however often their card updates
         Task { [weak self] in
             var url = f.linkedinURL
             if url == nil, Salesforce.isConnected { url = await Salesforce.linkedIn(of: key) }

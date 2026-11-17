@@ -74,7 +74,9 @@ enum LinkedInBot {
 
     /// Just shows their profile in front (no clicks), for people the bot already handled.
     static func showProfile(_ url: URL, key: String) async {
-        guard lastTab?.key != key, !running else { return }
+        guard lastTab?.key != key, openingFor != key, !running else { return }
+        openingFor = key
+        defer { if openingFor == key { openingFor = nil } }
         guard let opened = await openTab(url), opened != "ERR" else { return }
         lastTab = (String(opened.split(separator: "|")[0]), key)
     }
@@ -242,11 +244,17 @@ enum LinkedInBot {
     /// A new tab in the front Chrome window, without taking the rep away from their tab.
     /// Every LinkedIn tab this app opened that may still be open.
     private static var ourTabs: [String] = []
+    private static var tabBusy = false
+    /// Whose profile is being opened right now (so a second request for them is ignored).
+    static var openingFor: String?
 
     /// Opens one LinkedIn tab. Closes every LinkedIn tab the app opened before, so there's only ever one.
     private static func openTab(_ url: URL) async -> String? {
         let link = url.absoluteString
         guard !link.contains("\""), !link.contains("\\") else { return nil }
+        while tabBusy { try? await Task.sleep(for: .milliseconds(100)) } // one tab job at a time
+        tabBusy = true
+        defer { tabBusy = false }
         for old in ourTabs { await closeTab(old) }
         ourTabs = []
         let r = await apple("""
