@@ -18,6 +18,7 @@ enum ActivityLog {
     }
 
     static func add(_ text: String) {
+        Task { @MainActor in CallTrace.event("log", ["text": text]) }
         if text.contains("audio") || text.contains("Mic") || text.contains("Listening") { AudioDebug.shared.note(text) }
         let stamp = stampFormat.string(from: Date())
         let line = "\(stamp)  \(mask(text))\n"

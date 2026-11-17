@@ -64,6 +64,11 @@ struct SettingsPane: View {
                 Text("Set it up first: gear, then Voicemail drop.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            section("Call diagnostics") {
+                Text("Every call is saved as a detailed timeline: what was heard, what Claude got and said, why each line showed or waited, and timing to the millisecond. Export the last call as a folder you can give to Claude to find what went wrong.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Export last call for Claude") { CallTrace.exportLast() }
+            }
             section("Audio problems") {
                 Text("Records 60 seconds of everything your Mac plays (what you hear), plus the call audio the app gets, and a report of your audio devices and their speeds. Start it, then make a call. Saved in Documents, Clarity Audio Debug. Nothing is sent anywhere.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

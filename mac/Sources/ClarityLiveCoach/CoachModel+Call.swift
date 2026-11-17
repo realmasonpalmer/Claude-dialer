@@ -45,7 +45,11 @@ extension CoachModel {
         promotePendingIfReady()
         if status == .live {
             let next = CoachMachine.state(signals())
-            if next != coachState { ActivityLog.add("Coach state: \(coachState.rawValue) -> \(next.rawValue)"); coachState = next }
+            if next != coachState {
+                ActivityLog.add("Coach state: \(coachState.rawValue) -> \(next.rawValue)")
+                CallTrace.event("state", ["from": coachState.rawValue, "to": next.rawValue, "signals": "\(signals())"])
+                coachState = next
+            }
         } else if coachState != .idle { coachState = .idle }
         if phase != loggedPhase {
             ActivityLog.add("Phase: \(loggedPhase.rawValue) -> \(phase.rawValue)")
@@ -160,6 +164,9 @@ extension CoachModel {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        CallTrace.endCall(["lead": calling ?? "?", "seconds": Int(Date().timeIntervalSince(callStartedAt)),
+                           "voicemail": sawVoicemail, "they_spoke": turns.contains { $0.speaker == .prospect },
+                           "turns": turns.count, "last_line": suggestion.say])
         let hadVoicemail = sawVoicemail // for the log
         if hadVoicemail, !(currentAttempts < maxAttempts && autoDial), !autoHungUpThisCall, repWordsInCall >= 8,
            let key = currentAttemptKey,
@@ -569,6 +576,7 @@ extension CoachModel {
         callMessage = nil
         pendingDialSince = nil // this dial is now the live call
         BeepDetector.shared.reset()
+        CallTrace.beginCall(lead: calling, attempt: currentAttempts)
         phoneSawHangUp = false
         holdLine = false
         pending = nil

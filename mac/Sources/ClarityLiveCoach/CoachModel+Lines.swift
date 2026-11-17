@@ -78,6 +78,7 @@ extension CoachModel {
 
     /// The rep asked for a different line right now. Skips the wait and the hold.
     func newLine(extra: String = "The rep asked for a different line than the last one.") {
+        CallTrace.event("manual", ["action": "Different line", "was": suggestion.say])
         guard status == .live, !voicemailActive else { return }
         let latest = uncoached.trimmed.isEmpty ? (turns.last { $0.speaker == .prospect }?.text ?? "") : uncoached.trimmed
         uncoached = ""
@@ -205,7 +206,11 @@ extension CoachModel {
             var text = ""
             try? await c.stream(system: "Summarize a live sales call for a coach in 3 to 6 short bullets: who they are, their situation, any numbers, pains, objections raised, what was agreed. Only what was said. No preamble.",
                                 user: transcript) { text = $0 }
-            if !text.isEmpty { CoachPrompt.liveSummary = text }
+            if !text.isEmpty {
+                CoachPrompt.liveSummary = text
+                CallTrace.memVersion += 1
+                CallTrace.event("memory.update", ["summary": text, "covers_turns": theirs, "evidence_chars": transcript.count])
+            }
         }
     }
 
@@ -219,6 +224,7 @@ extension CoachModel {
         RemovedList.add(key)
         outcomeSaved.insert(String(key.prefix(15))) // nothing more to log
         ActivityLog.add("Opt out from \(calling ?? key): \"\(said)\". Off every list, writing DoNotCall")
+        CallTrace.event("intent", ["intent": "opt_out", "said": said, "why": "opt-out phrase in their words", "action": "goodbye line, DoNotCall, hang up"])
         Task { [weak self] in
             do {
                 try await Salesforce.setDoNotCall(key)
@@ -252,6 +258,11 @@ extension CoachModel {
         let id = seq
         let askedAt = Date()
         if kind == .reply { ActivityLog.add("Coach #\(id): asking Claude\(early == nil ? "" : " early, from their words so far")") }
+        CallTrace.event("claude.request", [
+            "kind": "\(kind)", "early": early != nil, "early_basis": early ?? "",
+            "system_chars": self.system.count, "system_hash": String(self.system.hashValue, radix: 16),
+            "user_message": user, "summary_version": CallTrace.memVersion,
+        ], req: id)
         specBasis = early.map(normalized)
         specHeld = nil
         confirmedAt = nil
@@ -260,6 +271,9 @@ extension CoachModel {
             : (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)
         let system = self.system
         thinking = true
+        CallTrace.event("claude.settings", ["model": client.model, "max_tokens": client.maxTokens, "effort": client.effort,
+                                            "thinking": client.thinking?["type"] ?? "default", "stream": true,
+                                            "idle_timeout_s": client.idleTimeout, "total_timeout_s": client.totalTimeout], req: id)
 
         coachTask = Task { [weak self] in
             do {
@@ -271,6 +285,8 @@ extension CoachModel {
                     if !firstToken, kind == .reply {
                         firstToken = true
                         ActivityLog.add("Coach #\(id): first words from Claude after \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+                        let ms = Int(Date().timeIntervalSince(started) * 1000)
+                        Task { @MainActor in CallTrace.event("claude.first_token", ["ms": ms], req: id) }
                     }
                     finalText = text
                     let s = Suggestion.parse(text)
@@ -284,6 +300,8 @@ extension CoachModel {
                     }
                 }
                 if kind == .reply { ActivityLog.add("Coach #\(id): Claude done after \(Int(Date().timeIntervalSince(started) * 1000)) ms") }
+                CallTrace.event("claude.done", ["ms": Int(Date().timeIntervalSince(started) * 1000), "output": finalText,
+                                                "fresh": self?.seq == id], req: id)
                 var last = Suggestion.parse(finalText)
                 last.sayComplete = true
                 if kind == .reply, !last.skip, !last.say.isEmpty, !Self.lineProblems(last).isEmpty {
@@ -291,8 +309,11 @@ extension CoachModel {
                 }
                 self?.offer(last, id: id, kind: kind, askedAt: askedAt)
             } catch is CancellationError {
+                CallTrace.event("claude.cancelled", ["why": "a newer request replaced it"], req: id)
             } catch let error as URLError where error.code == .cancelled {
+                CallTrace.event("claude.cancelled", ["why": "a newer request replaced it"], req: id)
             } catch {
+                CallTrace.event("claude.error", ["error": error.localizedDescription], req: id)
                 // Keep the last good line on screen; just flag it.
                 self?.problem = "Coach hiccup: \(error.localizedDescription)"
                 ActivityLog.problem("Claude error: \(error.localizedDescription)")
@@ -310,6 +331,7 @@ extension CoachModel {
     func fixLine(_ bad: Suggestion, system: String, user: String, key: String) async -> Suggestion {
         var problems = Self.lineProblems(bad)
         ActivityLog.add("Line check: failed (\(problems.joined(separator: "; "))): \(bad.say)")
+        CallTrace.event("check.fail", ["line": bad.say, "problems": problems])
         for model in ["claude-haiku-5-5", "claude-sonnet-5-5"] {
             var text = ""
             let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
@@ -318,6 +340,7 @@ extension CoachModel {
             s.sayComplete = true
             if s.skip || (!s.say.isEmpty && Self.lineProblems(s).isEmpty) {
                 ActivityLog.add("Line check: fixed by \(model.contains("haiku") ? "Haiku" : "Sonnet")")
+                CallTrace.event("check.fixed", ["model": model, "line": s.say])
                 return s
             }
             if !s.say.isEmpty { problems = Self.lineProblems(s) }
@@ -325,6 +348,7 @@ extension CoachModel {
         var s = bad
         s.say = LiveCoach.sanitize(bad.say)
         ActivityLog.add("Line check: trimmed to fit: \(s.say)")
+        CallTrace.event("check.trimmed", ["line": s.say])
         return s
     }
 
@@ -359,14 +383,25 @@ extension CoachModel {
         if kind == .opener || kind == .voicemail || shownID == 0 || (!holdLine && CoachMachine.canReplace(signals())) {
             show(s, id: id, kind: kind)
         } else {
-            if pending?.id != id { ActivityLog.add("Coach #\(id): line queued (\(holdLine ? "held by you" : repSpeaking ? "you're speaking" : "you may be reading"))") }
+            if pending?.id != id {
+                let why = holdLine ? "held by you" : repSpeaking ? "you're speaking" : "you may be reading"
+                ActivityLog.add("Coach #\(id): line queued (\(why))")
+                CallTrace.event("suggestion.queued", ["line": s.say, "why": why, "signals": "\(signals())"], sug: id)
+            }
             pending = (id, s)
         }
     }
 
     /// The approved script answer for what they said, shown with no AI wait. True if one matched.
     func instantAnswer(_ said: String) -> Bool {
-        guard status == .live, let e = scriptAnswers.match(said) else { return false }
+        guard status == .live else { return false }
+        let answers = scriptAnswers
+        guard let e = answers.match(said) else {
+            CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said])
+            return false
+        }
+        CallTrace.event("script.match", ["searched": answers.entries.count, "matched": true, "row": e.id,
+                                         "phrases": e.phrases, "said": said, "answer": e.say, "why": "a Sounds-like phrase appears in their words"])
         if suggestion.say == e.say || pending?.suggestion.say == e.say { return true } // already up
         coachTask?.cancel() // any slower AI draft for this is stale now
         thinking = false
@@ -384,6 +419,7 @@ extension CoachModel {
         guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq),
               !holdLine, CoachMachine.canReplace(signals()) else { return }
         ActivityLog.add("Coach #\(p.id): queued line shown")
+        CallTrace.event("suggestion.promoted", ["why": "safe to replace now (rep stopped, line read or delivered)"], sug: p.id)
         show(p.suggestion, id: p.id, kind: .reply)
     }
 
@@ -391,6 +427,7 @@ extension CoachModel {
     func promoteNow() {
         guard let p = pending else { return }
         ActivityLog.add("Coach: Next clicked, queued line shown")
+        CallTrace.event("manual", ["action": "Next"], sug: p.id)
         show(p.suggestion, id: p.id, kind: .reply)
     }
 
@@ -402,7 +439,14 @@ extension CoachModel {
         var s = s
         s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
         if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
-        if let old = pending, old.id != id { ActivityLog.add("Coach #\(old.id): queued line discarded (newer one shown)") }
+        if let old = pending, old.id != id {
+            ActivityLog.add("Coach #\(old.id): queued line discarded (newer one shown)")
+            CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer line was shown"], sug: old.id)
+        }
+        if status == .live {
+            CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "kind": "\(kind)",
+                                                 "replaced": suggestion.say, "replaced_delivered": lineDelivered], sug: id)
+        }
         pending = nil
         lineSuperseded = false
         repSaidSinceShown = ""

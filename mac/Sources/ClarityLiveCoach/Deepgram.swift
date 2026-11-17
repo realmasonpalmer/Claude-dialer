@@ -4,7 +4,7 @@ import Foundation
 /// Separate streams mean we always know who said what.
 final class DeepgramStream: @unchecked Sendable {
     enum Event {
-        case transcript(text: String, isFinal: Bool, speechFinal: Bool)
+        case transcript(text: String, isFinal: Bool, speechFinal: Bool, start: Double, duration: Double, confidence: Double)
         case utteranceEnd
         case failed(String)
     }
@@ -94,7 +94,10 @@ final class DeepgramStream: @unchecked Sendable {
             onEvent(.transcript(
                 text: transcript,
                 isFinal: (json["is_final"] as? Bool) ?? false,
-                speechFinal: (json["speech_final"] as? Bool) ?? false
+                speechFinal: (json["speech_final"] as? Bool) ?? false,
+                start: (json["start"] as? Double) ?? 0,
+                duration: (json["duration"] as? Double) ?? 0,
+                confidence: (alternative?["confidence"] as? Double) ?? 0
             ))
         case "UtteranceEnd":
             onEvent(.utteranceEnd)

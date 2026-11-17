@@ -323,7 +323,9 @@ final class CoachModel: ObservableObject {
     var lineDelivered = false
     var answeredAfterDelivery = false
     /// Hold: the rep pinned the current line; nothing replaces it until they release.
-    @Published var holdLine = false
+    @Published var holdLine = false {
+        didSet { if holdLine != oldValue { CallTrace.event("manual", ["action": holdLine ? "Hold" : "Release", "line": suggestion.say]) } }
+    }
     /// Approved script answers, re-read when the script changes.
     var scriptAnswersCache: (text: String, answers: ScriptAnswers)?
     var scriptAnswers: ScriptAnswers {

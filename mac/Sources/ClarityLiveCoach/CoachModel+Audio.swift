@@ -145,7 +145,13 @@ extension CoachModel {
     func handle(_ event: DeepgramStream.Event, from speaker: Speaker) {
         guard status == .live else { return }
         switch event {
-        case .transcript(let text, let isFinal, let speechFinal):
+        case .transcript(let text, let isFinal, let speechFinal, let audioStart, let audioDuration, let confidence):
+            if !text.isEmpty {
+                CallTrace.event(isFinal ? "transcript.final" : "transcript.partial", [
+                    "speaker": speaker == .rep ? "rep" : "prospect", "text": text, "speech_final": speechFinal,
+                    "audio_start": audioStart, "audio_end": audioStart + audioDuration, "confidence": confidence])
+            }
+            if speechFinal { CallTrace.event("turn.end", ["speaker": speaker == .rep ? "rep" : "prospect", "by": "speech_final"]) }
             if speaker == .prospect {
                 // Check the recent words together, so a phrase split across chunks still matches.
                 let recent = String(((turns.last { $0.speaker == .prospect }?.text ?? "") + " " + text).suffix(400))
@@ -188,7 +194,11 @@ extension CoachModel {
             }
             if !text.isEmpty {
                 let wasSpeaking = speaker == .rep ? repSpeaking : prospectSpeaking
-                if !wasSpeaking { ActivityLog.add("Speech start (\(speaker == .rep ? "Rep" : "Them"), transcript arrival)") }
+                if !wasSpeaking {
+                    ActivityLog.add("Speech start (\(speaker == .rep ? "Rep" : "Them"), transcript arrival)")
+                    CallTrace.event("speech.start", ["speaker": speaker == .rep ? "rep" : "prospect",
+                                                     "overlap": speaker == .rep ? prospectSpeaking : repSpeaking])
+                }
                 if speaker == .rep { lastRepSpeechAt = Date() } else { lastProspectSpeechAt = Date() }
             }
             if isFinal {
@@ -201,6 +211,7 @@ extension CoachModel {
                 if speaker == .prospect { scheduleEarlyStart() }
             }
         case .utteranceEnd:
+            CallTrace.event("turn.end", ["speaker": speaker == .rep ? "rep" : "prospect", "by": "utterance_end"])
             if speaker == .prospect { prospectFinished() }
         case .failed(let message):
             // Keep the call and the last tip; just reconnect this side.
@@ -234,14 +245,19 @@ extension CoachModel {
             repSaidSinceShown += " " + text
             if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown) {
                 lineDelivered = true
-                ActivityLog.add(String(format: "Coach: line delivered (meaning %.0f%% said)", Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown) * 100))
+                let conf = Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)
+                ActivityLog.add(String(format: "Coach: line delivered (meaning %.0f%% said)", conf * 100))
+                CallTrace.event("delivery", ["line": suggestion.say, "said": repSaidSinceShown, "confidence": conf,
+                                             "how": "meaningful words overlap or the line's question asked"], sug: shownID)
             }
         }
         if speaker == .prospect, lineDelivered, !answeredAfterDelivery {
             answeredAfterDelivery = true
             ActivityLog.add("Coach: they answered the delivered line (resolved)")
+            CallTrace.event("resolution", ["answer": text, "how": "prospect spoke after the line was delivered"], sug: shownID)
         }
         if speaker == .prospect { lastHeardThemAt = Date() }
+        if turns.last?.speaker != speaker { CallTrace.turn += 1 }
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
         } else {
