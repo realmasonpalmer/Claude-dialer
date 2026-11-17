@@ -85,7 +85,9 @@ extension CoachModel {
             }
             // Only count quiet after the call's audio has shown up once, so a call that's
             // still ringing (we start listening right after dialing) isn't ended early.
-            if !startedByHand, heardCallAudio || Date().timeIntervalSince(callStartedAt) > 45 {
+            // In-app phone: its mic is held open all session, so "the call app went quiet" means nothing.
+            // The phone's hang-up button and Aircall itself say when the call ends.
+            if !startedByHand, !AircallPhone.isOn, heardCallAudio || Date().timeIntervalSince(callStartedAt) > 45 {
                 quietTicks = onCall ? 0 : quietTicks + 1
                 if quietTicks >= 6 { endCall(); return } // Chrome let go of the call for 3 seconds
             }
