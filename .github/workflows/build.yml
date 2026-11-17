@@ -11,6 +11,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      # Keep Swift's build folder between runs, so only changed files are recompiled.
+      - uses: actions/cache@v4
+        with:
+          path: mac/.build
+          key: swift-build-${{ runner.os }}-${{ hashFiles('mac/Package.swift') }}-${{ github.sha }}
+          restore-keys: |
+            swift-build-${{ runner.os }}-${{ hashFiles('mac/Package.swift') }}-
       - name: Build
         working-directory: mac
         run: |
