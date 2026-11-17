@@ -133,6 +133,7 @@ final class CoachModel: ObservableObject {
     let leads = LeadQueue()
     var appliedLeadID: String?
     var foreignSkippedID: String?
+    var mobileSkippedID: String?
     var pendingDialSince: Date?
     @Published var dialing = false
     @Published var dialError: String?

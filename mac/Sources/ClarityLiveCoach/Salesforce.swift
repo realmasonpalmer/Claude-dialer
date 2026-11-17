@@ -544,6 +544,7 @@ enum KnownNumbers {
 
     static func set(_ id: String, mobile: String?, phone: String?) {
         all[String(id.prefix(15))] = (mobile, phone)
+        MobileOnly.record(id, mobile: mobile)
         // Any number outside the US and Canada: off the list for good, the moment we see it.
         let foreign = [mobile, phone].compactMap { $0?.trimmingCharacters(in: .whitespaces) }
             .contains { !$0.isEmpty && !Aircall.isNorthAmerican($0) }

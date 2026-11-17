@@ -9,6 +9,16 @@ extension CoachModel {
     /// Whoever is up has a phone number outside the US and Canada: skip them, whatever loaded them.
     /// Checked every half second, so no path (first lead, Back, reload, auto next) can miss it.
     private func skipForeignLead() {
+        MobileOnly.campaignID = campaign.id
+        if leads.isActive, let d = leads.details { MobileOnly.record(d.id, mobile: d.mobile) }
+        // Mobile numbers only: no Mobile on file, skip them for this call list.
+        if MobileOnly.on, status == .ready, !dialing, let key = recordKey(), MobileOnly.excluded(key), mobileSkippedID != key {
+            mobileSkippedID = key
+            ActivityLog.add("\(calling ?? key) has no Mobile (Mobile numbers only is on): skipping")
+            problem = "No Mobile number. Skipped (Mobile numbers only)."
+            nextLead(dial: Prefs.autoDial)
+            return
+        }
         // The Chrome list: someone off the list (non-US number, removed) is on screen: move on.
         if !leads.isActive, status == .ready, !dialing, let key = recordKey(), RemovedList.contains(key),
            foreignSkippedID != key {

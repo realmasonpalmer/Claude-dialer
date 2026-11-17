@@ -18,6 +18,7 @@ struct CampaignEditorView: View {
     @State private var writeTask: Task<Void, Never>?
     @State private var filling = false
     @State private var showWho = false
+    @State private var mobileOnlyTick = false
     @State private var writeStart = Date()
     @State private var thought = ""
     /// Extra direction for Claude, kept between uses.
@@ -96,6 +97,13 @@ struct CampaignEditorView: View {
                 Text("When you pick this call list, these people open in Chrome. The app calls everyone who is due today.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Toggle("Mobile numbers only", isOn: Binding(
+                get: { MobileOnly.isOn(for: draft.id) },
+                set: { UserDefaults.standard.set($0, forKey: MobileOnly.key(draft.id)); mobileOnlyTick.toggle() }
+            ))
+            .id(mobileOnlyTick)
+            Text("On: skip anyone with no Mobile in Salesforce (office lines only). Better pick up rates, and every text can go out.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .task { if listViews.isEmpty { await loadLists() } }
     }
