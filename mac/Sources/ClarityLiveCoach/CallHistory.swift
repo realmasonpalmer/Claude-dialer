@@ -116,7 +116,7 @@ enum CallHistory {
                     if mobile.isEmpty && phone.isEmpty { noNumberNow.insert(key(id)) }
                     // Whole list up front: no Mobile (Mobile numbers only) and non-US numbers are known
                     // before anyone opens, so they're filtered out instead of flashing on screen.
-                    KnownNumbers.set(id, mobile: mobile.isEmpty ? nil : mobile, phone: phone.isEmpty ? nil : phone)
+                    await KnownNumbers.set(id, mobile: mobile.isEmpty ? nil : mobile, phone: phone.isEmpty ? nil : phone)
                 }
                 checked += chunk.map { key($0) }
             } catch {
