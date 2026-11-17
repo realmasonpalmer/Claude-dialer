@@ -20,6 +20,17 @@ struct ClarityLiveCoachApp: App {
                 .environmentObject(proof)
                 .environmentObject(coach)
                 .environmentObject(campaigns)
+                .onReceive(NotificationCenter.default.publisher(for: .blockersUpdated)) { note in
+                    guard let id = note.userInfo?["id"] as? UUID, let section = note.userInfo?["section"] as? String,
+                          var c = campaigns.campaigns.first(where: { $0.id == id }) else { return }
+                    // Replace the old BLOCKERS section (it's always last), or add it.
+                    if let r = c.pastedScript.range(of: "BLOCKERS (learned from your calls") {
+                        c.pastedScript = String(c.pastedScript[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    c.pastedScript += "\n\n" + section
+                    campaigns.save(c)
+                    ActivityLog.add("Script: BLOCKERS section updated for \(c.name)")
+                }
                 .onAppear { keepWindowsOnTop() } // float above Salesforce
         }
         // Drag the edges or click the green button to make it bigger. Never smaller than the coach needs.

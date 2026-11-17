@@ -128,6 +128,17 @@ final class CallLab: ObservableObject {
                     records[i].summary = summary
                     save()
                 }
+                // Blockers from this call: the live coach uses them on the very next call.
+                let blockers = Self.lastBlockers.compactMap { b -> BlockerBook.Entry? in
+                    guard let o = b["objection"] as? String, !o.isEmpty else { return nil }
+                    return .init(objection: o, response: (b["response"] as? String) ?? "", worked: (b["worked"] as? Bool) ?? false, date: Date())
+                }
+                BlockerBook.add(blockers, campaign: campaign.id)
+                // Every 20 calls: refresh the script's BLOCKERS section.
+                let n = records(for: campaign).count
+                if n % 20 == 0, let section = BlockerBook.section(campaign.id) {
+                    NotificationCenter.default.post(name: .blockersUpdated, object: nil, userInfo: ["id": campaign.id, "section": section])
+                }
                 CallLessons.afterSummary(records)
             }
             await autoAnalyze(campaign)
@@ -274,10 +285,15 @@ final class CallLab: ObservableObject {
         return try await client.json(system: system, user: user)
     }
 
+    /// The last summary's blockers (read right after summarize, on the main actor).
+    static var lastBlockers: [[String: Any]] = []
+
     static func summarize(transcript: String) async throws -> CallSummary {
         let system = """
         You summarize a finished cold call for a coaching database. Never include names of people or companies.
-        Return only JSON: {"objections": [short standard labels], "worked": "", "failed": "", "outcome": ""}.
+        Return only JSON: {"objections": [short standard labels], "worked": "", "failed": "", "outcome": "",
+        "blockers": [{"objection": "standard label", "response": "what the rep said back, short", "worked": true}]}.
+        blockers: each objection with the rep's answer; worked = the prospect kept talking or agreed after it.
         objections: each objection raised, as a short standard label such as "Not interested", "Send me an email",
         "No budget", "Bad time", "Already have a vendor", "Already use ChatGPT", "Security concerns", "Not the right person",
         "Building in-house", "Asked about price". Reuse these labels when they fit.
@@ -286,6 +302,7 @@ final class CallLab: ObservableObject {
         outcome: a short phrase, like "Meeting booked" or "Hung up after opener".
         """
         let json = try await ask(system: system, user: "Transcript:\n\(transcript)", effort: "low")
+        lastBlockers = (json["blockers"] as? [[String: Any]]) ?? []
         return CallSummary(
             objections: (json["objections"] as? [String]) ?? [],
             worked: (json["worked"] as? String) ?? "",

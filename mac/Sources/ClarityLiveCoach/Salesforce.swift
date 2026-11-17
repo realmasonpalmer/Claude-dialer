@@ -326,6 +326,12 @@ enum Salesforce {
         _ = try await send("PATCH", "/services/data/\(apiVersion)/sobjects/\(object)/\(id)", body: body)
     }
 
+    /// Opt out: DoNotCall = true on the Lead or Contact.
+    static func setDoNotCall(_ id: String) async throws {
+        guard let object = objectFor(id: id) else { throw SFError(message: "Not a Lead or Contact") }
+        _ = try await send("PATCH", "/services/data/\(apiVersion)/sobjects/\(object)/\(id)", body: ["DoNotCall": true])
+    }
+
     /// Sets Relationship Status = "Not Quality Prospect" on Contacts (200 at a time).
     static func markNotQualityProspect(contactIDs: [String]) async throws {
         for start in stride(from: 0, to: contactIDs.count, by: 200) {

@@ -164,10 +164,16 @@ enum CoachPrompt {
         """
     }
 
+    /// A running summary of the call so far (written in the background every few turns).
+    static var liveSummary = ""
+    /// What has worked on this call list's common blockers (set at call start).
+    static var blockerHints = ""
+
     static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?) -> String {
-        // The whole call, so nothing said early is forgotten (names, numbers, pains). 300 turns is only
-        // a safety cap for a call left running by mistake.
-        let history = turns.suffix(300).map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        // Fast: the last ~60 seconds word for word, plus a short summary of everything before.
+        let recent = turns.count > 12 && !liveSummary.isEmpty ? Array(turns.suffix(10)) : Array(turns.suffix(300))
+        var history = recent.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         let booking = openTimes.map { "\($0)\n\n" } ?? ""
         return """
@@ -175,8 +181,10 @@ enum CoachPrompt {
         \(history)
 
         The prospect just said: "\(latest)"
-
-        What should the rep say next?
+        \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")
+        What should the rep say next? SAY is 1 to 2 short sentences, 25 words at most, ending in one question
+        (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through
+        better, use it and add a line OFF SCRIPT: yes.
         """
     }
 

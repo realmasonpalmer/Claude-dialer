@@ -530,6 +530,8 @@ extension CoachModel {
         callMessage = nil
         pendingDialSince = nil // this dial is now the live call
         BeepDetector.shared.reset()
+        CoachPrompt.liveSummary = ""
+        CoachPrompt.blockerHints = BlockerBook.hints(campaign.id)
         ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.

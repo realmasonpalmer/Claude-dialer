@@ -133,6 +133,7 @@ extension CoachModel {
         specTimer?.cancel()
         let said = uncoached.trimmingCharacters(in: .whitespaces)
         guard !said.isEmpty else { return }
+        if status == .live, LiveCoach.isOptOut(said) { handleOptOut(said); return }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
         if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
         // Started early on exactly these words? Then the answer is already on its way.
@@ -178,6 +179,46 @@ extension CoachModel {
             turns: turns, latest: said, calling: calling, details: recordDetails, style: callOpener,
             openTimes: bookingText()
         ))
+        updateSummaryIfDue()
+    }
+
+    /// Every 4 prospect turns, Haiku writes a short summary of the call in the background, so each live
+    /// line only needs the last minute word for word.
+    func updateSummaryIfDue() {
+        let theirs = turns.filter { $0.speaker == .prospect }.count
+        guard theirs >= 4, theirs % 4 == 0, let key = Keychain.read(.anthropic) else { return }
+        let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        Task {
+            var c = LiveCoach.client(key)
+            c.maxTokens = 250
+            var text = ""
+            try? await c.stream(system: "Summarize a live sales call for a coach in 3 to 6 short bullets: who they are, their situation, any numbers, pains, objections raised, what was agreed. Only what was said. No preamble.",
+                                user: transcript) { text = $0 }
+            if !text.isEmpty { CoachPrompt.liveSummary = text }
+        }
+    }
+
+    /// "Take me off your list": the goodbye line, DoNotCall written in Salesforce, off every list, hang up. No AI.
+    func handleOptOut(_ said: String) {
+        coachTask?.cancel()
+        thinking = false
+        seq += 1
+        show(Suggestion(say: LiveCoach.optOutLine, cue: "Opt out. Do not call is saved in Salesforce.", stage: "Exit", sayComplete: true), id: seq, kind: .reply)
+        guard let key = currentAttemptKey else { return }
+        RemovedList.add(key)
+        outcomeSaved.insert(String(key.prefix(15))) // nothing more to log
+        ActivityLog.add("Opt out from \(calling ?? key): \"\(said)\". Off every list, writing DoNotCall")
+        Task { [weak self] in
+            do {
+                try await Salesforce.setDoNotCall(key)
+                ActivityLog.add("Opt out: DoNotCall saved in Salesforce for \(self?.calling ?? key)")
+            } catch {
+                ActivityLog.problem("Opt out: couldn't save DoNotCall in Salesforce: \(error.localizedDescription)")
+            }
+            try? await Task.sleep(for: .seconds(6)) // time to say goodbye
+            guard let self, self.status == .live, AircallPhone.isOn else { return }
+            _ = await AircallPhone.shared.hangUp()
+        }
     }
 
     func prepareOpener() {
@@ -202,21 +243,33 @@ extension CoachModel {
         specBasis = early.map(normalized)
         specHeld = nil
         confirmedAt = nil
-        // Voicemails always use Haiku, so the message is ready before the beep.
-        let client = (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)
+        // Live lines: Haiku, short and fast. Voicemails also Haiku, so the message is ready before the beep.
+        let client = kind == .reply ? LiveCoach.client(key)
+            : (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)
         let system = self.system
         thinking = true
 
         coachTask = Task { [weak self] in
             do {
                 var finalText = ""
+                let gate = LineGate()
                 try await client.stream(system: system, user: user) { text in
                     finalText = text
                     let s = Suggestion.parse(text)
-                    Task { @MainActor in self?.offer(s, id: id, kind: kind, askedAt: askedAt) }
+                    Task { @MainActor in
+                        guard kind == .reply else { self?.offer(s, id: id, kind: kind, askedAt: askedAt); return }
+                        // A live line shows only once it's whole and passes the house rules.
+                        guard s.sayComplete || s.skip, !gate.checked else { if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }; return }
+                        gate.checked = true
+                        gate.passed = s.skip || Self.lineProblems(s).isEmpty
+                        if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }
+                    }
                 }
                 var last = Suggestion.parse(finalText)
                 last.sayComplete = true
+                if kind == .reply, !last.skip, !last.say.isEmpty, !Self.lineProblems(last).isEmpty {
+                    last = await self?.fixLine(last, system: system, user: user, key: key) ?? last
+                }
                 self?.offer(last, id: id, kind: kind, askedAt: askedAt)
             } catch is CancellationError {
             } catch let error as URLError where error.code == .cancelled {
@@ -227,6 +280,33 @@ extension CoachModel {
             }
             if self?.seq == id { self?.thinking = false }
         }
+    }
+
+    /// The house rules for a live line (offered meeting times are allowed).
+    static func lineProblems(_ s: Suggestion) -> [String] {
+        Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage), allowTimes: true)
+    }
+
+    /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
+    func fixLine(_ bad: Suggestion, system: String, user: String, key: String) async -> Suggestion {
+        var problems = Self.lineProblems(bad)
+        ActivityLog.add("Line check: failed (\(problems.joined(separator: "; "))): \(bad.say)")
+        for model in ["claude-haiku-5-5", "claude-sonnet-5-5"] {
+            var text = ""
+            let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
+            try? await LiveCoach.client(key, model: model).stream(system: system, user: retry) { text = $0 }
+            var s = Suggestion.parse(text)
+            s.sayComplete = true
+            if s.skip || (!s.say.isEmpty && Self.lineProblems(s).isEmpty) {
+                ActivityLog.add("Line check: fixed by \(model.contains("haiku") ? "Haiku" : "Sonnet")")
+                return s
+            }
+            if !s.say.isEmpty { problems = Self.lineProblems(s) }
+        }
+        var s = bad
+        s.say = LiveCoach.sanitize(bad.say)
+        ActivityLog.add("Line check: trimmed to fit: \(s.say)")
+        return s
     }
 
     /// Shows a suggestion, but never swaps a fresh line out from under the rep.

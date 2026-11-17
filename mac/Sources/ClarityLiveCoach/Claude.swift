@@ -13,6 +13,8 @@ struct ClaudeClient {
     var totalTimeout: TimeInterval = 90
     /// Optional thinking setting. nil = the model's default (Opus 5.5 always thinks).
     var thinking: [String: String]?
+    /// Optional sampling temperature (only sent when set).
+    var temperature: Double?
 
     struct APIError: LocalizedError {
         let message: String
@@ -39,6 +41,7 @@ struct ClaudeClient {
             "messages": [["role": "user", "content": user]],
         ]
         if let thinking { body["thinking"] = thinking }
+        if let temperature { body["temperature"] = temperature }
         if model.hasPrefix("claude-opus") || model.hasPrefix("claude-fable")
             || (model == "claude-sonnet-5-5" && thinking?["type"] != "between_tools") {
             // If a safety check declines, the API retries on a fallback model in the same call.

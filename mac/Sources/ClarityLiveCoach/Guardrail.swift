@@ -12,7 +12,7 @@ enum Guardrail {
     /// What's wrong with a line, or [] if it's fine.
     /// - long: voicemails, texts and LinkedIn notes may run past 25 words.
     /// - endsCall: the row ends the call, so it needn't end with a question.
-    static func problems(_ line: String, long: Bool = false, endsCall: Bool = false) -> [String] {
+    static func problems(_ line: String, long: Bool = false, endsCall: Bool = false, allowTimes: Bool = false) -> [String] {
         let say = line.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
         guard !say.isEmpty, !say.lowercased().hasPrefix("show nothing") else { return [] }
         var out: [String] = []
@@ -33,7 +33,7 @@ enum Guardrail {
         }
         if say.contains("\u{2014}") { out.append("em dash") }
         let timeLike = lower.range(of: #"\b\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)"#, options: .regularExpression) != nil
-        if timeLike || days.contains(where: { noSlots.lowercased().contains($0) }) { out.append("a made-up day or time (use [Slot A])") }
+        if !allowTimes, timeLike || days.contains(where: { noSlots.lowercased().contains($0) }) { out.append("a made-up day or time (use [Slot A])") }
         if lower.contains("show the") || lower.contains("show s") { out.append("an instruction, not a real line") }
         return out
     }
