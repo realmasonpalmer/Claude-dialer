@@ -581,12 +581,16 @@ extension CoachModel {
         BeepDetector.shared.reset()
         CallTrace.beginCall(lead: calling, attempt: currentAttempts)
         questionTracker = QuestionTracker()
-        CallTrace.event("context.system", ["text": system]) // the full static instructions + script Claude gets this call
+        loggedSystemHash = ""
+        logSystemIfChanged() // the full static instructions + script Claude gets this call
         phoneSawHangUp = false
         holdLine = false
         pending = nil
         phoneButtonGone = 0
         CoachPrompt.liveSummary = ""
+        CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
+        doNotCall = false
+        timeline = SpeechTimeline()
         CoachPrompt.blockerHints = BlockerBook.hints(campaign.id)
         ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
         if let key = currentAttemptKey { DialHistory.logDial(key) }

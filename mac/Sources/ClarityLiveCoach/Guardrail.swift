@@ -1,3 +1,4 @@
+import CoachCore
 import Foundation
 
 /// The house rules for every line the rep reads, checked in code (the model sometimes breaks them).
@@ -17,7 +18,7 @@ enum Guardrail {
         guard !say.isEmpty, !say.lowercased().hasPrefix("show nothing") else { return [] }
         var out: [String] = []
         let words = say.split(whereSeparator: { $0 == " " || $0 == "\n" }).count
-        if !long, words > 25 { out.append("\(words) words (max 25)") }
+        if !long, words > LineBudget.checkMax { out.append("\(words) words (max \(LineBudget.checkMax))") }
         let questions = say.filter { $0 == "?" }.count
         if !long, questions > 1 { out.append("more than one question") }
         if !long, !endsCall, !say.hasSuffix("?") { out.append("doesn't end with a question") }

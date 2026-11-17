@@ -3,10 +3,11 @@ import XCTest
 
 final class CoachCoreTests: XCTestCase {
     func sig(line: Bool = true, prospect: Bool = false, rep: Bool = false, shown: Double = 5, started: Bool = false,
-             delivered: Bool = false, answered: Bool = false, queued: Bool = false, newTopic: Bool = false, words: Int = 0) -> CoachSignals {
+             delivered: Bool = false, answered: Bool = false, queued: Bool = false, newTopic: Bool = false, words: Int = 0,
+             overlap: Bool = false, onLine: Bool = true, dnc: Bool = false) -> CoachSignals {
         CoachSignals(hasLine: line, prospectSpeaking: prospect, repSpeaking: rep, secondsSinceShown: shown, repStarted: started,
                      delivered: delivered, prospectAnsweredSince: answered, queued: queued, queuedIsForNewTopic: newTopic,
-                     lineWords: words)
+                     lineWords: words, overlapping: overlap, repOnLine: onLine, doNotCall: dnc)
     }
 
     // Silent reading: a 20-word line is protected for ~5 s even with nobody speaking.
@@ -30,7 +31,7 @@ final class CoachCoreTests: XCTestCase {
 
     // Both talking at once.
     func testOverlap() {
-        XCTAssertEqual(CoachMachine.state(sig(prospect: true, rep: true)), .interrupted)
+        XCTAssertEqual(CoachMachine.state(sig(prospect: true, rep: true, overlap: true)), .interrupted)
         XCTAssertFalse(CoachMachine.canReplace(sig(prospect: true, rep: true, queued: true, newTopic: true)))
     }
 
@@ -46,7 +47,7 @@ final class CoachCoreTests: XCTestCase {
     }
 
     func testInterruptionFlagsOutdatedWithoutReplacingMidSentence() {
-        XCTAssertEqual(CoachMachine.state(sig(prospect: true, rep: true, started: true)), .interrupted)
+        XCTAssertEqual(CoachMachine.state(sig(prospect: true, rep: true, started: true, overlap: true)), .interrupted)
         XCTAssertEqual(CoachMachine.state(sig(started: true, queued: true, newTopic: true)), .superseded)
         XCTAssertTrue(CoachMachine.canReplace(sig(started: true, queued: true, newTopic: true)))
         // Flagged, but never swapped while the rep is still mid-sentence.

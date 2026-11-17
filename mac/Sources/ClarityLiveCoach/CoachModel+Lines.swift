@@ -115,8 +115,10 @@ extension CoachModel {
     /// start Claude now instead of waiting for the end-of-speech signal.
     func scheduleEarlyStart() {
         specTimer?.cancel()
-        guard status == .live, !screenerActive, !voicemailActive else { return } // prepare even while a line is up
+        guard status == .live, !screenerActive, !voicemailActive, !doNotCall else { return } // prepare even while a line is up
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
+        // "Don't call me back" mid-sentence: stop selling now, don't wait for them to finish.
+        if LiveCoach.isOptOut(text) { handleOptOut(text); return }
         guard isMeaningful(text) else { return }
         // Known objection mid-sentence: the approved answer is ready the moment they stop.
         if scriptAnswers.match(text) != nil {
@@ -129,11 +131,11 @@ extension CoachModel {
         }
         // Draft early once their meaning is clear: a finished sentence (200 ms), or 6+ words that
         // stopped changing (450 ms). Each new word cancels the wait, so there's no flood of requests.
-        let finished = text.last.map { ".?!".contains($0) } ?? false
-        guard finished || text.split(separator: " ").count >= 6 else { return }
+        // One or two word fragments ("No.") almost always grow: drafting on them wastes a request.
+        guard let wait = EarlyStart.delayMS(for: text) else { return }
         specTimer = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(finished ? 200 : 450))
-            guard let self, !Task.isCancelled,
+            try? await Task.sleep(for: .milliseconds(wait))
+            guard let self, !Task.isCancelled, !self.doNotCall,
                   (self.uncoached + " " + (self.interim[.prospect] ?? "")).trimmed == text,
                   normalized(text) != self.specBasis else { return }
             self.ask(.reply, user: CoachPrompt.reply(
@@ -148,6 +150,11 @@ extension CoachModel {
         specTimer?.cancel()
         let said = uncoached.trimmingCharacters(in: .whitespaces)
         guard !said.isEmpty else { return }
+        if doNotCall {
+            uncoached = ""
+            CallTrace.event("coach.suppressed", ["said": said, "why": "do not call: no more sales lines this call"])
+            return
+        }
         if status == .live, LiveCoach.isOptOut(said) { handleOptOut(said); return }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
         if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
@@ -220,14 +227,28 @@ extension CoachModel {
 
     /// "Take me off your list": the goodbye line, DoNotCall written in Salesforce, off every list, hang up. No AI.
     func handleOptOut(_ said: String) {
+        guard !doNotCall else { return }
+        doNotCall = true // terminal: every later draft, early start and queued line is blocked
+        specTimer?.cancel()
         coachTask?.cancel()
+        if let p = pending {
+            CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "do not call"], sug: p.id)
+        }
+        pending = nil
+        specHeld = nil
+        specBasis = nil
+        uncoached = ""
         thinking = false
+        CallTrace.event("state", ["from": coachState.rawValue, "to": CoachState.doNotCall.rawValue,
+                                  "why": "opt-out phrase", "said": said, "cancelled_request": seq])
+        coachState = .doNotCall
         seq += 1
         show(Suggestion(say: LiveCoach.optOutLine, cue: "Opt out. Do not call is saved in Salesforce.", stage: "Exit", sayComplete: true), id: seq, kind: .reply)
         guard let key = currentAttemptKey else { return }
         RemovedList.add(key)
-        outcomeSaved.insert(String(key.prefix(15))) // nothing more to log
         followUp = nil // no text, no LinkedIn
+        CallTrace.event("crm.suppress", ["record": key, "actions": ["DoNotCall", "status", "off every list", "no text"]])
+        outcomeSaved.insert(String(key.prefix(15))) // nothing more to log
         ActivityLog.add("Opt out from \(calling ?? key): \"\(said)\". Off every list, no text, writing DoNotCall and status")
         CallTrace.event("intent", ["intent": "opt_out", "said": said, "why": "opt-out phrase in their words", "action": "goodbye line, DoNotCall, hang up"])
         Task { [weak self] in
@@ -266,15 +287,22 @@ extension CoachModel {
             problem = "Add your Anthropic key: gear > Setup > AI keys."
             return
         }
+        if doNotCall, kind == .reply {
+            CallTrace.event("claude.blocked", ["why": "do not call", "early": early != nil])
+            return
+        }
         coachTask?.cancel() // a newer statement makes the old answer stale
         seq += 1
         let id = seq
         let askedAt = Date()
-        if kind == .reply { CoachPrompt.questionFacts = questionTracker.promptText }
+        logSystemIfChanged()
+        CallTrace.event("memory.snapshot", ["summary": CoachPrompt.liveSummary, "summary_version": CallTrace.memVersion,
+                                            "question_facts": CoachPrompt.questionFacts, "blocker_hints": CoachPrompt.blockerHints,
+                                            "turns": turns.count], req: id)
         if kind == .reply { ActivityLog.add("Coach #\(id): asking Claude\(early == nil ? "" : " early, from their words so far")") }
         CallTrace.event("claude.request", [
             "kind": "\(kind)", "early": early != nil, "early_basis": early ?? "",
-            "system_chars": self.system.count, "system_hash": String(self.system.hashValue, radix: 16),
+            "system_chars": self.system.count, "system_hash": Self.stableHash(self.system),
             "user_message": user, "summary_version": CallTrace.memVersion,
         ], req: id)
         specBasis = early.map(normalized)
@@ -309,7 +337,10 @@ extension CoachModel {
                         // A live line shows only once it's whole and passes the house rules.
                         guard s.sayComplete || s.skip, !gate.checked else { if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }; return }
                         gate.checked = true
-                        gate.passed = s.skip || Self.lineProblems(s).isEmpty
+                        let problems = s.skip ? [] : Self.lineProblems(s)
+                        gate.passed = problems.isEmpty
+                        CallTrace.event("check.result", ["stage": "stream", "line": s.say, "skip": s.skip,
+                                                         "passed": gate.passed, "problems": problems], req: id)
                         if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }
                     }
                 }
@@ -318,8 +349,11 @@ extension CoachModel {
                                                 "fresh": self?.seq == id], req: id)
                 var last = Suggestion.parse(finalText)
                 last.sayComplete = true
-                if kind == .reply, !last.skip, !last.say.isEmpty, !Self.lineProblems(last).isEmpty {
-                    last = await self?.fixLine(last, system: system, user: user, key: key) ?? last
+                if kind == .reply, !last.skip, !last.say.isEmpty {
+                    let problems = Self.lineProblems(last)
+                    CallTrace.event("check.result", ["stage": "final", "line": last.say, "passed": problems.isEmpty,
+                                                     "problems": problems], req: id)
+                    if !problems.isEmpty { last = await self?.fixLine(last, system: system, user: user, key: key, id: id) ?? last }
                 }
                 self?.offer(last, id: id, kind: kind, askedAt: askedAt)
             } catch is CancellationError {
@@ -342,19 +376,24 @@ extension CoachModel {
     }
 
     /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
-    func fixLine(_ bad: Suggestion, system: String, user: String, key: String) async -> Suggestion {
+    func fixLine(_ bad: Suggestion, system: String, user: String, key: String, id: Int = 0) async -> Suggestion {
         var problems = Self.lineProblems(bad)
         ActivityLog.add("Line check: failed (\(problems.joined(separator: "; "))): \(bad.say)")
-        CallTrace.event("check.fail", ["line": bad.say, "problems": problems])
+        CallTrace.event("check.fail", ["line": bad.say, "problems": problems], req: id)
         for model in ["claude-haiku-5-5", "claude-sonnet-5-5"] {
             var text = ""
             let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
+            CallTrace.event("claude.retry.request", ["model": model, "user_message": retry], req: id)
+            let t0 = Date()
             try? await LiveCoach.client(key, model: model).stream(system: system, user: retry) { text = $0 }
             var s = Suggestion.parse(text)
             s.sayComplete = true
+            let left = s.skip ? [] : Self.lineProblems(s)
+            CallTrace.event("claude.retry.done", ["model": model, "ms": Int(Date().timeIntervalSince(t0) * 1000), "output": text,
+                                                  "passed": !s.say.isEmpty && left.isEmpty, "problems": left], req: id)
             if s.skip || (!s.say.isEmpty && Self.lineProblems(s).isEmpty) {
                 ActivityLog.add("Line check: fixed by \(model.contains("haiku") ? "Haiku" : "Sonnet")")
-                CallTrace.event("check.fixed", ["model": model, "line": s.say])
+                CallTrace.event("check.fixed", ["model": model, "line": s.say], req: id)
                 return s
             }
             if !s.say.isEmpty { problems = Self.lineProblems(s) }
@@ -362,17 +401,26 @@ extension CoachModel {
         var s = bad
         s.say = LiveCoach.sanitize(bad.say)
         ActivityLog.add("Line check: trimmed to fit: \(s.say)")
-        CallTrace.event("check.trimmed", ["line": s.say])
+        CallTrace.event("check.trimmed", ["line": s.say, "from": bad.say], req: id)
         return s
     }
 
     /// Shows a suggestion, but never swaps a fresh line out from under the rep.
     func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
-        guard id == seq, !s.skip, !s.say.isEmpty else { return }
+        guard id == seq, !s.skip, !s.say.isEmpty, !(doNotCall && kind == .reply) else {
+            if s.sayComplete || s.skip {
+                let why = doNotCall ? "do not call" : id != seq ? "stale: request #\(seq) is newer" : s.skip ? "Claude said skip" : "empty"
+                CallTrace.event("suggestion.dropped", ["line": s.say, "why": why], sug: id)
+            }
+            return
+        }
         // Easier to read live: show the line once it's whole, not word by word (setting).
         let wholeLine = Prefs.wholeLine
         if wholeLine && !s.sayComplete { return }
         if specBasis != nil {
+            if s.sayComplete, specHeld?.id != id {
+                CallTrace.event("suggestion.held_early", ["line": s.say, "basis": specBasis ?? "", "why": "drafted early: waits for them to stop"], sug: id)
+            }
             specHeld = (s, id) // started early: wait until they really stop talking
             return
         }
@@ -389,7 +437,10 @@ extension CoachModel {
             return
         }
         // The call is live and someone already talked: keep the opener the rep is reading.
-        if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect }) { return }
+        if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect }) {
+            if s.sayComplete { CallTrace.event("suggestion.dropped", ["line": s.say, "why": "opener arrived after the talk started"], sug: id) }
+            return
+        }
         // The AI thinks ahead, the screen follows the conversation: never swap the line while the rep is
         // speaking. Queue it, flag the old one as outdated, and show it the moment they stop.
         // A new prospect turn since the line appeared = the conversation moved on.
@@ -397,7 +448,16 @@ extension CoachModel {
         // Any answer to a question you asked counts too, even "yes" or "nope", so you never have to press Next.
         let youAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
         if kind == .reply, let last = turns.last, last.speaker == .prospect,
-           youAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?") { lineSuperseded = true }
+           youAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?") {
+            if !lineSuperseded || supersededLogged != shownID {
+                supersededLogged = shownID
+                let why = youAsked ? "they answered your question" : last.text.contains("?") ? "they asked a question" : "they said something new (3+ words)"
+                CallTrace.event("suggestion.superseded", ["line": suggestion.say, "by_request": id, "prospect_said": last.text,
+                                                          "why": why, "delivered": lineDelivered], sug: shownID)
+                ActivityLog.add("Coach #\(shownID): line outdated (\(why))")
+            }
+            lineSuperseded = true
+        }
         if kind == .opener || kind == .voicemail || shownID == 0 || (!holdLine && CoachMachine.canReplace(signals())) {
             show(s, id: id, kind: kind)
         } else {
@@ -406,13 +466,31 @@ extension CoachModel {
                 ActivityLog.add("Coach #\(id): line queued (\(why))")
                 CallTrace.event("suggestion.queued", ["line": s.say, "why": why, "signals": "\(signals())"], sug: id)
             }
+            if let old = pending, old.id != id {
+                CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer queued line replaced it"], sug: old.id)
+            }
             pending = (id, s)
         }
     }
 
+    /// Same text, same hash, on every run (Swift's hashValue changes each launch).
+    static func stableHash(_ s: String) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
+        return String(h, radix: 16)
+    }
+
+    /// The full system prompt goes in the trace at call start and again whenever it changes.
+    func logSystemIfChanged() {
+        let h = Self.stableHash(system)
+        guard h != loggedSystemHash else { return }
+        loggedSystemHash = h
+        CallTrace.event("context.system", ["text": system, "hash": h])
+    }
+
     /// The approved script answer for what they said, shown with no AI wait. True if one matched.
     func instantAnswer(_ said: String) -> Bool {
-        guard status == .live else { return false }
+        guard status == .live, !doNotCall else { return false }
         let answers = scriptAnswers
         guard let e = answers.match(said) else {
             CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said])

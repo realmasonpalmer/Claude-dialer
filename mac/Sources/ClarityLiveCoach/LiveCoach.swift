@@ -1,3 +1,4 @@
+import CoachCore
 import Foundation
 
 /// The live line: Haiku, fast and short, checked in code before it shows.
@@ -19,19 +20,7 @@ enum LiveCoach {
 
     // MARK: Opt out, handled in code (no AI)
 
-    private static let optOut = ["take me off your list", "take me off the list", "remove me from your list",
-                                 "remove me from the list", "don't call me again", "do not call me again",
-                                 "stop calling me", "put me on your do not call", "do not call list",
-                                 "don't ever call", "never call me", "quit calling", "lose my number",
-                                 "don't call me back", "do not call me back", "don't call back", "don't call here",
-                                 "don't call this number", "never call here", "never call this number", "remove my number",
-                                 "take my number off", "delete my number", "don't contact me", "do not contact me",
-                                 "stop contacting me", "never call again", "don't call again", "do not call again"]
-
-    static func isOptOut(_ text: String) -> Bool {
-        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
-        return optOut.contains { t.contains($0) }
-    }
+    static func isOptOut(_ text: String) -> Bool { OptOut.matches(text) }
 
     static let optOutLine = "Understood. I'll take you off our list right now. Have a good day."
 
@@ -40,7 +29,7 @@ enum LiveCoach {
         var s = say.replacingOccurrences(of: "\u{2014}", with: ",").replacingOccurrences(of: "\u{2013}", with: ",")
         if let q = s.firstIndex(of: "?") { s = String(s[...q]) } // one question, at the end
         let words = s.split(separator: " ")
-        if words.count > 25 { s = words.suffix(25).joined(separator: " ") }
+        if words.count > LineBudget.checkMax { s = words.suffix(LineBudget.checkMax).joined(separator: " ") }
         return s
     }
 }

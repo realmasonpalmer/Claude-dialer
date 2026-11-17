@@ -30,6 +30,15 @@ final class DeepgramStream: @unchecked Sendable {
     private var lastSend = Date()
     private var keepAlive: DispatchSourceTimer?
     private var closed = false
+    private var audioSent = 0.0       // seconds of audio sent so far (Deepgram's clock)
+    private var origin: Date?         // wall time of Deepgram's audio second 0
+
+    /// Wall time of the audio at Deepgram second `t`, so both sides share one clock.
+    /// Estimated from sends: a chunk can be sent late but never before it was captured, so the
+    /// earliest (send time - audio sent) is the best origin. A gap in sending (audio paused) moves it on.
+    func wallTime(audioSeconds t: Double) -> Date? {
+        lock.withLockValue { origin.map { $0.addingTimeInterval(t) } }
+    }
 
     init(apiKey: String, keyterms: [String] = [], onEvent: @escaping (Event) -> Void) {
         var request = URLRequest(url: Self.url(keyterms: keyterms))
@@ -52,7 +61,13 @@ final class DeepgramStream: @unchecked Sendable {
     }
 
     func send(_ pcm16: Data) {
-        lock.withLockValue { lastSend = Date() }
+        lock.withLockValue {
+            let now = Date()
+            lastSend = now
+            audioSent += Double(pcm16.count) / 32000 // 16 kHz, 16-bit mono
+            let estimate = now.addingTimeInterval(-audioSent)
+            if let o = origin, estimate.timeIntervalSince(o) < 0.5 { origin = min(o, estimate) } else { origin = estimate }
+        }
         task.send(.data(pcm16)) { _ in }
     }
 

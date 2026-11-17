@@ -1,3 +1,4 @@
+import CoachCore
 import Foundation
 
 // MARK: - Prompt
@@ -16,7 +17,7 @@ enum CoachPrompt {
         ("Claude" is often heard as "cloud" or "clod"). Read words in context.
 
         How to coach:
-        1. One line, 25 words at most, easy to say out loud on the first read. End with a question unless the line ends the call.
+        1. One line, \(LineBudget.promptMax) words at most, easy to say out loud on the first read. End with a question unless the line ends the call.
         2. Sound like a confident, friendly human. Plain words, contractions, no jargon, no hype. A short question beats a pitch.
         3. Answer what the prospect just said. Never contradict a need they stated or ask what they already answered.
            A direct question gets a one-sentence answer, then the next question for the stage you're in.
@@ -184,7 +185,7 @@ enum CoachPrompt {
 
         The prospect just said: "\(latest)"
         \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")
-        What should the rep say next? SAY is 1 to 2 short sentences, 25 words at most, ending in one question
+        What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most, ending in one question
         (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through
         better, use it and add a line OFF SCRIPT: yes.
         """

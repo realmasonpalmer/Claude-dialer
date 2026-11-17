@@ -338,12 +338,21 @@ final class CoachModel: ObservableObject {
         return a
     }
 
+    /// They asked not to be called again: terminal for this call. No more drafting or sales lines.
+    var doNotCall = false
+    var loggedSystemHash = ""
+    /// Both sides' speech as audio time ranges: turn taking vs interruption vs overlap vs backchannel.
+    var timeline = SpeechTimeline()
+    var supersededLogged = 0 // suggestion id whose "outdated" was already traced
+
     func signals() -> CoachSignals {
-        CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: prospectSpeaking, repSpeaking: repSpeaking,
+        let talk = timeline.now(Date().timeIntervalSinceReferenceDate)
+        return CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: talk.prospect, repSpeaking: talk.rep,
                      secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty,
                      delivered: lineDelivered, prospectAnsweredSince: answeredAfterDelivery,
                      queued: pending != nil, queuedIsForNewTopic: lineSuperseded,
-                     lineWords: suggestion.say.split(separator: " ").count)
+                     lineWords: suggestion.say.split(separator: " ").count, overlapping: talk.overlap,
+                     repOnLine: Delivery.onLine(line: suggestion.say, spoken: repSaidSinceShown), doNotCall: doNotCall)
     }
     var holdTask: Task<Void, Never>?
     var timedID = 0

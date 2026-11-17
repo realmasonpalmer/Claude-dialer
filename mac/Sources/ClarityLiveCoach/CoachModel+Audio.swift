@@ -137,12 +137,22 @@ extension CoachModel {
     }
 
     func openStream(_ speaker: Speaker, key: String) -> DeepgramStream {
-        DeepgramStream(apiKey: key, keyterms: useKeyterms ? DeepgramStream.defaultKeyterms : []) { [weak self] event in
-            Task { @MainActor in self?.handle(event, from: speaker) }
+        final class Ref: @unchecked Sendable { weak var stream: DeepgramStream? }
+        let ref = Ref()
+        let stream = DeepgramStream(apiKey: key, keyterms: useKeyterms ? DeepgramStream.defaultKeyterms : []) { [weak self] event in
+            // When the words were spoken, on the wall clock both sides share (not when the text arrived).
+            var spoken: (start: Date, end: Date)?
+            if case .transcript(_, _, _, let start, let duration, _) = event, start > 0 || duration > 0,
+               let s = ref.stream?.wallTime(audioSeconds: start) {
+                spoken = (s, s.addingTimeInterval(duration))
+            }
+            Task { @MainActor in self?.handle(event, from: speaker, spoken: spoken) }
         }
+        ref.stream = stream
+        return stream
     }
 
-    func handle(_ event: DeepgramStream.Event, from speaker: Speaker) {
+    func handle(_ event: DeepgramStream.Event, from speaker: Speaker, spoken: (start: Date, end: Date)? = nil) {
         guard status == .live else { return }
         switch event {
         case .transcript(let text, let isFinal, let speechFinal, let audioStart, let audioDuration, let confidence):
@@ -200,6 +210,20 @@ extension CoachModel {
                                                      "overlap": speaker == .rep ? prospectSpeaking : repSpeaking])
                 }
                 if speaker == .rep { lastRepSpeechAt = Date() } else { lastProspectSpeechAt = Date() }
+                // Audio timeline: classify the turn from when words were spoken. No timestamps (rare):
+                // fall back to arrival time, a short range ending now.
+                let side: SpeechTimeline.Side = speaker == .rep ? .rep : .prospect
+                let end = spoken?.end ?? Date()
+                let start = spoken?.start ?? end.addingTimeInterval(-0.3)
+                if let kind = timeline.update(side, start: start.timeIntervalSinceReferenceDate, end: end.timeIntervalSinceReferenceDate,
+                                              text: text, isFinal: isFinal) {
+                    CallTrace.event("turn.classified", ["speaker": side.rawValue, "kind": kind.rawValue, "text": text,
+                                                        "spoken_start_ms": Int(start.timeIntervalSince1970 * 1000),
+                                                        "spoken_end_ms": Int(end.timeIntervalSince1970 * 1000),
+                                                        "lag_ms": Int(Date().timeIntervalSince(end) * 1000),
+                                                        "timestamps": spoken == nil ? "arrival (fallback)" : "audio",
+                                                        "final": isFinal])
+                }
             }
             if isFinal {
                 reconnects = 0
@@ -247,8 +271,11 @@ extension CoachModel {
                 lineDelivered = true
                 let conf = Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)
                 ActivityLog.add(String(format: "Coach: line delivered (meaning %.0f%% said)", conf * 100))
+                let ev = Delivery.evidence(line: suggestion.say, spoken: repSaidSinceShown)
                 CallTrace.event("delivery", ["line": suggestion.say, "said": repSaidSinceShown, "confidence": conf,
-                                             "how": "meaningful words overlap or the line's question asked"], sug: shownID)
+                                             "rule": Delivery.rule(line: suggestion.say, spoken: repSaidSinceShown) ?? "none",
+                                             "matched_words": ev.matched, "missing_words": ev.missing,
+                                             "how": "overall: half the line's key words said; question: 60% of its question's key words"], sug: shownID)
             }
         }
         if speaker == .prospect, lineDelivered, !answeredAfterDelivery {
@@ -258,8 +285,9 @@ extension CoachModel {
         }
         if speaker == .prospect { lastHeardThemAt = Date() }
         if turns.last?.speaker != speaker { CallTrace.turn += 1 }
-        let overlapped = speaker == .prospect ? repSpeaking && Date().timeIntervalSince(lastRepSpeechAt) < 0.5
-                                              : prospectSpeaking && Date().timeIntervalSince(lastProspectSpeechAt) < 0.5
+        // Cut off = this side really came in over the other in audio time (not just answered quickly).
+        let kindNow = timeline.segments[speaker == .rep ? .rep : .prospect]?.last?.kind
+        let overlapped = kindNow == .interruption || kindNow == .overlap
         for change in questionTracker.add(turn: text, from: speaker == .rep ? .rep : .prospect, overlapped: overlapped) {
             switch change {
             case .asked(let q): CallTrace.event("question.asked", ["id": q.id, "by": q.asker.rawValue, "text": q.text])
@@ -268,6 +296,7 @@ extension CoachModel {
             case .abandoned(let q): CallTrace.event("question.abandoned", ["id": q.id, "by": q.asker.rawValue, "text": q.text])
             }
         }
+        CoachPrompt.questionFacts = questionTracker.promptText // current before the next prompt is built
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
         } else {

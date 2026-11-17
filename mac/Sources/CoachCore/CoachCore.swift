@@ -11,6 +11,8 @@ public enum CoachState: String, Sendable {
     case interrupted = "Interrupted"   // prospect cut in while the rep spoke
     case resolved = "Resolved"         // line delivered and the prospect answered
     case superseded = "Outdated"       // a better line is queued for this moment
+    case repTalking = "Rep talking"    // rep is speaking, but not saying the line on screen
+    case doNotCall = "Do not call"     // they asked not to be called: terminal, no more coaching
     case idle = "Idle"                 // nothing useful to say
 }
 
@@ -26,14 +28,18 @@ public struct CoachSignals: Sendable {
     public var queued: Bool              // a newer line is waiting
     public var queuedIsForNewTopic: Bool // the prospect moved on (interrupt/new question)
     public var lineWords: Int            // words in the line on screen (to protect silent reading)
+    public var overlapping: Bool         // both sides talking at the same moment (a real interruption)
+    public var repOnLine: Bool           // what the rep is saying matches the line on screen
+    public var doNotCall: Bool           // they asked not to be called again
 
     public init(hasLine: Bool, prospectSpeaking: Bool, repSpeaking: Bool, secondsSinceShown: Double,
                 repStarted: Bool, delivered: Bool, prospectAnsweredSince: Bool, queued: Bool, queuedIsForNewTopic: Bool,
-                lineWords: Int = 0) {
+                lineWords: Int = 0, overlapping: Bool = false, repOnLine: Bool = false, doNotCall: Bool = false) {
         self.hasLine = hasLine; self.prospectSpeaking = prospectSpeaking; self.repSpeaking = repSpeaking
         self.secondsSinceShown = secondsSinceShown; self.repStarted = repStarted; self.delivered = delivered
         self.prospectAnsweredSince = prospectAnsweredSince; self.queued = queued; self.queuedIsForNewTopic = queuedIsForNewTopic
         self.lineWords = lineWords
+        self.overlapping = overlapping; self.repOnLine = repOnLine; self.doNotCall = doNotCall
     }
 }
 
@@ -45,8 +51,11 @@ public enum CoachMachine {
     public static func readingTime(words: Int) -> Double { min(5, max(readingGrace, Double(words) / 4)) }
 
     public static func state(_ s: CoachSignals) -> CoachState {
-        if s.repSpeaking && s.prospectSpeaking { return .interrupted }
-        if s.repSpeaking { return s.hasLine ? .delivering : .idle }
+        if s.doNotCall { return .doNotCall }
+        // Only real overlap is an interruption. One side answering right after the other is a normal turn.
+        if s.overlapping { return .interrupted }
+        // Delivering = saying the line on screen. Any other rep talk ("okay", small talk) is just talking.
+        if s.repSpeaking { return s.hasLine && (s.repOnLine || s.delivered) ? .delivering : .repTalking }
         if s.queued && s.queuedIsForNewTopic && s.repStarted && !s.delivered { return .superseded }
         if s.prospectSpeaking { return .listening }
         guard s.hasLine else { return .idle }
@@ -59,6 +68,7 @@ public enum CoachMachine {
     /// Never while the rep speaks. Not during the first moment of reading. Otherwise yes if the rep
     /// hasn't started it, it's been delivered, or the conversation clearly moved on.
     public static func canReplace(_ s: CoachSignals) -> Bool {
+        if s.doNotCall { return false } // the goodbye line stays; nothing replaces it
         guard s.hasLine else { return true }
         if s.repSpeaking { return false }
         // Not started: only something new from the prospect replaces it, never the clock alone.
@@ -68,6 +78,142 @@ public enum CoachMachine {
 
     /// Answers only count if they're for the newest request (older ones finishing late are dropped).
     public static func isFresh(requestID: Int, latestID: Int) -> Bool { requestID == latestID }
+}
+
+/// Who is talking, read from audio timestamps (when the words were spoken), not from when the
+/// transcript happened to arrive. Each side's speech is a list of time ranges on one shared clock.
+/// Deepgram revises a range while it's interim (the end grows, the start may shift), so the newest
+/// interim range replaces the previous interim one. A turn change is classified by how the ranges sit:
+///   turn taking   the new speaker starts after the other one's words end (any gap, even 0.1 s)
+///   backchannel   a short "yeah", "uh-huh", "right" over the other side: not a turn at all
+///   interruption  the new speaker starts while the other is talking, and the other stops soon after
+///   overlap       both keep talking at once (crosstalk)
+/// Time windows are only a fallback: they say whether a side is still "active" while its next
+/// transcript is in flight, never whether two sides overlapped.
+public struct SpeechTimeline: Sendable {
+    public enum Side: String, Sendable { case rep, prospect }
+    public enum Kind: String, Sendable { case turnTaking = "turn_taking", backchannel, interruption, overlap }
+
+    public struct Segment: Sendable, Equatable {
+        public var side: Side, start: Double, end: Double, text: String, isFinal: Bool
+        public var kind: Kind?
+    }
+
+    /// Deepgram boundaries jitter by about a word; overlap smaller than this is a clean hand-off.
+    public static let tolerance = 0.25
+    /// The interrupted side stopping within this long of the newcomer's start means it yielded.
+    public static let yieldWindow = 1.0
+    /// Fallback only: a side counts as still talking this long after its last word, to bridge
+    /// transcript delay and breaths. Never used to decide overlap.
+    public static let repActiveWindow = 1.5
+    public static let prospectActiveWindow = 0.9
+
+    public static let backchannelWords: Set<String> = ["yeah", "yep", "yes", "uh-huh", "uh", "huh", "mhm", "mm", "hmm", "mm-hmm",
+        "right", "okay", "ok", "sure", "got", "it", "gotcha", "totally", "true", "cool", "nice", "wow", "oh"]
+
+    public private(set) var segments: [Side: [Segment]] = [.rep: [], .prospect: []]
+
+    public init() {}
+
+    public static func isBackchannel(_ text: String) -> Bool {
+        let w = text.lowercased().components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "-")).inverted).filter { !$0.isEmpty }
+        return !w.isEmpty && w.count <= 2 && w.allSatisfy(backchannelWords.contains)
+    }
+
+    /// Adds or revises one transcript range. Returns the segment's classification when it is new
+    /// or changed (so the caller logs every decision once), else nil.
+    @discardableResult
+    public mutating func update(_ side: Side, start: Double, end: Double, text: String, isFinal: Bool) -> Kind? {
+        var list = segments[side] ?? []
+        var seg = Segment(side: side, start: start, end: max(end, start), text: text, isFinal: isFinal)
+        let old: Kind?
+        if let last = list.last, !last.isFinal { old = last.kind; list.removeLast() } else { old = nil }
+        seg.kind = classify(seg)
+        list.append(seg)
+        if list.count > 40 { list.removeFirst(list.count - 40) }
+        segments[side] = list
+        // A newcomer can turn an earlier "interruption" of the other side into crosstalk: re-check it.
+        reclassifyOther(than: side)
+        return seg.kind != old ? seg.kind : nil
+    }
+
+    private func classify(_ x: Segment) -> Kind? {
+        let other: Side = x.side == .rep ? .prospect : .rep
+        // The other side's most recent range that started before this one.
+        guard let y = segments[other]?.last(where: { $0.start <= x.start }) else { return nil }
+        let overlap = min(x.end, y.end) - max(x.start, y.start)
+        if overlap <= Self.tolerance { return .turnTaking }
+        if Self.isBackchannel(x.text) { return .backchannel }
+        // Did the other side keep going after this side came in?
+        let otherKeptGoing = (segments[other] ?? []).contains { $0.end > x.start + Self.yieldWindow && $0.start < x.end }
+        return otherKeptGoing ? .overlap : .interruption
+    }
+
+    private mutating func reclassifyOther(than side: Side) {
+        let other: Side = side == .rep ? .prospect : .rep
+        guard var list = segments[other], var last = list.last else { return }
+        last.kind = classify(last)
+        list[list.count - 1] = last
+        segments[other] = list
+    }
+
+    /// Who holds the floor at `now` (same clock as the ranges).
+    public func now(_ now: Double) -> (rep: Bool, prospect: Bool, overlap: Bool) {
+        let rep = segments[.rep]?.last, pro = segments[.prospect]?.last
+        // A backchannel never takes the turn.
+        let repActive = rep.map { now - $0.end < Self.repActiveWindow && $0.kind != .backchannel } ?? false
+        let proActive = pro.map { now - $0.end < Self.prospectActiveWindow && $0.kind != .backchannel } ?? false
+        guard repActive, proActive, let r = rep, let p = pro else { return (repActive, proActive, false) }
+        let newer = r.start >= p.start ? r : p
+        if newer.kind == .interruption || newer.kind == .overlap {
+            // Real overlap only while both ranges actually cross in audio time.
+            if min(r.end, p.end) - max(r.start, p.start) > Self.tolerance { return (true, true, true) }
+        }
+        // Clean hand-off: whoever started last holds the turn.
+        return newer.side == .rep ? (true, false, false) : (false, true, false)
+    }
+}
+
+/// "Take me off your list", "don't call me back": matched in code, no AI.
+public enum OptOut {
+    public static let phrases = ["take me off your list", "take me off the list", "remove me from your list",
+                                 "remove me from the list", "don't call me again", "do not call me again",
+                                 "stop calling me", "put me on your do not call", "do not call list",
+                                 "don't ever call", "never call me", "quit calling", "lose my number",
+                                 "don't call me back", "do not call me back", "don't call back", "don't call here",
+                                 "don't call this number", "never call here", "never call this number", "remove my number",
+                                 "take my number off", "delete my number", "don't contact me", "do not contact me",
+                                 "stop contacting me", "never call again", "don't call again", "do not call again"]
+
+    public static func matches(_ text: String) -> Bool {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'").replacingOccurrences(of: "dont ", with: "don't ")
+        return phrases.contains { t.contains($0) }
+    }
+}
+
+/// When to start Claude before the prospect is done. A one or two word fragment ("No.") is not
+/// worth a request: it almost always grows ("No. No. Just don't call me back."), wasting the draft.
+public enum EarlyStart {
+    public static let minFinishedWords = 3
+    public static let minUnfinishedWords = 6
+
+    /// Milliseconds to wait for the words to hold still, or nil for "don't start early".
+    public static func delayMS(for text: String) -> Int? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if OptOut.matches(t) { return nil } // handled in code, never drafted
+        let words = t.split(separator: " ").count
+        let finished = t.last.map { ".?!".contains($0) } ?? false
+        if finished && words >= minFinishedWords { return 200 }
+        if words >= minUnfinishedWords { return 450 }
+        return nil
+    }
+}
+
+/// Live line length. The prompt asks for fewer words than the check allows, so a line that runs a
+/// word long passes instead of costing a second fixing it.
+public enum LineBudget {
+    public static let checkMax = 25
+    public static let promptMax = 20
 }
 
 /// Did the rep get the line's meaning across? Paraphrase-friendly: compares meaningful words, and the
@@ -87,6 +233,28 @@ public enum Delivery {
         guard !want.isEmpty else { return 0 }
         let said = Set(words(spoken))
         return Double(want.intersection(said).count) / Double(want.count)
+    }
+
+    /// The words behind a delivery score, for the trace: which of the line's key words were said.
+    public static func evidence(line: String, spoken: String) -> (matched: [String], missing: [String]) {
+        let said = Set(words(spoken))
+        var seen = Set<String>(), matched: [String] = [], missing: [String] = []
+        for w in words(line) where seen.insert(w).inserted { if said.contains(w) { matched.append(w) } else { missing.append(w) } }
+        return (matched, missing)
+    }
+
+    /// Is the rep on the line at all (enough to call it delivering, not just talking)?
+    public static func onLine(line: String, spoken: String) -> Bool {
+        evidence(line: line, spoken: spoken).matched.count >= 2 || confidence(line: line, spoken: spoken) >= 0.25
+    }
+
+    /// Which rule (if any) counted it delivered: "overall" or "question".
+    public static func rule(line: String, spoken: String) -> String? {
+        if confidence(line: line, spoken: spoken) >= 0.5 { return "overall" }
+        if let q = line.split(separator: "?").first.map(String.init),
+           let lastSentence = q.split(whereSeparator: { ".!".contains($0) }).last.map(String.init),
+           confidence(line: lastSentence, spoken: spoken) >= 0.6 { return "question" }
+        return nil
     }
 
     public static func delivered(line: String, spoken: String) -> Bool {
