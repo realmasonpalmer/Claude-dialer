@@ -116,6 +116,15 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       var md = navigator.mediaDevices;
       if (md && md.getUserMedia) {
         var gum = md.getUserMedia.bind(md);
+        // One audio mode for the whole session: hold a mic stream open from the start, so a Bluetooth
+        // headset stays in call mode instead of switching (and changing sound speed) on every call.
+        if (!window.__clarityKeep) {
+          window.__clarityKeep = true;
+          setTimeout(function () {
+            gum({ audio: true }).then(function (s) { window.__clarityKeepStream = s; post({ side: 'info', pcm: 'headset held in call mode for the session' }); })
+              .catch(function (e) { window.__clarityKeep = false; post({ side: 'info', pcm: 'could not hold the mic open: ' + e }); });
+          }, 1500);
+        }
         md.getUserMedia = function (c) {
           return gum(c).then(function (stream) {
             if (stream.getAudioTracks().length) pump(stream, 'local');
