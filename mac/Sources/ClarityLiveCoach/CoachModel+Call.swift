@@ -77,7 +77,10 @@ extension CoachModel {
         }
         switch status {
         case .ready where onCall:
-            if waitingForNewCall {
+            if waitingForNewCall || AircallPhone.isOn {
+                // In-app phone: its own mic is held open all session, so sound alone never means a call.
+                // Calls start from Dial, or when Aircall itself shows a new call.
+                waitingForNewCall = true
                 // Chrome is still holding the last call's mic/speaker: start only when Aircall shows a new call.
                 checkAircallForNewCall()
             } else {
@@ -348,7 +351,7 @@ extension CoachModel {
             let system = """
             You read a finished cold call and pick how it went. Options: \(options.map(\.label).joined(separator: ", ")), or None.
             Interested: they agreed to a meeting or asked to hear more. Not now: bad timing, call back later, send an email.
-            Not a fit: clearly not interested, wrong person or company, no need. None: only a front desk, a hang-up, or too short to tell.
+            Not a fit: the right person said they're clearly not interested, wrong company, or no need. None: only a front desk, a hang-up, a wrong number or someone else answered, or too short to tell.
             If Not a fit, also pick the closest reason from: \(Salesforce.unqualifiedReasons.joined(separator: ", ")), or "".
             Return only JSON: {"outcome": "", "reason": "", "why": "one short sentence"}
             """
