@@ -41,7 +41,7 @@ struct ClaudeClient {
             "messages": [["role": "user", "content": user]],
         ]
         if let thinking { body["thinking"] = thinking }
-        if let temperature { body["temperature"] = temperature }
+        // temperature is left out on purpose: the newest models reject it (error 400).
         if model.hasPrefix("claude-opus") || model.hasPrefix("claude-fable")
             || (model == "claude-sonnet-5-5" && thinking?["type"] != "between_tools") {
             // If a safety check declines, the API retries on a fallback model in the same call.

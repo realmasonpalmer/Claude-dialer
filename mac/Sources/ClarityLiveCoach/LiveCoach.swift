@@ -10,8 +10,7 @@ enum LiveCoach {
         c.idleTimeout = 8
         c.totalTimeout = 15
         if model.contains("haiku") {
-            c.thinking = ["type": "disabled"]
-            c.temperature = 0.3
+            c.thinking = ["type": "disabled"] // this model takes no temperature setting
         } else {
             c.thinking = ["type": "between_tools"] // Sonnet with thinking off
         }
