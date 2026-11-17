@@ -379,7 +379,9 @@ extension CoachModel {
         // The AI thinks ahead, the screen follows the conversation: never swap the line while the rep is
         // speaking. Queue it, flag the old one as outdated, and show it the moment they stop.
         // A new prospect turn since the line appeared = the conversation moved on.
-        if kind == .reply, turns.last?.speaker == .prospect, !repSaidSinceShown.isEmpty { lineSuperseded = true }
+        // Only a real reply moves the conversation on (3+ words or a question), not "uh-huh" or "yeah".
+        if kind == .reply, let last = turns.last, last.speaker == .prospect, !repSaidSinceShown.isEmpty,
+           last.text.split(separator: " ").count >= 3 || last.text.contains("?") { lineSuperseded = true }
         if kind == .opener || kind == .voicemail || shownID == 0 || (!holdLine && CoachMachine.canReplace(signals())) {
             show(s, id: id, kind: kind)
         } else {

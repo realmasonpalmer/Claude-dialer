@@ -311,7 +311,7 @@ final class CoachModel: ObservableObject {
     @Published var pending: (id: Int, suggestion: Suggestion)?
     /// The rep's words last arrived (live, even mid-sentence). The display never changes while they speak.
     var lastRepSpeechAt = Date.distantPast
-    var repSpeaking: Bool { Date().timeIntervalSince(lastRepSpeechAt) < 0.9 }
+    var repSpeaking: Bool { Date().timeIntervalSince(lastRepSpeechAt) < 1.5 } // a breath between sentences still counts
     /// The prospect moved on while the rep was talking: the line on screen is outdated (a new one is queued).
     @Published var lineSuperseded = false
     /// The coach's screen state (one state machine, see CoachCore).
