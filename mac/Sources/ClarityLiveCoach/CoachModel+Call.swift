@@ -519,6 +519,7 @@ extension CoachModel {
         touchpoints.log(.dial)
         callMessage = nil
         pendingDialSince = nil // this dial is now the live call
+        BeepDetector.shared.reset()
         ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.

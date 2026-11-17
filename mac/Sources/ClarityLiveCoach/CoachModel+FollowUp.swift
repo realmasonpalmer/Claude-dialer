@@ -553,32 +553,54 @@ extension CoachModel {
         seq += 1
         show(Suggestion(say: "Waiting for the beep. Your recorded voicemail drops by itself.",
                         cue: "Voicemail drop. Nothing to read.", stage: "Voicemail", sayComplete: true), id: seq, kind: .voicemail)
-        let shownAt = Date().addingTimeInterval(-8) // a beep a moment before the card counts too
+        let detectedAt = Date()
         Task { [weak self] in
-            // Best: the beep itself was heard and has ended. Backup: the greeting went quiet and no
-            // beep came within 4 more seconds. Never wait over 25 s.
-            var how = "no beep heard, after the quiet"
-            var quietSince: Date?
+            // When to drop, best first:
+            // 1. The beep: a pure tone heard after some greeting. Drop 0.35 s after it ends.
+            // 2. No beep: the greeting's sound (from the audio, not the transcript) stopped for 2 s after
+            //    ending words ("leave a message", "after the tone"), or 3.5 s without them.
+            // 3. No audio reaching the app: the old transcript timing, a little longer.
+            // Never before 3 s (a pause mid-greeting), never after 30 s (it would be recording silence).
+            let beep = BeepDetector.shared
+            var how = "no beep in 30 s"
             while let self, self.status == .live {
-                if let beep = BeepDetector.shared.lastBeepEnd, beep > shownAt {
-                    how = "right after the beep"
+                let now = Date()
+                let since = now.timeIntervalSince(detectedAt)
+                if let end = beep.lastBeepEnd, beep.voicedSeconds >= 1.5 || since >= 2 {
+                    how = String(format: "right after the beep (%.0f Hz)", beep.lastBeepFreq)
+                    // Already a while ago (card came late): the recording is running, drop now.
+                    if now.timeIntervalSince(end) < 0.35 { try? await Task.sleep(for: .milliseconds(350)) }
                     break
                 }
-                let quiet = Date().timeIntervalSince(self.lastWordsAt ?? shownAt)
-                let since = Date().timeIntervalSince(shownAt) - 8
-                // The greeting is over: its last words sound like an ending, then 2.5 s of quiet.
-                // No ending words heard: 4 s of quiet. (A pause mid-greeting never counts.)
                 let said = (self.turns.last { $0.speaker == .prospect }?.text ?? "").lowercased()
-                let endings = ["message", "tone", "beep", "as soon as", "get back to you", "return your call", "record", "options", "thank you"]
-                let ended = endings.contains { said.suffix(80).contains($0) }
-                if since > 3, quiet > (ended ? 2.5 : 4.0) { quietSince = quietSince ?? Date() } else { quietSince = nil }
-                if quietSince != nil { how = ended ? "after the greeting ended (no beep heard)" : "after 4 s of quiet (no beep heard)"; break }
-                if since > 25 { how = "no beep in 25 s"; break }
+                let endings = ["message", "tone", "beep", "as soon as", "get back to you", "return your call",
+                               "record", "options", "thank you", "after the", "call you back"]
+                let ended = endings.contains { said.suffix(90).contains($0) }
+                if beep.hearing || beep.voicedSeconds > 0 {
+                    let quiet = now.timeIntervalSince(beep.lastSoundAt ?? detectedAt)
+                    if since >= 3, beep.voicedSeconds >= 2, quiet >= (ended ? 2.0 : 3.5) {
+                        how = String(format: "after the greeting's sound stopped for %.1f s (no beep heard, %@)", quiet, ended ? "ending words heard" : "no ending words")
+                        break
+                    }
+                } else {
+                    let quiet = now.timeIntervalSince(self.lastWordsAt ?? detectedAt)
+                    if since >= 4, quiet >= (ended ? 3.0 : 4.5) {
+                        how = "after the transcript went quiet (no audio to listen to)"
+                        break
+                    }
+                }
+                if since > 30 { break }
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            try? await Task.sleep(for: .milliseconds(how == "right after the beep" ? 250 : 300))
-            ActivityLog.add("Voicemail drop: dropping \(how)")
             guard let self, self.status == .live else { return }
+            // Last check: still on the line.
+            if await Aircall.lineIsOnCall() == false {
+                ActivityLog.add("Voicemail drop: the call ended before the drop")
+                return
+            }
+            ActivityLog.add(String(format: "Voicemail drop: heard %.1f s of greeting audio", BeepDetector.shared.voicedSeconds))
+            ActivityLog.add("Voicemail drop: dropping \(how)")
+            guard self.status == .live else { return }
             let result = await AircallPhone.shared.dropVoicemail(dryRun: false)
             guard result.clicked else {
                 ActivityLog.problem("Voicemail drop: couldn't find the button. \(result.info)")

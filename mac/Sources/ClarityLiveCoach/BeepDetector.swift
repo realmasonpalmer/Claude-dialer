@@ -11,6 +11,10 @@ final class BeepDetector: @unchecked Sendable {
     private var toneFrames = 0
     private var toneFreq = 0.0
     private var _lastBeepEnd: Date?
+    private var _lastBeepFreq = 0.0
+    private var _lastSoundAt: Date?
+    private var _lastFrameAt: Date?
+    private var _voicedFrames = 0
 
     private let rate = 16_000.0
     private let frame = 320 // 20 ms
@@ -19,7 +23,21 @@ final class BeepDetector: @unchecked Sendable {
     /// When the latest beep finished, if one was heard.
     var lastBeepEnd: Date? { lock.lock(); defer { lock.unlock() }; return _lastBeepEnd }
 
-    func reset() { lock.lock(); buffer = []; toneFrames = 0; _lastBeepEnd = nil; lock.unlock() }
+    /// The pitch of the last beep, for the log.
+    var lastBeepFreq: Double { lock.lock(); defer { lock.unlock() }; return _lastBeepFreq }
+    /// Last time the other side made real sound (a voice, music), from the audio itself, not the transcript.
+    var lastSoundAt: Date? { lock.lock(); defer { lock.unlock() }; return _lastSoundAt }
+    /// Seconds of real sound heard since the call started.
+    var voicedSeconds: Double { lock.lock(); defer { lock.unlock() }; return Double(_voicedFrames) * 0.02 }
+    /// Audio is arriving right now (a slice in the last second).
+    var hearing: Bool { lock.lock(); defer { lock.unlock() }; return _lastFrameAt.map { Date().timeIntervalSince($0) < 1 } ?? false }
+
+    /// A new call: forget the last call's beep and sound.
+    func reset() {
+        lock.lock()
+        buffer = []; toneFrames = 0; _lastBeepEnd = nil; _lastSoundAt = nil; _lastFrameAt = nil; _voicedFrames = 0
+        lock.unlock()
+    }
 
     func feed(_ pcm16: Data) {
         lock.lock(); defer { lock.unlock() }
@@ -36,6 +54,8 @@ final class BeepDetector: @unchecked Sendable {
     private func step(_ x: [Float]) {
         var energy = 0.0
         for v in x { energy += Double(v * v) }
+        _lastFrameAt = Date()
+        if energy / Double(frame) > 2e-4 { _lastSoundAt = Date(); _voicedFrames += 1 } // louder than line hiss
         var isTone = false
         var peakFreq = 0.0
         if energy / Double(frame) > 1e-5 { // not silence
@@ -53,7 +73,7 @@ final class BeepDetector: @unchecked Sendable {
             if toneFrames == 0 { toneFreq = peakFreq }
             toneFrames += 1
         } else {
-            if (6...75).contains(toneFrames) { _lastBeepEnd = Date() } // 0.16 to 1.5 s: a beep
+            if (6...75).contains(toneFrames) { _lastBeepEnd = Date(); _lastBeepFreq = toneFreq } // 0.12 to 1.5 s: a beep
             toneFrames = isTone ? 1 : 0
             toneFreq = peakFreq
         }
