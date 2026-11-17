@@ -48,9 +48,12 @@ enum CoachPrompt {
         - Nothing matches: use the fallback row for the current stage.
         - CUE starts with the row's ID (or its stage, like S3) in brackets, then the row's Then
           (e.g. "[S5 manual 2] then ask how long").
-        - STAGE maps the script's stages to the app's: gatekeeper = Gatekeeper, opener = Opener, reason and the
-          question = Value, discovery = Discovery, any objection row = Objection, the ask = Closing, close = Goal reached
-          once a time is picked, exit without a meeting or end = Exit, voicemail = Voicemail, call screen = Screener.
+        - STAGE maps the script's stages to the app's: GATE or gatekeeper = Gatekeeper, OPEN or opener = Opener,
+          REASON, PROBLEM or the question = Value, PAIN or discovery = Discovery, PLAYBACK and BRIDGE = Discovery,
+          any objection row = Objection, ASK = Closing, JOIN and LOCK = Goal reached once a time is picked,
+          HANDOFF, exit without a meeting or end = Exit, voicemail = Voicemail, call screen = Screener.
+        - Times: only the open meeting times below as [Slot A] [Slot B] [Slot C] [Slot D] (or [Day] [Time]). Never make one up.
+        - "Send me info" is not a meeting yes: use the info row, then ask once for a time.
 
         Getting past a gatekeeper (receptionist, assistant, operator, "who's calling?"), when the script has no
         gatekeeper lines. Adapt the campaign's opener; the goal is to be put through, not to pitch:

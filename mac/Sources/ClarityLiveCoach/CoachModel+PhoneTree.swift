@@ -135,8 +135,17 @@ extension CoachModel {
         followUp = nil
         if let key = currentAttemptKey { markNotQualityProspect(key, reason: "carrier says the number can't take calls") }
         seq += 1
-        show(Suggestion(say: "Bad number. Hang up. The next call starts by itself.", cue: "The carrier says this number doesn't work.",
+        show(Suggestion(say: "Bad number. Hanging up. The next call starts by itself.", cue: "The carrier says this number doesn't work. Taken off your list.",
                         stage: "Exit", sayComplete: true), id: seq, kind: .reply)
+        ActivityLog.add("Bad number for \(calling ?? "?"): hanging up and removing from the list")
+        guard AircallPhone.isOn else { return }
+        Task { [weak self] in
+            guard let self, self.status == .live, await AircallPhone.shared.hangUp() else { return }
+            for _ in 0..<5 {
+                try? await Task.sleep(for: .seconds(1))
+                if await Aircall.lineIsOnCall() == false, self.status == .live { self.endCall(); return }
+            }
+        }
     }
 
     /// Bad number: off the call list for good (in the app), and marked in Salesforce as

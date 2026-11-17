@@ -464,10 +464,9 @@ enum ScriptWriter {
         seasons, what makes them look for help, who else they answer to, the tools they use, and the brush-offs
         they give every cold caller.
 
-        The one thing that's the same for every segment: the ask is a free 45 minute health check with Oliver,
-        our managing partner. Pick the kind that fits this segment's problem: a CRM health check (data, pipeline,
-        Salesforce or another CRM) or an AI health check (hours lost to manual work, AI use). Use that name
-        everywhere the skeleton says [CRM or AI].
+        The one thing that's the same for every segment: the ask is a free 45 minute AI and customer records
+        health check with Oliver, our managing partner. Fill in the PLAYBOOK block at the top for this segment
+        (avatar, titles, their words, problem lines, incentive) and use those values everywhere they appear.
 
         How great cold calls work in \(year):
         - Opener: honest and calm. Say it's a cold call or give the reason right away, then ask for 30 seconds.
@@ -484,15 +483,21 @@ enum ScriptWriter {
         - Sound like a sharp, calm peer from their world. Short words, contractions, no jargon, no hype.
 
         Rules:
-        - Follow the skeleton exactly: every section, in order, with the same titles and table columns
-          separated by tabs. Copy the sections it says to copy. Replace every note in (parentheses) with real
-          content for this segment. Use row IDs in the same style (G1, S1 open, S5 ns 1, Q1, O1, VM1, T1, L1).
-        - Every Say line: 25 words at most, ends with a question unless it ends the call, plain spoken English
-          a 5th grader could read, no em dashes. Outcome first (time back, more selling, less risk), then the
-          problem, then the fix. Technology last.
+        - Follow the skeleton exactly: every section, in order, with the same titles. Table rows use " | "
+          between columns, matching each table's header. Copy the sections it says to copy. Replace every note in
+          (parentheses) with real content for this segment. Stages are named (GATE, OPEN, REASON, PROBLEM, PAIN,
+          PLAYBACK, BRIDGE, ASK, JOIN, LOCK, HANDOFF), never numbered. Row IDs are short names, like
+          "GATE what about", "PAIN late 1", "OBJ cost", "Q which AI", "VM1". Mark one "(default)" row per stage.
+        - Every Say line is a real line to say out loud, never an instruction like "Show the next line".
+        - Every Say line (voicemails, texts and LinkedIn excepted): 25 words at most, exactly one question mark
+          and it ends with it, unless the row ends the call. Plain spoken English a 5th grader could read.
+          Outcome first (time back, more selling, less risk), then the problem, then the fix. Technology last.
+        - Never: an em dash, an all-caps abbreviation except AI (write "customer records", not the short form),
+          a "$" or "%" or price, or a day or time. Times are always [Slot A] and [Slot B] (or [Slot C], [Slot D]).
         - Facts: only the FACTS section. Never invent a number, stat, client name, result, price or offer. If the
           rep's description gives a real proof point, you may use it exactly as written.
-        - Use [slots] like [Name], [Firm], [SDR], [Day], [Time], [Number]. Use [Name] for the prospect, never he or she.
+        - Use [slots] like [Name], [Company], [SDR], [Slot A], [Slot B], [people], [hours_week]. Use [Name] for
+          the prospect, never he or she.
         - Return only the script as plain text. No markdown, no notes before or after.
 
         SKELETON:
@@ -511,6 +516,34 @@ enum ScriptWriter {
             text = partial
             onText(partial)
         }, onThinking: onThinking)
-        return text.trimmed
+        text = text.trimmed
+        // Check every line against the house rules in code. Claude fixes the ones that fail, once.
+        let issues = Guardrail.lint(script: text)
+        guard !issues.isEmpty else { return text }
+        let list = issues.prefix(40).map { "\($0.id) | \($0.say) | problems: \($0.problems.joined(separator: "; "))" }.joined(separator: "\n")
+        var fixer = ClaudeClient(apiKey: key)
+        fixer.model = "claude-sonnet-5-5"
+        fixer.effort = "low"
+        fixer.maxTokens = 8000
+        let fixSystem = """
+        You fix cold call script lines that broke the house rules. For each line, write a new line that says the
+        same thing and passes: 25 words at most; exactly one question mark, at the end (unless it ends the call);
+        no abbreviations in capitals except AI (say "customer records"); no em dash; no $ or % or price; no day or
+        time (use [Slot A] or [Slot B]); none of these words: \(Guardrail.banned.joined(separator: ", ")); a real line,
+        never an instruction. Keep [slots] as they are.
+        Return only JSON: {"fixes": [{"old": "the exact old line", "new": "the new line"}]}
+        """
+        if let json = try? await fixer.json(system: fixSystem, user: list),
+           let fixes = json["fixes"] as? [[String: Any]] {
+            for f in fixes {
+                guard let old = f["old"] as? String, let new = f["new"] as? String, !old.isEmpty,
+                      Guardrail.problems(new, endsCall: !new.hasSuffix("?")).filter({ !$0.contains("question") }).isEmpty else { continue }
+                text = text.replacingOccurrences(of: old, with: new)
+            }
+            onText(text)
+        }
+        let left = Guardrail.lint(script: text).count
+        await MainActor.run { ActivityLog.add("Script writer: \(issues.count) lines broke the rules, \(issues.count - left) fixed, \(left) left") }
+        return text
     }
 }

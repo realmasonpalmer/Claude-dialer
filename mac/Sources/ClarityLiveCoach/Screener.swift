@@ -189,6 +189,9 @@ enum BadNumber {
         "is not reachable at this", "call cannot be completed at this time", "your call cannot be completed",
         "your call could not be completed", "not been completed", "has been suspended", "is suspended",
         "number has been disconnected", "is no longer a working", "not a valid phone number",
+        "does not exist", "doesn't exist", "do not exist", "try your call again",
+        "please hang up and try again", "hang up and dial again", "is not assigned",
+        "not been assigned", "unassigned number",
     ]
 
     static func detects(_ text: String) -> Bool {
