@@ -1073,7 +1073,10 @@ public enum Rejection {
 
     public static func isNo(_ text: String) -> Bool {
         let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
-        return nos.contains { t.contains($0) }
+        if nos.contains(where: { t.contains($0) }) { return true }
+        // "I don't think this is really relevant", "this isn't relevant to us"
+        let negated = ["don't think", "not", "isn't", "doesn't"].contains { t.contains($0) }
+        return negated && (t.contains("relevant") || t.contains("interested") || t.contains("a fit"))
     }
 
     public static func isSignOff(_ text: String) -> Bool {
