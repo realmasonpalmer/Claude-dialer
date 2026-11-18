@@ -200,9 +200,28 @@ public enum OptOut {
                                  "take my number off", "delete my number", "don't contact me", "do not contact me",
                                  "stop contacting me", "never call again", "don't call again", "do not call again"]
 
-    public static func matches(_ text: String) -> Bool {
+    /// "Don't call me back" can mean "call me later" ("...until Tuesday"). Those only count on a final
+    /// transcript, and not when a later time follows. Clear phrases ("take me off your list") count at once.
+    static let ambiguous = ["don't call me back", "do not call me back", "don't call back"]
+    static let deferrals = ["until", "till", "later", "tomorrow", "next", "after", "monday", "tuesday", "wednesday",
+                            "thursday", "friday", "in a few", "in an hour", "when", "this afternoon", "tonight"]
+
+    public static func matches(_ text: String, isFinal: Bool = true) -> Bool {
         let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'").replacingOccurrences(of: "dont ", with: "don't ")
-        return phrases.contains { t.contains($0) }
+        for p in phrases where t.contains(p) {
+            guard ambiguous.contains(p) else { return true }
+            guard isFinal, let r = t.range(of: p) else { continue }
+            let after = t[r.upperBound...].prefix(40)
+            if !deferrals.contains(where: { after.contains($0) }) { return true }
+        }
+        return false
+    }
+}
+
+/// MOVE: silent keeps the line on screen only if it still fits. If the talk moved past it, it's cleared.
+public enum SilentRule {
+    public static func clearCurrent(superseded: Bool, delivered: Bool, answered: Bool) -> Bool {
+        superseded || (delivered && answered)
     }
 }
 

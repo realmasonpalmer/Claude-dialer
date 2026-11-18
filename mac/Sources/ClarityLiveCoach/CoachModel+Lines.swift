@@ -136,7 +136,7 @@ extension CoachModel {
         guard status == .live, !screenerActive, !voicemailActive, !doNotCall else { return } // prepare even while a line is up
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
         // "Don't call me back" mid-sentence: stop selling now, don't wait for them to finish.
-        if LiveCoach.isOptOut(text) { handleOptOut(text); return }
+        if LiveCoach.isOptOut(text, isFinal: false) { handleOptOut(text); return }
         guard isMeaningful(text) else { return }
         // Known objection mid-sentence: the approved answer is ready the moment they stop.
         if scriptAnswers.match(text) != nil {
@@ -541,6 +541,13 @@ extension CoachModel {
     /// Shows a suggestion, but never swaps a fresh line out from under the rep.
     func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
         guard id == seq, !s.skip, !s.say.isEmpty, !doNotCall else { // do not call: nothing replaces the goodbye
+            // MOVE: silent: keep the line if it still fits; clear it if the talk moved past it.
+            if s.move == "silent", id == seq, !doNotCall, status == .live, !suggestion.say.isEmpty,
+               SilentRule.clearCurrent(superseded: lineSuperseded, delivered: lineDelivered, answered: answeredAfterDelivery) {
+                CallTrace.event("suggestion.cleared", ["line": suggestion.say, "why": "Claude chose silent and the line was outdated"], sug: shownID)
+                suggestion = Suggestion()
+                lineSuperseded = false
+            }
             if s.sayComplete || s.skip {
                 let why = doNotCall ? "do not call" : id != seq ? "stale: request #\(seq) is newer" : s.move == "silent" ? "Claude chose silent: no new line needed" : s.skip ? "Claude said skip" : "empty"
                 CallTrace.event("suggestion.dropped", ["line": s.say, "why": why], sug: id)

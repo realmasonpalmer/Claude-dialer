@@ -20,7 +20,7 @@ enum LiveCoach {
 
     // MARK: Opt out, handled in code (no AI)
 
-    static func isOptOut(_ text: String) -> Bool { OptOut.matches(text) }
+    static func isOptOut(_ text: String, isFinal: Bool = true) -> Bool { OptOut.matches(text, isFinal: isFinal) }
 
     static let optOutLine = "Understood. I'll take you off our list right now. Have a good day."
 
