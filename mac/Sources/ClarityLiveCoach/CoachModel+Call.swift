@@ -41,6 +41,17 @@ extension CoachModel {
     func tick() {
         guard active else { return }
         checkBlock()
+        // Midnight: yesterday's "called today" clears, so people due today come back on the list.
+        let day = Calendar.current.component(.day, from: Date())
+        if day != lastTickDay {
+            if lastTickDay != 0 {
+                callList.resetCalledIfNewDay()
+                callList.refreshUpNext()
+                leads.resetIfNewDay()
+                ActivityLog.add("New day: called-today list cleared")
+            }
+            lastTickDay = day
+        }
         skipForeignLead()
         promotePendingIfReady()
         if status == .live {

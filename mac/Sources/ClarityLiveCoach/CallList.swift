@@ -408,7 +408,7 @@ final class CallList: ObservableObject {
         refreshUpNext()
     }
 
-    private func resetCalledIfNewDay() {
+    func resetCalledIfNewDay() {
         CalledToday.resetIfNewDay()
         if calledToday != CalledToday.ids { calledToday = CalledToday.ids }
     }

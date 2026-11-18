@@ -8,7 +8,8 @@ enum CalledToday {
     private static var ids_: Set<String> = []
     private static var loaded = false
 
-    static var ids: Set<String> { load(); return ids_ }
+    /// Always today's: if the app stayed open past midnight, yesterday's calls are cleared first.
+    static var ids: Set<String> { resetIfNewDay(); return ids_ }
 
     static func add(_ id: String) {
         resetIfNewDay()

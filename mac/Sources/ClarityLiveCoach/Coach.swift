@@ -198,6 +198,7 @@ final class CoachModel: ObservableObject {
     var dropNowRequested = false
     var phoneButtonCheck: Task<Void, Never>?
     var phoneCallSeen = 0
+    var lastTickDay = 0
     /// When the prospect's last words arrived (to time how fast the coach answered).
     var lastHeardThemAt: Date?
     var phoneSawHangUp = false

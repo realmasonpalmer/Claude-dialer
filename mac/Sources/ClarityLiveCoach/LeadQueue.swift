@@ -180,7 +180,7 @@ final class LeadQueue: ObservableObject {
         calledToday = CalledToday.ids
     }
 
-    private func resetIfNewDay() {
+    func resetIfNewDay() {
         CalledToday.resetIfNewDay()
         calledToday = CalledToday.ids
     }
