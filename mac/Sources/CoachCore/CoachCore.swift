@@ -698,11 +698,44 @@ public enum LineRepair {
     /// all-caps word we don't know is left (that one still goes back to Claude).
     public static func fix(_ line: String) -> String? {
         var out = line.replacingOccurrences(of: "\u{2014}", with: ",").replacingOccurrences(of: "\u{2013}", with: ",")
+        out = oneQuestion(out)
         for (abbr, plain) in abbreviations {
             out = out.replacingOccurrences(of: "\\b\(abbr)\\b", with: plain, options: .regularExpression)
         }
         let leftover = out.split(whereSeparator: { !$0.isLetter }).filter { $0.count >= 2 && $0.allSatisfy(\.isUppercase) && $0 != "AI" }
         return leftover.isEmpty ? out : nil
+    }
+
+    /// "Makes sense? How many reps?" -> "Makes sense. How many reps?": only the last question keeps its "?" (H4).
+    public static func oneQuestion(_ line: String) -> String {
+        guard let last = line.lastIndex(of: "?") else { return line }
+        var out = ""
+        for (i, ch) in zip(line.indices, line) { out.append(ch == "?" && i != last ? "." : ch) }
+        return out
+    }
+
+    /// Fit a long line to `max` words without leaving a fragment (M7): keep the trailing question if it
+    /// fits, else whole sentences from the start, else the first `max` words.
+    public static func trimToFit(_ line: String, max: Int) -> String {
+        let words = line.split(separator: " ")
+        guard words.count > max else { return line }
+        let sentences = line.split(whereSeparator: { ".!?".contains($0) }, omittingEmptySubsequences: true)
+        var ends: [String] = []
+        var rest = Substring(line)
+        for s in sentences {
+            guard let r = rest.range(of: s) else { break }
+            let after = rest[r.upperBound...]
+            let punct = after.prefix(while: { ".!?".contains($0) })
+            ends.append((s + punct).trimmingCharacters(in: .whitespaces))
+            rest = after.dropFirst(punct.count)
+        }
+        if let q = ends.last, q.hasSuffix("?"), q.split(separator: " ").count <= max { return q }
+        var kept: [String] = []
+        for s in ends {
+            if (kept + [s]).joined(separator: " ").split(separator: " ").count > max { break }
+            kept.append(s)
+        }
+        return kept.isEmpty ? words.prefix(max).joined(separator: " ") : kept.joined(separator: " ")
     }
 }
 

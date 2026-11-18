@@ -417,7 +417,7 @@ extension CoachModel {
                     Task { @MainActor in
                         guard kind == .reply else { self?.offer(s, id: id, kind: kind, askedAt: askedAt); return }
                         // A live line shows only once it's whole and passes the house rules.
-                        guard s.sayComplete || s.skip, !gate.checked else { if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }; return }
+                        guard (s.sayComplete && !s.stage.isEmpty) || s.skip, !gate.checked else { if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }; return }
                         gate.checked = true
                         let problems = s.skip ? [] : Self.lineProblems(s)
                         gate.passed = problems.isEmpty
@@ -463,7 +463,7 @@ extension CoachModel {
 
     /// The house rules for a live line (offered meeting times are allowed).
     static func lineProblems(_ s: Suggestion) -> [String] {
-        Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage), allowTimes: true)
+        Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil, allowTimes: true)
     }
 
     /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
@@ -472,16 +472,19 @@ extension CoachModel {
         ActivityLog.add("Line check: failed (\(problems.joined(separator: "; "))): \(bad.say)")
         CallTrace.event("check.fail", ["line": bad.say, "problems": problems], req: id)
         // Formatting only (an abbreviation like CRM, an em dash): fix it in code, no second request.
-        if problems.allSatisfy({ $0.hasPrefix("abbreviation") || $0 == "em dash" }), let fixed = LineRepair.fix(bad.say) {
+        if problems.allSatisfy({ $0.hasPrefix("abbreviation") || $0 == "em dash" || $0 == "more than one question" }),
+           let fixed = LineRepair.fix(bad.say) {
             var s = bad
             s.say = fixed
-            if Self.lineProblems(s).isEmpty {
+            // Spelled-out words add syllables: allow half a grade of slack on a repaired line (M6).
+            let left = Self.lineProblems(s).filter { !($0.hasPrefix("reading level") && ReadingLevel.grade(fixed) <= ReadingLevel.checkMax + 0.5) }
+            if left.isEmpty {
                 ActivityLog.add("Line check: fixed in code (no extra request)")
                 CallTrace.event("check.fixed_locally", ["from": bad.say, "line": fixed], req: id)
                 return s
             }
         }
-        for model in ["claude-haiku-5-5", "claude-sonnet-5-5"] {
+        for model in ["claude-haiku-5-5"] { // one Haiku retry at most; no Sonnet on a live call (H4)
             var text = ""
             let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
             CallTrace.event("claude.retry.request", ["model": model, "user_message": retry], req: id)
@@ -531,6 +534,8 @@ extension CoachModel {
             latency = max(0, Date().timeIntervalSince(confirmedAt ?? askedAt))
         }
         if id == shownID {
+            // Once a line is whole on screen, its words are frozen: a late chunk never changes it (N2).
+            if suggestion.sayComplete { return }
             if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
             var s = s
             s.say = fillTags(s.say, for: calling) // never show a bare [Name] or [SDR]

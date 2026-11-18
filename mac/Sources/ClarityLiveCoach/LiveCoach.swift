@@ -27,10 +27,8 @@ enum LiveCoach {
     /// Last resort when a line fails the check twice: smallest safe fix.
     static func sanitize(_ say: String) -> String {
         var s = say.replacingOccurrences(of: "\u{2014}", with: ",").replacingOccurrences(of: "\u{2013}", with: ",")
-        if let q = s.firstIndex(of: "?") { s = String(s[...q]) } // one question, at the end
-        let words = s.split(separator: " ")
-        if words.count > LineBudget.checkMax { s = words.suffix(LineBudget.checkMax).joined(separator: " ") }
-        return s
+        s = LineRepair.oneQuestion(s)
+        return LineRepair.trimToFit(s, max: LineBudget.checkMax) // whole sentences, never a fragment (M7)
     }
 }
 
