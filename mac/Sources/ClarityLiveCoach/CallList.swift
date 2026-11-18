@@ -62,7 +62,30 @@ final class CallList: ObservableObject {
     // MARK: Learning the list
 
     /// Reads the list from the Salesforce tab (split view panel or list view page). Every few seconds.
+    /// The list picked in the call list menu. When set, it's the only list ever called: whatever
+    /// list is open in Chrome is ignored. Loaded straight from Salesforce.
+    func pin(object: String, view: String) {
+        guard !object.isEmpty, !view.isEmpty else { pinned = nil; return }
+        let key = ListKey(object: object, view: view)
+        pinned = key
+        guard listKey != key else { return }
+        listKey = key
+        records = []
+        lastIndex = -1
+        fullListKey = nil
+        message = nil
+        save()
+        ActivityLog.add("List: using the call list's list only (\(view))")
+        Task { _ = await loadFullList() }
+    }
+    private(set) var pinned: ListKey?
+
     func captureIfListView() {
+        // A list is picked in the call list menu: never take people from whatever list Chrome shows.
+        if pinned != nil {
+            if Date().timeIntervalSince(lastFullLoad) > 120 { Task { _ = await refreshFromSalesforce() } }
+            return
+        }
         guard Date().timeIntervalSince(lastCapture) > 3 else { return }
         lastCapture = Date()
         switch SalesforceChrome.readList() {

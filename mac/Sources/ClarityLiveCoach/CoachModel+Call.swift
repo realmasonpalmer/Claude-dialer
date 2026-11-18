@@ -11,6 +11,7 @@ extension CoachModel {
     /// Checked every half second, so no path (first lead, Back, reload, auto next) can miss it.
     private func skipForeignLead() {
         MobileOnly.campaignID = campaign.id
+        callList.pin(object: campaign.listObject, view: campaign.listViewID) // only the menu's list
         if leads.isActive, let d = leads.details { MobileOnly.record(d.id, mobile: d.mobile) }
         // Mobile numbers only: no Mobile on file, skip them for this call list.
         if MobileOnly.on, status == .ready, !dialing, let key = recordKey(), MobileOnly.excluded(key), mobileSkippedID != key {
