@@ -49,6 +49,7 @@ final class SandyFullCallReplayTests: XCTestCase {
         var shownLine = opener, shownAt = 0.0, shownID = 0
         var repSaidSinceShown = "", repWordsSinceShown = 0, answeredAfterDelivery = false, superseded = false
         var repWords = 0, repWordsAtLastAsk = 0
+        var repTextSinceAsk = ""
         var pending: (req: Request, queuedAt: Double, askedSince: Bool)?
         var inflight: [Request] = []
         var seq = 0
@@ -92,6 +93,7 @@ final class SandyFullCallReplayTests: XCTestCase {
         func ask(_ t: Double, line: String, latency: Double, repLed: Bool) {
             seq += 1
             repWordsAtLastAsk = repWords
+            repTextSinceAsk = ""
             inflight = [Request(id: seq, askedAt: t, readyAt: t + latency, line: line, repWords: repWords, repLed: repLed)]
             events.append(String(format: "%6.2f  ask #%d%@", t, seq, repLed ? " (follow the rep)" : ""))
         }
@@ -106,6 +108,7 @@ final class SandyFullCallReplayTests: XCTestCase {
                     let n = turn.text.split(separator: " ").count
                     repWords += n; repWordsSinceShown += n
                     repSaidSinceShown += " " + turn.text
+                    repTextSinceAsk += " " + turn.text
                     if pending != nil, turn.text.contains("?") { pending!.askedSince = true }
                     // A yes/no question: the line for "yes" is written now, held, never shown before the answer.
                     yesLine = RepQuestion.closedQuestion(in: turn.text).map { (question: $0, readyAt: t + yesLineLatency) }
@@ -131,7 +134,7 @@ final class SandyFullCallReplayTests: XCTestCase {
                         superseded = true // they answered the rep's question
                         yesUsed.append(t)
                         events.append(String(format: "%6.2f  \"%@\" is a yes: ready line, no wait", t, turn.text))
-                        if CoachMachine.canReplace(signals(t)) { show(r, t) } else { pending = (r, t, false) }
+                        if CoachController.offer(isOpenerOrVoicemail: false, firstLine: false, holdLine: false, signals: signals(t)) == .show { show(r, t) } else { pending = (r, t, false) }
                     } else if !greeting {
                         yesLine = nil
                         let h = haikuAfter[turn.text] ?? (line: "ANSWER: \(turn.text)", seconds: 1.0)
@@ -148,19 +151,24 @@ final class SandyFullCallReplayTests: XCTestCase {
                 if r.repLed { superseded = true }
                 else if lastIsProspect, let p = lastProspect,
                         repAsked || p.text.split(separator: " ").count >= 3 || p.text.contains("?") { superseded = true }
-                if CoachMachine.canReplace(signals(t)) { show(r, t) }
+                if CoachController.offer(isOpenerOrVoicemail: false, firstLine: false, holdLine: false, signals: signals(t)) == .show { show(r, t) }
                 else {
                     pending = (r, t, false)
                     events.append(String(format: "%6.2f  queued #%d (rep speaking: %@)", t, r.id, repSpeaking(t) ? "yes" : "no"))
                 }
             }
             // 3. Each tick: promote a waiting line if safe, unless it went stale (the app's promotePendingIfReady()).
-            if let p = pending, CoachMachine.canReplace(signals(t)) {
-                if let why = QueuedLine.staleReason(ageSeconds: t - p.queuedAt, repWordsSinceQueued: repWords - p.req.repWords,
-                                                    repAskedSinceQueued: p.askedSince) {
+            if let p = pending {
+                // The same decision function the app's promotePendingIfReady() calls (H7).
+                switch CoachController.promote(holdLine: false, signals: signals(t), ageSeconds: t - p.queuedAt,
+                                               repWordsSinceQueued: repWords - p.req.repWords, repAskedSinceQueued: p.askedSince,
+                                               repTextSinceQueued: repTextSinceAsk) {
+                case .wait: break
+                case .show: show(p.req, t)
+                case .drop(let why):
                     events.append(String(format: "%6.2f  dropped #%d at the pause: %@ (%@ rule)", t, p.req.id, why, QueuedLine.ruleKind(why)))
                     pending = nil
-                } else { show(p.req, t) }
+                }
             }
             t = (t * 100 + 5).rounded() / 100 // 50 ms ticks
         }

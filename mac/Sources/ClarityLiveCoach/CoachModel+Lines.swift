@@ -582,7 +582,8 @@ extension CoachModel {
             }
             lineSuperseded = true
         }
-        if kind == .opener || kind == .voicemail || shownID == 0 || (!holdLine && CoachMachine.canReplace(signals())) {
+        if CoachController.offer(isOpenerOrVoicemail: kind == .opener || kind == .voicemail, firstLine: shownID == 0,
+                                 holdLine: holdLine, signals: signals()) == .show {
             show(s, id: id, kind: kind)
         } else {
             if pending?.id != id {
@@ -644,7 +645,11 @@ extension CoachModel {
     /// Called twice a second: a queued line shows once the rep stops speaking.
     func promotePendingIfReady() {
         guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq) else { return }
-        guard !holdLine, CoachMachine.canReplace(signals()) else {
+        let decision = CoachController.promote(holdLine: holdLine, signals: signals(),
+                                               ageSeconds: Date().timeIntervalSince(pendingQueuedAt),
+                                               repWordsSinceQueued: repWordsInCall - repWordsAtQueue,
+                                               repAskedSinceQueued: repAskedSinceQueue, repTextSinceQueued: repTextSinceAsk)
+        guard decision != .wait else {
             if blockedLoggedID != p.id { // once per queued line, not every tick
                 blockedLoggedID = p.id
                 CallTrace.event("promotion.blocked", ["why": holdLine ? "held by the rep" : "not safe to replace yet",
@@ -653,10 +658,7 @@ extension CoachModel {
             return
         }
         // The rep's words are the source of truth: if they moved on while this waited, it's stale.
-        if let why = QueuedLine.staleReason(ageSeconds: Date().timeIntervalSince(pendingQueuedAt),
-                                            repWordsSinceQueued: repWordsInCall - repWordsAtQueue,
-                                            repAskedSinceQueued: repAskedSinceQueue,
-                                            repTextSinceQueued: repTextSinceAsk) {
+        if case .drop(let why) = decision {
             pending = nil
             ActivityLog.add("Coach #\(p.id): queued line dropped (\(why); \(QueuedLine.ruleKind(why)) rule)")
             CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)",

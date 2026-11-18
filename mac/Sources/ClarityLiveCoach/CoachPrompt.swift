@@ -237,7 +237,7 @@ enum CoachPrompt {
         If the prospect asked a question, the first sentence answers it plainly and directly.
         What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most, ending in one question
         (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through
-        better, use it and add a line OFF SCRIPT: yes.
+        better, use it.
         """
     }
 

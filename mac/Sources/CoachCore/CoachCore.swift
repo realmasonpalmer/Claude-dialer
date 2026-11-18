@@ -937,3 +937,29 @@ public enum GoalEvidence {
         return ProspectReply.kind(prospectSaid) == .yes || agree.contains(where: { t.contains($0) }) || times.contains(where: { t.contains($0) })
     }
 }
+
+
+/// The screen controller's two decisions, shared by the app and the replay tests (H7), so the tests
+/// prove the code the app actually runs.
+public enum CoachController {
+    public enum Offer: Equatable, Sendable { case show, queue }
+    public enum Promote: Equatable, Sendable { case wait, show, drop(String) }
+
+    /// A finished line arrives. Openers, voicemails and the first line show at once; anything else
+    /// only if the line on screen can be replaced now, else it waits in the queue.
+    public static func offer(isOpenerOrVoicemail: Bool, firstLine: Bool, holdLine: Bool, signals: CoachSignals) -> Offer {
+        if isOpenerOrVoicemail || firstLine { return .show }
+        return !holdLine && CoachMachine.canReplace(signals) ? .show : .queue
+    }
+
+    /// A queued line, checked on each tick or when the rep's speech ends: wait, show, or drop as stale.
+    public static func promote(holdLine: Bool, signals: CoachSignals, ageSeconds: Double, repWordsSinceQueued: Int,
+                               repAskedSinceQueued: Bool, repTextSinceQueued: String) -> Promote {
+        guard !holdLine, CoachMachine.canReplace(signals) else { return .wait }
+        if let why = QueuedLine.staleReason(ageSeconds: ageSeconds, repWordsSinceQueued: repWordsSinceQueued,
+                                            repAskedSinceQueued: repAskedSinceQueued, repTextSinceQueued: repTextSinceQueued) {
+            return .drop(why)
+        }
+        return .show
+    }
+}

@@ -411,19 +411,8 @@ final class CoachModel: ObservableObject {
     var specTimer: Task<Void, Never>?
     var confirmedAt: Date?
 
-    /// A new line never replaces one the rep has had less than this long to read.
-    let hold: TimeInterval = 4
-    /// A line stays until the rep has said it (about 4 words heard from the rep),
-    /// or this many seconds pass. New lines wait, so nothing changes mid-read.
-    let lockSeconds: TimeInterval = 15
     var repWordsSinceShown = 0
     var repWordsInCall = 0
-
-    /// True while the line on screen is new and the rep hasn't said it yet.
-    var lineIsFresh: Bool {
-        (kind == .reply || kind == .opener) && !suggestion.say.isEmpty
-            && repWordsSinceShown < 4 && Date().timeIntervalSince(shownAt) < lockSeconds
-    }
 
     var active = false
 
