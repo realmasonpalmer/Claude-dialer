@@ -229,6 +229,8 @@ extension CoachModel {
                 reconnects = 0
                 interim[speaker] = nil
                 if !text.isEmpty { addFinal(text, from: speaker) }
+                // Opt-out on any prospect final, even one that doesn't end their turn (C7).
+                if speaker == .prospect, !doNotCall, LiveCoach.isOptOut(text) { handleOptOut(text) }
                 if speechFinal && speaker == .prospect { prospectFinished() }
                 if speechFinal && speaker == .rep { repEndpointed = true } // the transcriber heard them stop
             } else {

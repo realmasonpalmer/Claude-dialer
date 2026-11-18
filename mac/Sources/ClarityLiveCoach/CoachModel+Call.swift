@@ -651,6 +651,7 @@ extension CoachModel {
         pending = nil
         phoneButtonGone = 0
         CoachPrompt.liveSummary = ""
+        CoachPrompt.summaryCoversTurns = 0
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
         doNotCall = false
         timeline = SpeechTimeline()

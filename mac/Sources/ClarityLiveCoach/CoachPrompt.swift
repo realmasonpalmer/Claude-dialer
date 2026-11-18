@@ -175,6 +175,8 @@ enum CoachPrompt {
 
     /// A running summary of the call so far (written in the background every few turns).
     static var liveSummary = ""
+    /// How many turns the summary covers; later turns always go word for word.
+    static var summaryCoversTurns = 0
     /// What has worked on this call list's common blockers (set at call start).
     static var blockerHints = ""
     /// Open and answered questions, tracked in code (set before each request).
@@ -197,7 +199,8 @@ enum CoachPrompt {
                       speculative: Bool = false, repLed: Bool = false, assumeYes: Bool = false) -> String {
         // Short call (12 turns or fewer, or no summary yet): every finalized turn, word for word.
         // Longer: the summary of everything before, plus the last 10 turns word for word.
-        let recent = turns.count > 12 && !liveSummary.isEmpty ? Array(turns.suffix(10)) : Array(turns.suffix(300))
+        let start = CallMemoryRules.verbatimStart(totalTurns: turns.count, summaryCovers: summaryCoversTurns, hasSummary: !liveSummary.isEmpty)
+        let recent = Array(turns[start...].suffix(300))
         var history = recent.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }
         let repLast = turns.last { $0.speaker == .rep }?.text ?? ""

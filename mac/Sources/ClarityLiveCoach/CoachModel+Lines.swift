@@ -236,19 +236,30 @@ extension CoachModel {
     /// Every 4 prospect turns, Haiku writes a short summary of the call in the background, so each live
     /// line only needs the last minute word for word.
     func updateSummaryIfDue() {
+        let total = turns.count
+        guard CallMemoryRules.summaryDue(totalTurns: total, summaryCovers: CoachPrompt.summaryCoversTurns, inFlight: summaryInFlight),
+              let key = Keychain.read(.anthropic) else { return }
         let theirs = turns.filter { $0.speaker == .prospect }.count
-        guard theirs >= 4, theirs % 4 == 0, let key = Keychain.read(.anthropic) else { return }
         let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+        let callID = CallTrace.callID // the summary belongs to this call only
+        summaryInFlight = true
         Task {
+            defer { self.summaryInFlight = false }
             var c = LiveCoach.client(key)
             c.maxTokens = 250
             var text = ""
             try? await c.stream(system: "Summarize a live sales call for a coach in 3 to 6 short bullets: who they are, their situation, any numbers, pains, objections raised, what was agreed. Only what was said. No preamble.",
                                 user: transcript) { text = $0 }
+            guard CallMemoryRules.acceptSummary(currentCallID: CallTrace.callID, summaryCallID: callID,
+                                                summaryCovers: total, storedCovers: CoachPrompt.summaryCoversTurns) else {
+                CallTrace.event("memory.rejected", ["why": "older than the stored summary, or from another call", "covers_turns": total])
+                return
+            }
             if !text.isEmpty {
                 CoachPrompt.liveSummary = text
+                CoachPrompt.summaryCoversTurns = total
                 CallTrace.memVersion += 1
-                CallTrace.event("memory.update", ["summary": text, "covers_turns": theirs, "evidence_chars": transcript.count])
+                CallTrace.event("memory.update", ["summary": text, "covers_turns": total, "prospect_turns": theirs, "evidence_chars": transcript.count])
             }
         }
     }
@@ -259,6 +270,10 @@ extension CoachModel {
         doNotCall = true // terminal: every later draft, early start and queued line is blocked
         specTimer?.cancel()
         coachTask?.cancel()
+        yesBranchTask?.cancel(); yesBranch = nil
+        stillWithMeTask?.cancel()
+        phoneTreeTask?.cancel()
+        openerTask?.cancel()
         if let p = pending {
             CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "do not call"], sug: p.id)
         }
@@ -474,7 +489,7 @@ extension CoachModel {
 
     /// Shows a suggestion, but never swaps a fresh line out from under the rep.
     func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
-        guard id == seq, !s.skip, !s.say.isEmpty, !(doNotCall && kind == .reply) else {
+        guard id == seq, !s.skip, !s.say.isEmpty, !doNotCall else { // do not call: nothing replaces the goodbye
             if s.sayComplete || s.skip {
                 let why = doNotCall ? "do not call" : id != seq ? "stale: request #\(seq) is newer" : s.move == "silent" ? "Claude chose silent: no new line needed" : s.skip ? "Claude said skip" : "empty"
                 CallTrace.event("suggestion.dropped", ["line": s.say, "why": why], sug: id)

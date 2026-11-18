@@ -832,3 +832,23 @@ public enum AnswerEvidence {
 
     public static func isAnswer(_ text: String) -> Bool { kind(text) == .answer }
 }
+
+
+/// Call memory rules (C3, M4).
+public enum CallMemoryRules {
+    /// A background summary is kept only for the same call, and only if it covers more turns than the one stored.
+    public static func acceptSummary(currentCallID: String, summaryCallID: String, summaryCovers: Int, storedCovers: Int) -> Bool {
+        currentCallID == summaryCallID && summaryCovers > storedCovers
+    }
+
+    /// First turn (index) sent word for word: everything the summary doesn't cover, and never fewer than the last `minRecent`.
+    public static func verbatimStart(totalTurns: Int, summaryCovers: Int, hasSummary: Bool, minRecent: Int = 10) -> Int {
+        guard hasSummary, totalTurns > 12 else { return 0 }
+        return max(0, min(summaryCovers, totalTurns - minRecent))
+    }
+
+    /// Ask for a fresh summary when 6+ turns aren't covered (a late or failed one is retried).
+    public static func summaryDue(totalTurns: Int, summaryCovers: Int, inFlight: Bool) -> Bool {
+        !inFlight && totalTurns > 12 && totalTurns - summaryCovers >= 6
+    }
+}
