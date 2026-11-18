@@ -587,6 +587,12 @@ public enum QueuedLine {
     public static let maxAge = 8.0
     public static let maxRepWords = 8
 
+    /// "heuristic" (the word or time limit, a safety net) or "conversation" (the rep asked their own
+    /// question, a real change in the talk). Logged with every drop so the two can be told apart.
+    public static func ruleKind(_ reason: String) -> String {
+        reason.contains("asked") ? "conversation" : "heuristic"
+    }
+
     /// Why it's stale, or nil if it can still be shown.
     public static func staleReason(ageSeconds: Double, repWordsSinceQueued: Int, repAskedSinceQueued: Bool) -> String? {
         if repAskedSinceQueued { return "the rep asked their own question since" }
@@ -613,5 +619,21 @@ public enum LineRepair {
         }
         let leftover = out.split(whereSeparator: { !$0.isLetter }).filter { $0.count >= 2 && $0.allSatisfy(\.isUppercase) && $0 != "AI" }
         return leftover.isEmpty ? out : nil
+    }
+}
+
+
+/// Prepare the next line while the rep is still talking off script, so it's ready the moment they
+/// pause (instead of dropping the old line at the pause and making them wait for a new one).
+public enum FollowRep {
+    /// Should a new rep-led line be requested now, after the rep's latest words?
+    /// - Not when they just asked a question (the prospect's answer comes next).
+    /// - Not while they're reading the line on screen (they're on script).
+    /// - Only once they've said 8+ of their own words since the last request.
+    public static func shouldPrepare(repJustSaid: String, repWordsSinceLastAsk: Int,
+                                     onShownLine: Bool, shownLineDelivered: Bool) -> Bool {
+        if repJustSaid.contains("?") { return false }
+        if onShownLine && !shownLineDelivered { return false }
+        return repWordsSinceLastAsk >= QueuedLine.maxRepWords
     }
 }

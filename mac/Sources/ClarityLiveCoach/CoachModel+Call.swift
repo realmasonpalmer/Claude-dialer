@@ -635,6 +635,8 @@ extension CoachModel {
         CoachPrompt.shownLines = []
         lastEarlyBasis = nil
         earlyDraftsThisTurn = 0
+        repWordsAtLastAsk = 0
+        repLedIDs = []
         loggedSystemHash = ""
         logSystemIfChanged() // the full static instructions + script Claude gets this call
         phoneSawHangUp = false

@@ -258,6 +258,7 @@ extension CoachModel {
     func addFinal(_ text: String, from speaker: Speaker) {
         lastWordsAt = Date()
         defer { scheduleStillWithMe() }
+        defer { if speaker == .rep { prepareWhileRepTalks(text) } } // runs after the turn is recorded
         if speaker == .rep {
             let count = text.split(separator: " ").count
             repWordsSinceShown += count

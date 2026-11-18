@@ -144,6 +144,9 @@ final class CoachModel: ObservableObject {
     // Early drafts for the prospect's current turn (to stop bursts of near-identical requests).
     var lastEarlyBasis: String?
     var earlyDraftsThisTurn = 0
+    var repWordsAtLastAsk = 0
+    var nextIsRepLed = false
+    var repLedIDs: Set<Int> = []
     var pendingDialSince: Date?
     @Published var dialing = false
     @Published var dialError: String?

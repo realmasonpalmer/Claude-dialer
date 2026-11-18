@@ -310,8 +310,12 @@ extension CoachModel {
             return
         }
         coachTask?.cancel() // a newer statement makes the old answer stale
+        if kind == .reply { repWordsAtLastAsk = repWordsInCall }
+        let repLed = nextIsRepLed
+        nextIsRepLed = false
         seq += 1
         let id = seq
+        if repLed { repLedIDs.insert(id) }
         let askedAt = Date()
         logSystemIfChanged()
         CallTrace.event("memory.snapshot", ["summary": CoachPrompt.liveSummary, "summary_version": CallTrace.memVersion,
@@ -488,6 +492,12 @@ extension CoachModel {
         // Only a real reply moves the conversation on (3+ words or a question), not "uh-huh" or "yeah".
         // Any answer to a question you asked counts too, even "yes" or "nope", so you never have to press Next.
         let youAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
+        if kind == .reply, repLedIDs.contains(id), !lineSuperseded || supersededLogged != shownID {
+            supersededLogged = shownID
+            CallTrace.event("suggestion.superseded", ["line": suggestion.say, "by_request": id,
+                                                      "why": "the rep moved on in their own words", "delivered": lineDelivered], sug: shownID)
+            lineSuperseded = true
+        }
         if kind == .reply, let last = turns.last, last.speaker == .prospect,
            youAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?") {
             if !lineSuperseded || supersededLogged != shownID {
@@ -512,7 +522,7 @@ extension CoachModel {
             }
             if pending?.id != id {
                 pendingQueuedAt = Date()
-                repWordsAtQueue = repWordsInCall
+                repWordsAtQueue = repWordsAtLastAsk // what the rep had said when this line was asked for
                 repAskedSinceQueue = false
             }
             pending = (id, s)
@@ -565,8 +575,9 @@ extension CoachModel {
                                             repWordsSinceQueued: repWordsInCall - repWordsAtQueue,
                                             repAskedSinceQueued: repAskedSinceQueue) {
             pending = nil
-            ActivityLog.add("Coach #\(p.id): queued line dropped (\(why))")
-            CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)"], sug: p.id)
+            ActivityLog.add("Coach #\(p.id): queued line dropped (\(why); \(QueuedLine.ruleKind(why)) rule)")
+            CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)",
+                                                     "rule": QueuedLine.ruleKind(why)], sug: p.id)
             // They asked their own question: the next move is the prospect's answer. Otherwise write the
             // next line from where the rep actually is.
             if !repAskedSinceQueue { followRep() }
@@ -579,12 +590,30 @@ extension CoachModel {
 
     /// The rep went off script and paused without asking anything: the next line builds on what they
     /// actually said, not on what the script expected.
-    func followRep() {
+    func followRep(why: String = "the rep moved on from the queued line") {
         guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
               let rep = turns.last, rep.speaker == .rep else { return }
-        CallTrace.event("follow_rep", ["rep_said": rep.text, "why": "the rep moved on from the queued line"])
+        CallTrace.event("follow_rep", ["rep_said": rep.text, "why": why])
+        nextIsRepLed = true
         ask(.reply, user: CoachPrompt.reply(turns: turns, latest: rep.text, calling: calling, details: recordDetails,
                                             style: callOpener, openTimes: bookingText(), repLed: true))
+    }
+
+    /// After each thing the rep says: if they're off script, get the next line ready now, while they
+    /// talk, so it's waiting when they pause. A queued line they've moved past is dropped first.
+    func prepareWhileRepTalks(_ text: String) {
+        guard status == .live, !doNotCall, !voicemailActive, !screenerActive, !suggestion.say.isEmpty else { return }
+        let since = repWordsInCall - repWordsAtLastAsk
+        guard FollowRep.shouldPrepare(repJustSaid: text, repWordsSinceLastAsk: since,
+                                      onShownLine: Delivery.onLine(line: suggestion.say, spoken: text),
+                                      shownLineDelivered: lineDelivered) else { return }
+        if let p = pending {
+            pending = nil
+            let why = "the rep said \(since) words of their own since"
+            ActivityLog.add("Coach #\(p.id): queued line dropped while you talk (\(why); heuristic rule)")
+            CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)", "rule": "heuristic"], sug: p.id)
+        }
+        followRep(why: "preparing ahead: the rep is off script (\(since) words since the last request)")
     }
 
     /// The Next button: show the queued line now.
