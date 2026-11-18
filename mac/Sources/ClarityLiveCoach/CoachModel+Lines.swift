@@ -384,7 +384,7 @@ extension CoachModel {
                                   "why": "opt-out phrase", "said": said, "cancelled_request": seq])
         coachState = .doNotCall
         seq += 1
-        show(Suggestion(say: LiveCoach.optOutLine, cue: "Opt out. Do not call is saved in Salesforce.", stage: "Exit", sayComplete: true), id: seq, kind: .reply)
+        show(Suggestion(say: LiveCoach.optOutLine, cue: "Opt out. Off your list here. Saving Do Not Call in Salesforce...", stage: "Exit", sayComplete: true), id: seq, kind: .reply)
         guard let key = currentAttemptKey else { return }
         RemovedList.add(key)
         followUp = nil // no text, no LinkedIn
@@ -396,8 +396,18 @@ extension CoachModel {
             do {
                 try await Salesforce.setDoNotCall(key)
                 ActivityLog.add("Opt out: DoNotCall saved in Salesforce for \(self?.calling ?? key)")
+                CallTrace.event("crm.saved", ["record": key, "field": "DoNotCall"])
+                // Only now say it's saved in Salesforce (the line itself stays as is).
+                if let self, self.suggestion.say == LiveCoach.optOutLine { self.suggestion.cue = "Opt out. Do Not Call saved in Salesforce." }
             } catch {
                 ActivityLog.problem("Opt out: couldn't save DoNotCall in Salesforce: \(error.localizedDescription)")
+                CallTrace.event("crm.failed", ["record": key, "field": "DoNotCall", "error": error.localizedDescription])
+                if let self {
+                    if self.suggestion.say == LiveCoach.optOutLine {
+                        self.suggestion.cue = "Off your list here, but Salesforce didn't save Do Not Call. Mark it by hand."
+                    }
+                    self.problem = "Do Not Call didn't save in Salesforce for \(self.calling ?? key). Mark it by hand."
+                }
             }
             // Status too: Leads go Unqualified, Contacts go Negative. Both keep them off every list.
             let status = key.hasPrefix("00Q") ? "Unqualified" : "Negative"
