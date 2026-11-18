@@ -161,7 +161,8 @@ final class CoachModel: ObservableObject {
 
     /// The prospect agreed to the meeting in their own words: now it counts.
     func confirmGoalIfAgreed(_ said: String) {
-        guard goalPending, !goalHit, GoalEvidence.confirms(said) else { return }
+        let offeredTime = !suggestion.offered.isEmpty || GoalEvidence.mentionsTime(suggestion.say)
+        guard goalPending, !goalHit, GoalEvidence.confirms(said, afterTimeOffer: offeredTime) else { return }
         goalPending = false
         goalHit = true
         meetingThisWeek = touchpoints.meetingsThisWeek() + 1 // logged when the call ends

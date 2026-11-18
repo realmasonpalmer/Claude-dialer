@@ -5,7 +5,7 @@ final class Phase6GoalTests: XCTestCase {
     // N4: a "meeting confirmed" line on screen isn't a booked meeting. Their words must agree.
     func testN4_GoalNeedsTheirAgreement() {
         XCTAssertTrue(GoalEvidence.confirms("Tuesday at 10 works for me."))
-        XCTAssertTrue(GoalEvidence.confirms("Sure."))
+        XCTAssertTrue(GoalEvidence.confirms("Sure.", afterTimeOffer: true)) // a plain yes only after a time was offered
         XCTAssertFalse(GoalEvidence.confirms("Maybe, let me check."))
         XCTAssertFalse(GoalEvidence.confirms("No, I'm not interested."))
         XCTAssertFalse(GoalEvidence.confirms("Sounds good but not this week."))

@@ -211,8 +211,8 @@ public enum OptOut {
         for p in phrases where t.contains(p) {
             guard ambiguous.contains(p) else { return true }
             guard isFinal, let r = t.range(of: p) else { continue }
-            let after = t[r.upperBound...].prefix(40)
-            if !deferrals.contains(where: { after.contains($0) }) { return true }
+            let after = " " + t[r.upperBound...].prefix(40).split(whereSeparator: { !$0.isLetter && $0 != "'" }).joined(separator: " ") + " "
+            if !deferrals.contains(where: { after.contains(" \($0) ") }) { return true } // whole words: "still" isn't "till"
         }
         return false
     }
@@ -222,6 +222,14 @@ public enum OptOut {
 public enum SilentRule {
     public static func clearCurrent(superseded: Bool, delivered: Bool, answered: Bool) -> Bool {
         superseded || (delivered && answered)
+    }
+
+    /// The same, but never pulled from under the rep: not while they talk or are still reading it.
+    public static func clearNow(superseded: Bool, delivered: Bool, answered: Bool, signals: CoachSignals) -> Bool {
+        guard clearCurrent(superseded: superseded, delivered: delivered, answered: answered) else { return false }
+        var s = signals
+        s.queuedIsForNewTopic = superseded || s.queuedIsForNewTopic
+        return CoachMachine.canReplace(s)
     }
 }
 
@@ -794,7 +802,9 @@ public enum RepTurn {
     /// Words that leave a sentence hanging ("...take notes and keep", "...so", "...to the").
     public static let danglingWords: Set<String> = ["and", "or", "but", "so", "to", "the", "a", "an", "of", "with",
         "for", "in", "on", "at", "because", "like", "that", "which", "if", "then", "keep", "is", "are", "was",
-        "we", "you", "i", "my", "your", "our", "um", "uh", "just", "kind", "sort", "what", "how"]
+        "we", "you", "i", "my", "your", "our", "um", "uh", "just", "kind", "sort", "what", "how",
+        "do", "does", "have", "has", "get", "make", "need", "want", "be", "been", "about", "from", "by", "as", "really",
+        "also", "very", "can", "could", "would", "will", "into", "onto", "our", "their", "this", "these", "those"]
 
     /// Still mid-sentence? Two signals, not punctuation alone: the transcriber's punctuation, and
     /// whether the last word leaves the sentence hanging. 3 s of silence ends it either way.
@@ -955,11 +965,24 @@ public enum GoalEvidence {
                         "book it", "put me down", "i'm in", "see you then", "perfect", "great"]
     static let times = ["monday", "tuesday", "wednesday", "thursday", "friday", "tomorrow", "next week", " am", " pm", "o'clock"]
 
-    public static func confirms(_ prospectSaid: String) -> Bool {
-        let t = " " + prospectSaid.lowercased() + " "
-        if ProspectReply.kind(prospectSaid) == .no || ProspectReply.kind(prospectSaid) == .unsure { return false }
-        if t.contains(" but ") || t.contains("not ") { return false }
-        return ProspectReply.kind(prospectSaid) == .yes || agree.contains(where: { t.contains($0) }) || times.contains(where: { t.contains($0) })
+    public static func mentionsTime(_ text: String) -> Bool {
+        let t = " " + text.lowercased() + " "
+        return times.contains(where: { t.contains($0) }) || t.range(of: #"\b\d{1,2}(:\d{2})?\b"#, options: .regularExpression) != nil
+    }
+
+    static let negative = ["difficult", "can't", "cannot", "won't", "busy", "bad", "doesn't work", "don't", "tough", "booked", "out of"]
+    static let positive = ["works", "good", "fine", "great", "perfect", "okay", "ok", "sure", "yes", "yeah"]
+
+    /// `afterTimeOffer`: the line they answered offered a time, so a plain "sure" agrees to it.
+    public static func confirms(_ prospectSaid: String, afterTimeOffer: Bool = false) -> Bool {
+        let t = " " + prospectSaid.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
+        let kind = ProspectReply.kind(prospectSaid)
+        if kind == .no || kind == .unsure { return false }
+        if t.contains(" but ") || t.contains("not ") || negative.contains(where: { t.contains($0) }) { return false }
+        if agree.contains(where: { t.contains($0) }) { return true }
+        // A day or time alone isn't agreement ("Tuesday is difficult"): it needs a positive word with it.
+        if times.contains(where: { t.contains($0) }) { return positive.contains(where: { t.contains(" \($0)") }) }
+        return kind == .yes && afterTimeOffer
     }
 }
 
@@ -967,13 +990,16 @@ public enum GoalEvidence {
 /// The screen controller's two decisions, shared by the app and the replay tests (H7), so the tests
 /// prove the code the app actually runs.
 public enum CoachController {
-    public enum Offer: Equatable, Sendable { case show, queue }
+    public enum Offer: Equatable, Sendable { case show, queue, drop(String) }
     public enum Promote: Equatable, Sendable { case wait, show, drop(String) }
 
     /// A finished line arrives. Openers, voicemails and the first line show at once; anything else
     /// only if the line on screen can be replaced now, else it waits in the queue.
-    public static func offer(isOpenerOrVoicemail: Bool, firstLine: Bool, holdLine: Bool, signals: CoachSignals) -> Offer {
+    /// `staleReason`: why the rep has moved past this line since it was asked for (checked before showing too).
+    public static func offer(isOpenerOrVoicemail: Bool, firstLine: Bool, holdLine: Bool, signals: CoachSignals,
+                             staleReason: String? = nil) -> Offer {
         if isOpenerOrVoicemail || firstLine { return .show }
+        if let why = staleReason { return .drop(why) }
         return !holdLine && CoachMachine.canReplace(signals) ? .show : .queue
     }
 

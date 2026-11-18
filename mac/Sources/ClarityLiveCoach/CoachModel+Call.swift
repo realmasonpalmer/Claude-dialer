@@ -652,6 +652,7 @@ extension CoachModel {
         phoneButtonGone = 0
         CoachPrompt.liveSummary = ""
         CoachPrompt.summaryCoversTurns = 0
+        summaryInFlight = false // a summary left from the last call never blocks this one (round 2 #2)
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
         doNotCall = false
         timeline = SpeechTimeline()

@@ -102,12 +102,13 @@ extension CoachModel {
         if signals().repSpeaking || !(interim[.rep] ?? "").isEmpty {
             screenerWait?.cancel()
             screenerWait = Task { [weak self] in
-                for _ in 0..<10 {
+                for _ in 0..<33 { // up to about 10 s
                     try? await Task.sleep(for: .milliseconds(300))
                     guard let self, !Task.isCancelled else { return }
-                    if !self.signals().repSpeaking && (self.interim[.rep] ?? "").isEmpty { break }
+                    if !self.signals().repSpeaking && (self.interim[.rep] ?? "").isEmpty { self.showScreenerLineNow(); return }
                 }
-                self?.showScreenerLineNow()
+                // Still talking after 10 s: they're handling the screener themselves. Don't interrupt.
+                CallTrace.event("suggestion.dropped", ["line": "screener", "why": "the rep kept talking"])
             }
             return
         }
@@ -542,8 +543,13 @@ extension CoachModel {
     func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
         guard id == seq, !s.skip, !s.say.isEmpty, !doNotCall else { // do not call: nothing replaces the goodbye
             // MOVE: silent: keep the line if it still fits; clear it if the talk moved past it.
+            let movedOn: Bool = {
+                guard let last = turns.last, last.speaker == .prospect else { return lineSuperseded }
+                let repAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
+                return lineSuperseded || repAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?")
+            }()
             if s.move == "silent", id == seq, !doNotCall, status == .live, !suggestion.say.isEmpty,
-               SilentRule.clearCurrent(superseded: lineSuperseded, delivered: lineDelivered, answered: answeredAfterDelivery) {
+               SilentRule.clearNow(superseded: movedOn, delivered: lineDelivered, answered: answeredAfterDelivery, signals: signals()) {
                 CallTrace.event("suggestion.cleared", ["line": suggestion.say, "why": "Claude chose silent and the line was outdated"], sug: shownID)
                 suggestion = Suggestion()
                 lineSuperseded = false
@@ -606,8 +612,21 @@ extension CoachModel {
             }
             lineSuperseded = true
         }
-        if CoachController.offer(isOpenerOrVoicemail: kind == .opener || kind == .voicemail, firstLine: shownID == 0,
-                                 holdLine: holdLine, signals: signals()) == .show {
+        // The rep moved past it while it was being written (asked, pivoted, or kept talking): drop it (round 2 #1).
+        let staleWhy = kind == .reply && id != shownID
+            ? QueuedLine.staleReason(ageSeconds: 0, repWordsSinceQueued: repWordsInCall - repWordsAtLastAsk,
+                                     repAskedSinceQueued: QueuedLine.repAskedSinceRequest(requestedAt: askedAt.timeIntervalSinceReferenceDate,
+                                                                                          lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate),
+                                     repTextSinceQueued: repTextSinceAsk)
+            : nil
+        let decision = CoachController.offer(isOpenerOrVoicemail: kind == .opener || kind == .voicemail, firstLine: shownID == 0,
+                                             holdLine: holdLine, signals: signals(), staleReason: staleWhy)
+        if case .drop(let why) = decision {
+            CallTrace.event("suggestion.discarded", ["line": s.say, "why": "stale on arrival: \(why)", "rule": QueuedLine.ruleKind(why)], sug: id)
+            if !why.contains("asked") { followRep(why: "the line arrived after the rep moved on") } // after their own question, wait for the answer
+            return
+        }
+        if decision == .show {
             show(s, id: id, kind: kind)
         } else {
             if pending?.id != id {
@@ -788,6 +807,11 @@ extension CoachModel {
     }
 
     func show(_ s: Suggestion, id: Int, kind: Kind) {
+        // After an opt-out, only the goodbye line may ever show (round 2 #3).
+        if doNotCall, s.say != LiveCoach.optOutLine {
+            CallTrace.event("suggestion.dropped", ["line": s.say, "why": "do not call", "kind": "\(kind)"], sug: id)
+            return
+        }
         if status == .live, !s.say.isEmpty {
             let ms = lastHeardThemAt.map { Int(Date().timeIntervalSince($0) * 1000) }
             ActivityLog.add("Coach line shown (\(kind)\(ms.map { ", \($0) ms after their last words" } ?? "")): \(s.say)")
@@ -808,6 +832,7 @@ extension CoachModel {
         }
         pending = nil
         lineSuperseded = false
+        if kind == .reply { repTextSinceAsk = ""; repWordsAtLastAsk = repWordsInCall } // round 2 #9
         // The old line: partly said in the rep's own words? Then it isn't "never said" (H1).
         if status == .live, !suggestion.say.isEmpty, !lineDelivered,
            Delivery.likelyCovered(line: suggestion.say, spoken: repSaidSinceShown),
@@ -861,7 +886,7 @@ extension CoachModel {
         let askedAt = lastWordsAt
         stillWithMeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
-            guard let self, !Task.isCancelled, self.status == .live, self.lastWordsAt == askedAt,
+            guard let self, !Task.isCancelled, self.status == .live, !self.doNotCall, self.lastWordsAt == askedAt,
                   self.turns.last?.speaker == .rep, !self.voicemailActive,
                   (self.interim[.prospect] ?? "").isEmpty, // they're mid-answer
                   !self.signals().repSpeaking, (self.interim[.rep] ?? "").isEmpty else { return } // never over the rep (C6)
