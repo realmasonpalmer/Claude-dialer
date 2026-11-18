@@ -634,6 +634,8 @@ extension CoachModel {
         CoachPrompt.objectionFacts = ""
         CoachPrompt.shownLines = []
         CoachPrompt.saidLines = []
+        CoachPrompt.likelyCoveredLines = []
+        recentRepChunks = []
         CoachPrompt.lastSaidStage = ""
         repEndpointed = false
         lastEarlyBasis = nil

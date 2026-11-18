@@ -184,6 +184,8 @@ enum CoachPrompt {
     /// Lines already shown to the rep this call, and which of them the rep actually said.
     static var shownLines: [String] = []
     static var saidLines: [String] = []
+    /// Shown lines the rep partly said in their own words (a paraphrase): neither confirmed nor "never said".
+    static var likelyCoveredLines: [String] = []
     /// The step of the last line the rep actually said (Opener, Discovery, Value...).
     static var lastSaidStage = ""
     /// What the last reply prompt included, for the call trace.
@@ -211,8 +213,10 @@ enum CoachPrompt {
             : "The prospect just said: \"\(latest)\""
         // Facts only: what the rep said is done; a line shown but not said never reached the prospect.
         let said = saidLines.suffix(5).map { "- \($0)" }.joined(separator: "\n")
-        let notSaid = shownLines.filter { !saidLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
+        let notSaid = shownLines.filter { !saidLines.contains($0) && !likelyCoveredLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
+        let partly = likelyCoveredLines.filter { !saidLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
         let shown = (said.isEmpty ? "" : "Coach lines the rep actually said (done, don't repeat):\n" + said + "\n")
+            + (partly.isEmpty ? "" : "Coach lines the rep partly covered in their own words (likely done; don't repeat as is):\n" + partly + "\n")
             + (notSaid.isEmpty ? "" : "Coach lines shown but NOT said (the prospect never heard them; the rep chose their own words):\n" + notSaid + "\n")
             + (lastSaidStage.isEmpty ? "" : "The last step the rep actually covered: \(lastSaidStage)\n")
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""

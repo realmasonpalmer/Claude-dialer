@@ -285,18 +285,51 @@ public enum LineBudget {
 public enum Delivery {
     private static let stop: Set<String> = ["the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "for", "is",
         "are", "it", "that", "this", "you", "your", "we", "our", "i", "me", "my", "so", "just", "do", "does", "with",
-        "at", "be", "can", "if", "what", "how", "about", "as", "have", "has", "was", "they", "them", "their", "would"]
+        "at", "be", "can", "if", "about", "as", "have", "has", "was", "they", "them", "their", "would"]
+    // Question words (what, how, who, when, why) are kept: they carry the point of a question.
 
-    static func words(_ text: String) -> [String] {
-        text.lowercased().components(separatedBy: CharacterSet.letters.inverted).filter { $0.count > 2 && !stop.contains($0) }
+    /// A light stem, so "updating"/"updated"/"updates" and "calls"/"called" match.
+    static func stem(_ w: String) -> String {
+        if w.count > 5, w.hasSuffix("ing") { return String(w.dropLast(3)) }
+        if w.count > 4, w.hasSuffix("ed") { return String(w.dropLast(2)) }
+        if w.count > 4, w.hasSuffix("ly") { return String(w.dropLast(2)) }
+        if w.count > 3, w.hasSuffix("s"), !w.hasSuffix("ss") { return String(w.dropLast(1)) }
+        return w
     }
 
-    /// 0 to 1: share of the line's meaningful words the rep said.
+    static func words(_ text: String) -> [String] {
+        text.lowercased().components(separatedBy: CharacterSet.letters.inverted).filter { $0.count > 2 && !stop.contains($0) }.map(stem)
+    }
+
+    static let negations: Set<String> = ["not", "no", "never", "don't", "doesn't", "didn't", "won't", "can't", "isn't", "aren't",
+                                         "wasn't", "haven't", "hasn't", "dont", "cant", "wont", "nobody", "nothing"]
+
+    /// The rep said the opposite: a negation the line doesn't have, right before one of the line's words.
+    static func negated(line: String, spoken: String) -> Bool {
+        func tokens(_ s: String) -> [String] {
+            s.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "\u{2019}" })
+                .map { $0.replacingOccurrences(of: "\u{2019}", with: "'") }
+        }
+        let lineTokens = Set(tokens(line))
+        let key = Set(words(line))
+        let t = tokens(spoken)
+        for (i, w) in t.enumerated() where negations.contains(w) && !lineTokens.contains(w) {
+            if t[(i + 1)..<min(t.count, i + 4)].contains(where: { key.contains(stem($0)) }) { return true }
+        }
+        return false
+    }
+
+    /// 0 to 1: share of the line's meaningful words the rep said. 0 if they said the opposite.
     public static func confidence(line: String, spoken: String) -> Double {
         let want = Set(words(line))
-        guard !want.isEmpty else { return 0 }
+        guard !want.isEmpty, !negated(line: line, spoken: spoken) else { return 0 }
         let said = Set(words(spoken))
         return Double(want.intersection(said).count) / Double(want.count)
+    }
+
+    /// Partly said in the rep's own words (a paraphrase): not confirmed delivery, but not "never said" either.
+    public static func likelyCovered(line: String, spoken: String) -> Bool {
+        evidence(line: line, spoken: spoken).matched.count >= 2 && confidence(line: line, spoken: spoken) >= 0.35
     }
 
     /// The words behind a delivery score, for the trace: which of the line's key words were said.
@@ -377,7 +410,7 @@ public struct ScriptAnswers: Sendable {
 /// (not inferred by the model). Fed to Haiku as facts: what's still open, what's already answered.
 public struct QuestionTracker: Sendable {
     public enum Speaker: String, Sendable { case rep, prospect }
-    public enum Status: String, Sendable { case open, answered, interrupted, abandoned }
+    public enum Status: String, Sendable { case open, answered, interrupted, abandoned, uncertain }
     public struct Question: Sendable, Equatable {
         public let id: Int
         public let asker: Speaker
@@ -386,7 +419,7 @@ public struct QuestionTracker: Sendable {
         public var answer: String
     }
     public enum Change: Sendable, Equatable {
-        case asked(Question), answered(Question), interrupted(Question), abandoned(Question)
+        case asked(Question), answered(Question), interrupted(Question), abandoned(Question), uncertain(Question)
     }
 
     public private(set) var questions: [Question] = []
@@ -421,21 +454,28 @@ public struct QuestionTracker: Sendable {
         var changes: [Change] = []
         let words = text.lowercased().split(separator: " ").map { String($0).trimmingCharacters(in: .punctuationCharacters) }
         let substantive = words.contains { !Self.filler.contains($0) && !$0.isEmpty }
-        // The other side's open questions: answered by this turn, or cut off if this turn talked over them.
-        for i in questions.indices where questions[i].asker != speaker && questions[i].status == .open && substantive {
-            if overlapped {
+        // The other side's open questions: answered only by a real answer. A question back, a
+        // deflection or a refusal leaves it uncertain (still not answered). Cut off if talked over.
+        for i in questions.indices where questions[i].asker != speaker
+            && (questions[i].status == .open || questions[i].status == .uncertain) && substantive {
+            if overlapped, questions[i].status == .open {
                 questions[i].status = .interrupted
                 changes.append(.interrupted(questions[i]))
-            } else {
+            } else if AnswerEvidence.isAnswer(text) {
                 questions[i].status = .answered
                 questions[i].answer = text
                 changes.append(.answered(questions[i]))
+            } else if questions[i].status == .open {
+                questions[i].status = .uncertain
+                questions[i].answer = text
+                changes.append(.uncertain(questions[i]))
             }
         }
         let asked = Self.questions(in: text)
         // Asking again before getting an answer abandons the earlier one.
         if !asked.isEmpty {
-            for i in questions.indices where questions[i].asker == speaker && (questions[i].status == .open || questions[i].status == .interrupted) {
+            for i in questions.indices where questions[i].asker == speaker
+                && (questions[i].status == .open || questions[i].status == .interrupted || questions[i].status == .uncertain) {
                 questions[i].status = .abandoned
                 changes.append(.abandoned(questions[i]))
             }
@@ -454,9 +494,11 @@ public struct QuestionTracker: Sendable {
         let repAnswered = questions.filter { $0.asker == .rep && $0.status == .answered }
         let theirsOpen = questions.filter { $0.asker == .prospect && $0.status == .open }
         let repOpen = questions.filter { $0.asker == .rep && ($0.status == .open || $0.status == .interrupted) }
+        let repUncertain = questions.filter { $0.asker == .rep && $0.status == .uncertain }
         var lines: [String] = []
         if !theirsOpen.isEmpty { lines.append("Prospect questions NOT yet answered (answer these first): " + theirsOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
         if !repOpen.isEmpty { lines.append("Rep questions still waiting for an answer: " + repOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
+        if !repUncertain.isEmpty { lines.append("Rep questions NOT answered (they asked back, deflected or declined; don't treat as answered, don't push): " + repUncertain.map { "\"\($0.text)\" -> they said \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
         if !repAnswered.isEmpty { lines.append("Already asked AND answered (never ask again): " + repAnswered.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
         return lines.joined(separator: "\n")
     }
@@ -500,7 +542,29 @@ public struct ObjectionTracker: Sendable {
         ("call later", ["call me later", "call back later", "call me next", "reach out next", "maybe later", "not right now"]),
         ("trust", ["how did you get my number", "who gave you", "is this a sales call", "is this a scam"]),
     ]
-    static let stillOpenWords = ["no", "nope", "still not", "not interested", "i said", "like i said", "already told you", "not really", "i don't think so"]
+    static let stillOpenWords = ["no", "nope", "still not", "not interested", "i said", "like i said", "already told you", "not really", "i don't think so",
+                                 "can't do", "cannot do", "won't work", "not looking", "not a priority", "no thanks"]
+    static let contrastWords = ["but", "however", "though", "although"]
+    /// Words that show the rep spoke to this kind of objection (plus general acknowledgments).
+    static let addressCues: [String: [String]] = [
+        "not interested": ["interested", "fair", "understand", "get it", "makes sense", "hear you"],
+        "no time": ["quick", "time", "seconds", "minute", "busy", "later", "call back"],
+        "send info": ["email", "send", "info"],
+        "already have it": ["already", "use", "using", "partner", "tool", "today", "working", "current"],
+        "happy as is": ["fine", "working", "need", "happy", "good", "today"],
+        "price": ["cost", "price", "budget", "free", "expensive", "money", "invest", "spend"],
+        "wrong person": ["right person", "who", "handles", "point me", "best person", "in charge"],
+        "call later": ["later", "when", "better time", "call back", "tomorrow", "next week"],
+        "trust": ["number", "list", "linkedin", "found", "sales call", "honest", "research"],
+        "won't share": ["no problem", "understand", "fair", "of course", "totally"],
+        "ending the call": [],
+    ]
+    static let acknowledgments = ["fair", "understand", "totally get", "get it", "makes sense", "hear you", "appreciate", "no problem", "of course"]
+
+    /// Did the rep's words speak to this objection? Not just any 3 words: words tied to it, or an acknowledgment.
+    static func addresses(kind: String, text: String) -> Bool {
+        has(text, (addressCues[kind] ?? []) + acknowledgments)
+    }
     static let resolvedWords = ["sure", "okay", "ok", "go ahead", "yeah", "yes", "tell me", "what is it", "how does", "how much", "what do you",
                                 "that's fair", "fair enough", "makes sense", "i guess so", "interesting", "send it", "let's do", "that works"]
     static let uncertainWords = ["hmm", "maybe", "i don't know", "not sure", "we'll see", "possibly", "i guess"]
@@ -531,7 +595,8 @@ public struct ObjectionTracker: Sendable {
         }
         if speaker == .rep {
             // The rep answered any objection still waiting. Addressed, not resolved.
-            for i in objections.indices where [.raised, .stillOpen].contains(objections[i].status) && text.split(separator: " ").count >= 3 {
+            for i in objections.indices where [.raised, .stillOpen].contains(objections[i].status)
+                && Self.addresses(kind: objections[i].kind, text: text) {
                 objections[i].addressedText = text
                 objections[i].addressedTurn = turn
                 set(i, .addressed, why: "rep answered it (turn \(turn)); waiting on the prospect")
@@ -547,8 +612,10 @@ public struct ObjectionTracker: Sendable {
                 set(i, .stillOpen, why: "prospect pushed back again (turn \(turn))")
             } else if Self.has(text, Self.uncertainWords) {
                 set(i, .uncertain, why: "prospect's answer is unsure (turn \(turn))")
-            } else if Self.has(text, Self.resolvedWords) || (newKind == nil && text.split(separator: " ").count >= 6) {
-                set(i, .resolved, why: "prospect moved on or agreed (turn \(turn))")
+            } else if Self.has(text, Self.resolvedWords) && !Self.has(text, Self.contrastWords) {
+                set(i, .resolved, why: "prospect agreed (turn \(turn))")
+            } else if Self.has(text, Self.contrastWords) {
+                set(i, .uncertain, why: "prospect agreed but added a 'but' (turn \(turn))")
             } else {
                 set(i, .uncertain, why: "prospect's answer doesn't settle it (turn \(turn))")
             }
@@ -630,10 +697,12 @@ public enum FollowRep {
     /// - Not when they just asked a question (the prospect's answer comes next).
     /// - Not while they're reading the line on screen (they're on script).
     /// - Only once they've said 8+ of their own words since the last request.
-    public static func shouldPrepare(repJustSaid: String, repWordsSinceLastAsk: Int,
-                                     onShownLine: Bool, shownLineDelivered: Bool) -> Bool {
+    /// - `recentRepSpeech`: the rep's last couple of transcript chunks, so a line read across two
+    ///   chunks still counts as on the line.
+    public static func shouldPrepare(repJustSaid: String, recentRepSpeech: String, shownLine: String,
+                                     shownLineDelivered: Bool, repWordsSinceLastAsk: Int) -> Bool {
         if repJustSaid.contains("?") { return false }
-        if onShownLine && !shownLineDelivered { return false }
+        if Delivery.onLine(line: shownLine, spoken: recentRepSpeech) && !shownLineDelivered { return false }
         return repWordsSinceLastAsk >= QueuedLine.maxRepWords
     }
 }
@@ -737,4 +806,29 @@ extension RepTurn {
         if endpointed { return false }
         return inFallbackWindow || midSentence(lastFinal: lastFinal, secondsSince: secondsSinceFinal)
     }
+}
+
+
+/// Is the prospect's reply an answer? A question back, a deflection or a refusal is not.
+public enum AnswerEvidence {
+    public enum Kind: String, Sendable { case answer, counterQuestion, deflection, unsure, filler }
+    static let filler: Set<String> = ["uh", "um", "hmm", "mm", "mhm", "uh-huh", "huh"]
+    static let deflections = ["why are you asking", "why do you ask", "what do you mean", "who is this", "who's this",
+        "can't discuss", "cannot discuss", "not something i can", "rather not", "none of your", "not going to share",
+        "can't share", "cannot share", "why do you want to know", "what's this about", "what is this about", "can't say"]
+    static let unsure = ["not sure", "i don't know", "no idea", "hard to say", "it depends", "depends"]
+    static let whStarts: Set<String> = ["why", "what", "who", "how", "huh", "meaning", "sorry"]
+
+    public static func kind(_ text: String) -> Kind {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "-" }).map(String.init)
+        if words.isEmpty || words.allSatisfy(filler.contains) { return .filler }
+        if deflections.contains(where: { t.contains($0) }) { return .deflection }
+        if unsure.contains(where: { t.contains($0) }) { return .unsure }
+        if t.contains("?") { return .counterQuestion }
+        if words.count <= 3, let first = words.first, whStarts.contains(first) { return .counterQuestion }
+        return .answer
+    }
+
+    public static func isAnswer(_ text: String) -> Bool { kind(text) == .answer }
 }

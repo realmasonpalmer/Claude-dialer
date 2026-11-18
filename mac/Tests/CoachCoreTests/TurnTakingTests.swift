@@ -75,11 +75,11 @@ final class TurnTakingTests: XCTestCase {
         let line = "Hi Sean, this is Mason at Clarity Consulting. I know you weren't expecting my call. Can I get 30 seconds to tell you why I called?"
         let said = "Hi, Sean. My name is Mason. I am from Clarity Consulting. And this is a cold call. So I'm wondering if I can just have thirty seconds to tell you why."
         XCTAssertTrue(Delivery.delivered(line: line, spoken: said))
-        XCTAssertEqual(Delivery.confidence(line: line, spoken: said), 8.0 / 13.0, accuracy: 0.001)
+        XCTAssertEqual(Delivery.confidence(line: line, spoken: said), 8.0 / 12.0, accuracy: 0.001) // stems: call/called count once
         XCTAssertEqual(Delivery.rule(line: line, spoken: said), "question") // its question was asked
         let ev = Delivery.evidence(line: line, spoken: said)
-        XCTAssertTrue(ev.matched.contains("seconds") && ev.matched.contains("tell") && ev.matched.contains("why"))
-        XCTAssertTrue(ev.missing.contains("expecting"))
+        XCTAssertTrue(ev.matched.contains("second") && ev.matched.contains("tell") && ev.matched.contains("why"))
+        XCTAssertTrue(ev.missing.contains("expect"))
         // Greeting words alone are not delivery.
         XCTAssertFalse(Delivery.delivered(line: line, spoken: "Hi Sean, Mason from Clarity Consulting."))
     }

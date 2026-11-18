@@ -111,16 +111,16 @@ final class SandyFullCallReplayTests: XCTestCase {
                     yesLine = RepQuestion.closedQuestion(in: turn.text).map { (question: $0, readyAt: t + yesLineLatency) }
                     if let y = yesLine { events.append(String(format: "%6.2f  writing the yes line for: %@", t, y.question)) }
                     let delivered = Delivery.delivered(line: shownLine, spoken: repSaidSinceShown)
-                    if FollowRep.shouldPrepare(repJustSaid: turn.text, repWordsSinceLastAsk: repWords - repWordsAtLastAsk,
-                                               onShownLine: Delivery.onLine(line: shownLine, spoken: turn.text),
-                                               shownLineDelivered: delivered) {
+                    let prevRep = call.prefix(nextTurn - 1).last { $0.who == .rep }?.text ?? ""
+                    if FollowRep.shouldPrepare(repJustSaid: turn.text, recentRepSpeech: prevRep + " " + turn.text, shownLine: shownLine,
+                                               shownLineDelivered: delivered, repWordsSinceLastAsk: repWords - repWordsAtLastAsk) {
                         if let p = pending { events.append(String(format: "%6.2f  dropped #%d while rep talks (heuristic)", t, p.req.id)) }
                         pending = nil
                         if repSpeaking(t) { followsWhileTalking += 1 }
                         ask(t, line: "FOLLOW: builds on \"\(turn.text)\"", latency: followLatency, repLed: true)
                     }
                 } else {
-                    if Delivery.delivered(line: shownLine, spoken: repSaidSinceShown) { answeredAfterDelivery = true }
+                    if Delivery.delivered(line: shownLine, spoken: repSaidSinceShown), AnswerEvidence.isAnswer(turn.text) { answeredAfterDelivery = true }
                     let greeting = shownID == 0 && turn.text.split(separator: " ").count <= 4 && repWords == 0
                     let kind = ProspectReply.kind(turn.text)
                     if let y = yesLine, kind == .yes, y.readyAt <= t {

@@ -267,6 +267,7 @@ extension CoachModel {
             repWordsInCall += count
             lastRepFinal = text
             lastRepFinalAt = Date()
+            recentRepChunks = Array((recentRepChunks + [text]).suffix(2))
         }
         if speaker == .prospect, firstProspectAt == nil { firstProspectAt = Date() }
         ActivityLog.add("Heard \(speaker == .rep ? "Rep" : "Them") (final): \(text)")
@@ -286,7 +287,8 @@ extension CoachModel {
                                              "how": "overall: half the line's key words said; question: 60% of its question's key words"], sug: shownID)
             }
         }
-        if speaker == .prospect, lineDelivered, !answeredAfterDelivery {
+        // Resolved only by a real answer: "Why?" or "What do you mean?" after the line isn't one (N1).
+        if speaker == .prospect, lineDelivered, !answeredAfterDelivery, AnswerEvidence.isAnswer(text) {
             answeredAfterDelivery = true
             ActivityLog.add("Coach: they answered the delivered line (resolved)")
             CallTrace.event("resolution", ["answer": text, "how": "prospect spoke after the line was delivered"], sug: shownID)
@@ -302,6 +304,8 @@ extension CoachModel {
             case .answered(let q): CallTrace.event("question.answered", ["id": q.id, "by": q.asker.rawValue, "text": q.text, "answer": q.answer])
             case .interrupted(let q): CallTrace.event("question.interrupted", ["id": q.id, "by": q.asker.rawValue, "text": q.text, "cut_off_by": text])
             case .abandoned(let q): CallTrace.event("question.abandoned", ["id": q.id, "by": q.asker.rawValue, "text": q.text])
+            case .uncertain(let q): CallTrace.event("question.uncertain", ["id": q.id, "by": q.asker.rawValue, "text": q.text, "reply": q.answer,
+                                                                           "reply_kind": AnswerEvidence.kind(q.answer).rawValue])
             }
         }
         CoachPrompt.questionFacts = questionTracker.promptText // current before the next prompt is built

@@ -626,9 +626,9 @@ extension CoachModel {
     func prepareWhileRepTalks(_ text: String) {
         guard status == .live, !doNotCall, !voicemailActive, !screenerActive, !suggestion.say.isEmpty else { return }
         let since = repWordsInCall - repWordsAtLastAsk
-        guard FollowRep.shouldPrepare(repJustSaid: text, repWordsSinceLastAsk: since,
-                                      onShownLine: Delivery.onLine(line: suggestion.say, spoken: text),
-                                      shownLineDelivered: lineDelivered) else { return }
+        guard FollowRep.shouldPrepare(repJustSaid: text, recentRepSpeech: recentRepChunks.joined(separator: " "),
+                                      shownLine: suggestion.say, shownLineDelivered: lineDelivered,
+                                      repWordsSinceLastAsk: since) else { return }
         if let p = pending {
             pending = nil
             let why = "the rep said \(since) words of their own since"
@@ -696,6 +696,14 @@ extension CoachModel {
         }
         pending = nil
         lineSuperseded = false
+        // The old line: partly said in the rep's own words? Then it isn't "never said" (H1).
+        if status == .live, !suggestion.say.isEmpty, !lineDelivered,
+           Delivery.likelyCovered(line: suggestion.say, spoken: repSaidSinceShown),
+           !CoachPrompt.likelyCoveredLines.contains(suggestion.say) {
+            CoachPrompt.likelyCoveredLines.append(suggestion.say)
+            CallTrace.event("delivery.likely", ["line": suggestion.say, "said": repSaidSinceShown,
+                                                "confidence": Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)], sug: shownID)
+        }
         repSaidSinceShown = ""
         lineDelivered = false
         answeredAfterDelivery = false

@@ -149,6 +149,7 @@ final class CoachModel: ObservableObject {
     var repLedIDs: Set<Int> = []
     var lastRepFinal = ""
     var repEndpointed = false
+    var recentRepChunks: [String] = [] // the rep's last two transcript chunks (a line read across two still counts)
     /// A line written ahead for "yes" to the rep's yes/no question. Never shown until they say yes.
     var yesBranch: (question: String, s: Suggestion, ready: Bool)?
     var yesBranchTask: Task<Void, Never>?
