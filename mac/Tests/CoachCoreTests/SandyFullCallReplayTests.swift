@@ -56,8 +56,13 @@ final class SandyFullCallReplayTests: XCTestCase {
         var followsWhileTalking = 0
 
         func repSpeaking(_ t: Double) -> Bool {
-            // The app's rule: words in the air, or within 1.5 s after (the last-word window).
-            call.contains { $0.who == .rep && t >= $0.start && t <= $0.end + SpeechTimeline.repActiveWindow }
+            // The app's rule: words in the air, or within 1.5 s after (the last-word window),
+            // or paused mid-sentence (their last words didn't end a sentence).
+            if call.contains(where: { $0.who == .rep && t >= $0.start && t <= $0.end + SpeechTimeline.repActiveWindow }) { return true }
+            if let last = call.last(where: { $0.who == .rep && $0.end <= t }) {
+                return RepTurn.midSentence(lastFinal: last.text, secondsSince: t - last.end)
+            }
+            return false
         }
         func prospectSpeaking(_ t: Double) -> Bool {
             call.contains { $0.who == .prospect && t >= $0.start && t <= $0.end + SpeechTimeline.prospectActiveWindow }
@@ -153,6 +158,9 @@ final class SandyFullCallReplayTests: XCTestCase {
         XCTAssertGreaterThan(followsWhileTalking, 0, "no line was prepared while the rep was talking off script")
         // D. When the rep finished with their own question, nothing was pushed over it (they wait for the answer).
         XCTAssertFalse(shown.contains { $0.at > 45.5 && $0.at < 50.49 }, "a line was pushed while the rep waited for an answer")
+        // F. Never mid-sentence: the rep paused 1.7 s inside "...take notes and keep / track of?" and
+        // the first replay showed a new line right there. Nothing may show between 62.46 and 67.71.
+        XCTAssertFalse(shown.contains { $0.at > 62.46 && $0.at < 67.71 }, "a line changed in the middle of the rep's sentence")
         // E. Her question about her employer got its answer on screen within about 2 s.
         let employer = shown.first { $0.line.hasPrefix("Sorry, Sandy") }
         XCTAssertNotNil(employer)

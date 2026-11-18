@@ -263,6 +263,8 @@ extension CoachModel {
             let count = text.split(separator: " ").count
             repWordsSinceShown += count
             repWordsInCall += count
+            lastRepFinal = text
+            lastRepFinalAt = Date()
         }
         if speaker == .prospect, firstProspectAt == nil { firstProspectAt = Date() }
         ActivityLog.add("Heard \(speaker == .rep ? "Rep" : "Them") (final): \(text)")

@@ -637,3 +637,15 @@ public enum FollowRep {
         return repWordsSinceLastAsk >= QueuedLine.maxRepWords
     }
 }
+
+
+/// The rep paused mid-sentence ("...take notes and keep"): they're still talking, even if the pause
+/// is longer than the usual 1.5 s window. A line never changes in the middle of their sentence.
+public enum RepTurn {
+    public static let midSentenceHold = 3.0
+    public static func midSentence(lastFinal: String, secondsSince: Double) -> Bool {
+        let t = lastFinal.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty, secondsSince < midSentenceHold else { return false }
+        return !(t.last.map { ".?!".contains($0) } ?? true)
+    }
+}

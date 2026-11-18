@@ -147,6 +147,8 @@ final class CoachModel: ObservableObject {
     var repWordsAtLastAsk = 0
     var nextIsRepLed = false
     var repLedIDs: Set<Int> = []
+    var lastRepFinal = ""
+    var lastRepFinalAt = Date.distantPast
     var pendingDialSince: Date?
     @Published var dialing = false
     @Published var dialError: String?
@@ -361,7 +363,10 @@ final class CoachModel: ObservableObject {
     var supersededLogged = 0 // suggestion id whose "outdated" was already traced
 
     func signals() -> CoachSignals {
-        let talk = timeline.now(Date().timeIntervalSinceReferenceDate)
+        let raw = timeline.now(Date().timeIntervalSinceReferenceDate)
+        // Paused mid-sentence: still the rep's turn.
+        let midSentence = RepTurn.midSentence(lastFinal: lastRepFinal, secondsSince: Date().timeIntervalSince(lastRepFinalAt))
+        let talk = (rep: raw.rep || midSentence, prospect: raw.prospect && !midSentence, overlap: raw.overlap)
         return CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: talk.prospect, repSpeaking: talk.rep,
                      secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty,
                      delivered: lineDelivered, prospectAnsweredSince: answeredAfterDelivery,
