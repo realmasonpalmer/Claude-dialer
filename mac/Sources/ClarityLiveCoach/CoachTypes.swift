@@ -1,3 +1,4 @@
+import CoachCore
 import Foundation
 
 // MARK: - What Claude sends back
@@ -11,6 +12,8 @@ struct Suggestion: Equatable {
     var sayComplete = false
     /// Codes of the meeting times this line offers or confirms, e.g. ["T3", "T5"].
     var offered: [String] = []
+    /// The move Claude picked before writing the line (answer, clarify, discover...).
+    var move = ""
     /// Voicemail follow-ups: a text to send and a LinkedIn connection note.
     var textMessage = ""
     var linkedin = ""
@@ -43,6 +46,11 @@ struct Suggestion: Equatable {
         var s = Suggestion()
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let m = Move.parse(trimmed) {
+                s.move = m.rawValue
+                if m == .silent { s.skip = true } // the rep doesn't need a new line
+                continue
+            }
             if trimmed.hasPrefix("SAY:") {
                 s.say = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
                 continue

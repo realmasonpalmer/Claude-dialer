@@ -476,7 +476,7 @@ extension CoachModel {
     func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
         guard id == seq, !s.skip, !s.say.isEmpty, !(doNotCall && kind == .reply) else {
             if s.sayComplete || s.skip {
-                let why = doNotCall ? "do not call" : id != seq ? "stale: request #\(seq) is newer" : s.skip ? "Claude said skip" : "empty"
+                let why = doNotCall ? "do not call" : id != seq ? "stale: request #\(seq) is newer" : s.move == "silent" ? "Claude chose silent: no new line needed" : s.skip ? "Claude said skip" : "empty"
                 CallTrace.event("suggestion.dropped", ["line": s.say, "why": why], sug: id)
             }
             return
@@ -691,7 +691,7 @@ extension CoachModel {
             CoachPrompt.shownLines.append(s.say)
         }
         if status == .live {
-            CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "kind": "\(kind)",
+            CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "move": s.move, "kind": "\(kind)",
                                                  "replaced": suggestion.say, "replaced_delivered": lineDelivered], sug: id)
         }
         pending = nil

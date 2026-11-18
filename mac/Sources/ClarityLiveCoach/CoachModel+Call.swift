@@ -633,6 +633,9 @@ extension CoachModel {
         objectionTracker = ObjectionTracker()
         CoachPrompt.objectionFacts = ""
         CoachPrompt.shownLines = []
+        CoachPrompt.saidLines = []
+        CoachPrompt.lastSaidStage = ""
+        repEndpointed = false
         lastEarlyBasis = nil
         earlyDraftsThisTurn = 0
         repWordsAtLastAsk = 0

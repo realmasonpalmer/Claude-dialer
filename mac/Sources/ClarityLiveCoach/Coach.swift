@@ -148,6 +148,7 @@ final class CoachModel: ObservableObject {
     var nextIsRepLed = false
     var repLedIDs: Set<Int> = []
     var lastRepFinal = ""
+    var repEndpointed = false
     /// A line written ahead for "yes" to the rep's yes/no question. Never shown until they say yes.
     var yesBranch: (question: String, s: Suggestion, ready: Bool)?
     var yesBranchTask: Task<Void, Never>?
@@ -367,9 +368,12 @@ final class CoachModel: ObservableObject {
 
     func signals() -> CoachSignals {
         let raw = timeline.now(Date().timeIntervalSinceReferenceDate)
-        // Paused mid-sentence: still the rep's turn.
-        let midSentence = RepTurn.midSentence(lastFinal: lastRepFinal, secondsSince: Date().timeIntervalSince(lastRepFinalAt))
-        let talk = (rep: raw.rep || midSentence, prospect: raw.prospect && !midSentence, overlap: raw.overlap)
+        // Rep done? The transcriber's end-of-speech call and a sentence that isn't left hanging come
+        // first; the time windows are only the fallback.
+        let repTalking = RepTurn.stillTalking(wordsInTheAir: Date().timeIntervalSince(lastRepSpeechAt) < 0.35 && !repEndpointed,
+                                              endpointed: repEndpointed, lastFinal: lastRepFinal,
+                                              secondsSinceFinal: Date().timeIntervalSince(lastRepFinalAt), inFallbackWindow: raw.rep)
+        let talk = (rep: repTalking || raw.overlap, prospect: raw.prospect && !(repTalking && RepTurn.hangs(lastRepFinal)), overlap: raw.overlap)
         return CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: talk.prospect, repSpeaking: talk.rep,
                      secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty,
                      delivered: lineDelivered, prospectAnsweredSince: answeredAfterDelivery,

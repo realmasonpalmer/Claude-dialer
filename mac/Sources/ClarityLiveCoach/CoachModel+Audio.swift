@@ -209,7 +209,7 @@ extension CoachModel {
                     CallTrace.event("speech.start", ["speaker": speaker == .rep ? "rep" : "prospect",
                                                      "overlap": speaker == .rep ? prospectSpeaking : repSpeaking])
                 }
-                if speaker == .rep { lastRepSpeechAt = Date() } else { lastProspectSpeechAt = Date() }
+                if speaker == .rep { lastRepSpeechAt = Date(); repEndpointed = false } else { lastProspectSpeechAt = Date() }
                 // Audio timeline: classify the turn from when words were spoken. No timestamps (rare):
                 // fall back to arrival time, a short range ending now.
                 let side: SpeechTimeline.Side = speaker == .rep ? .rep : .prospect
@@ -230,6 +230,7 @@ extension CoachModel {
                 interim[speaker] = nil
                 if !text.isEmpty { addFinal(text, from: speaker) }
                 if speechFinal && speaker == .prospect { prospectFinished() }
+                if speechFinal && speaker == .rep { repEndpointed = true } // the transcriber heard them stop
             } else {
                 interim[speaker] = text
                 if speaker == .prospect { scheduleEarlyStart() }
@@ -237,6 +238,7 @@ extension CoachModel {
         case .utteranceEnd:
             CallTrace.event("turn.end", ["speaker": speaker == .rep ? "rep" : "prospect", "by": "utterance_end"])
             if speaker == .prospect { prospectFinished() }
+            if speaker == .rep { repEndpointed = true }
         case .failed(let message):
             // Keep the call and the last tip; just reconnect this side.
             guard reconnects < 3, let key = Keychain.read(.deepgram) else {
@@ -276,6 +278,8 @@ extension CoachModel {
                 let conf = Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)
                 ActivityLog.add(String(format: "Coach: line delivered (meaning %.0f%% said)", conf * 100))
                 let ev = Delivery.evidence(line: suggestion.say, spoken: repSaidSinceShown)
+                CoachPrompt.saidLines.append(suggestion.say)
+                if !suggestion.stage.isEmpty { CoachPrompt.lastSaidStage = suggestion.stage }
                 CallTrace.event("delivery", ["line": suggestion.say, "said": repSaidSinceShown, "confidence": conf,
                                              "rule": Delivery.rule(line: suggestion.say, spoken: repSaidSinceShown) ?? "none",
                                              "matched_words": ev.matched, "missing_words": ev.missing,

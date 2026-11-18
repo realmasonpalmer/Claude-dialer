@@ -59,13 +59,15 @@ final class SandyFullCallReplayTests: XCTestCase {
         var yesUsed: [Double] = []
 
         func repSpeaking(_ t: Double) -> Bool {
-            // The app's rule: words in the air, or within 1.5 s after (the last-word window),
-            // or paused mid-sentence (their last words didn't end a sentence).
-            if call.contains(where: { $0.who == .rep && t >= $0.start && t <= $0.end + SpeechTimeline.repActiveWindow }) { return true }
-            if let last = call.last(where: { $0.who == .rep && $0.end <= t }) {
-                return RepTurn.midSentence(lastFinal: last.text, secondsSince: t - last.end)
-            }
-            return false
+            // The app's rule (RepTurn.stillTalking): words in the air; else the transcriber's end-of-speech
+            // call (it fires after 0.3 s of silence) and whether the sentence hangs; windows only as fallback.
+            if call.contains(where: { $0.who == .rep && t >= $0.start && t <= $0.end }) { return true }
+            guard let i = call.lastIndex(where: { $0.who == .rep && $0.end <= t }) else { return false }
+            let last = call[i]
+            let nextRep = call[(i + 1)...].first { $0.who == .rep }
+            let endpointed = t >= last.end + 0.3 && (nextRep.map { $0.start > last.end + 0.3 } ?? true)
+            return RepTurn.stillTalking(wordsInTheAir: false, endpointed: endpointed, lastFinal: last.text,
+                                        secondsSinceFinal: t - last.end, inFallbackWindow: t <= last.end + SpeechTimeline.repActiveWindow)
         }
         func prospectSpeaking(_ t: Double) -> Bool {
             call.contains { $0.who == .prospect && t >= $0.start && t <= $0.end + SpeechTimeline.prospectActiveWindow }

@@ -27,7 +27,7 @@ enum CoachPrompt {
         7. Two clear no's, a request not to be called, or no fit: help the rep exit politely.
         8. An automated call screener ("say your name and why you're calling"): the rep says only
            "This is [rep's first name] calling for [prospect's first name]." Then waits. Stage: Screener.
-        9. If talk is flowing well or the rep is mid-thought, answer SKIP.
+        9. If talk is flowing well or the rep is mid-thought, the move is silent.
 
         The campaign's script leads. Follow its lines and its order, in its words. Go off-script only when you're
         highly confident a different line moves the call toward the objective better (the prospect said something
@@ -44,7 +44,7 @@ enum CoachPrompt {
           [SDR] = the rep's first name, [Day] [Time] or [SlotA] [SlotB] = the open meeting times below).
           If a slot is unknown, drop it naturally. Never show a bracket.
         - A row whose Say is "Show nothing" or EMPTY, a rule that says to return an empty string, or a
-          call-screen/talk-over rule that says show nothing: answer SKIP.
+          call-screen/talk-over rule that says show nothing: the move is silent.
         - A row that says "Show <text>" in capitals (like USE NAME DIRECTORY): put that text in SAY.
         - Nothing matches: use the fallback row for the current stage.
         - CUE starts with the row's ID (or its stage, like S3) in brackets, then the row's Then
@@ -100,13 +100,21 @@ enum CoachPrompt {
         - "Not a priority": ask what is a priority this quarter. Connect only if there's a real link.
         - "Will it replace my people?": no. It gives them time back for the work they were hired to do.
 
+        Before writing, decide what the talk needs next: what the prospect wants or is worried about, what
+        the rep already said in their own words, and the current goal. Then pick ONE move:
+        answer (they asked something), clarify (they're confused), discover (learn their situation),
+        acknowledge (they shared something; reflect it briefly), objection (handle their concern),
+        close (ask for the meeting, or end politely), silent (the rep doesn't need a new line now:
+        they're mid-thought, or the line on screen still fits).
+
         Answer in exactly this format and nothing else:
+        MOVE: <answer, clarify, discover, acknowledge, objection, close or silent>
         SAY: <the line the rep should say next>
         CUE: <why, or how to say it, under 10 words>
         STAGE: <one of: \(stages.joined(separator: ", "))>
 
-        Or, when no help is needed:
-        SKIP
+        For silent, write only:
+        MOVE: silent
 
         \(campaign.promptText)
         """
@@ -173,8 +181,11 @@ enum CoachPrompt {
     static var questionFacts = ""
     /// Objections raised, answered, and what the prospect said after (tracked in code).
     static var objectionFacts = ""
-    /// Lines already shown to the rep this call (never repeat one the rep has covered).
+    /// Lines already shown to the rep this call, and which of them the rep actually said.
     static var shownLines: [String] = []
+    static var saidLines: [String] = []
+    /// The step of the last line the rep actually said (Opener, Discovery, Value...).
+    static var lastSaidStage = ""
     /// What the last reply prompt included, for the call trace.
     static var lastContext: [String: Any] = [:]
 
@@ -198,7 +209,12 @@ enum CoachPrompt {
             : speculative
             ? "The prospect is still talking. Heard so far (partial, may change, not confirmed): \"\(latest)\""
             : "The prospect just said: \"\(latest)\""
-        let shown = shownLines.suffix(5).map { "- \($0)" }.joined(separator: "\n")
+        // Facts only: what the rep said is done; a line shown but not said never reached the prospect.
+        let said = saidLines.suffix(5).map { "- \($0)" }.joined(separator: "\n")
+        let notSaid = shownLines.filter { !saidLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
+        let shown = (said.isEmpty ? "" : "Coach lines the rep actually said (done, don't repeat):\n" + said + "\n")
+            + (notSaid.isEmpty ? "" : "Coach lines shown but NOT said (the prospect never heard them; the rep chose their own words):\n" + notSaid + "\n")
+            + (lastSaidStage.isEmpty ? "" : "The last step the rep actually covered: \(lastSaidStage)\n")
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         let booking = openTimes.map { "\($0)\n\n" } ?? ""
         return """
@@ -207,7 +223,7 @@ enum CoachPrompt {
 
         \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
         \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
-        \(shown.isEmpty ? "" : "Lines already shown to the rep this call (don't repeat them):\n" + shown + "\n")
+        \(shown)
         The rep's actual words are the truth; the script is the guide. If the rep already covered something in
         their own words (the reason for the call, the pitch, a question), it's done: never repeat it. Coach from
         where the rep really is toward the next goal of the script.

@@ -700,3 +700,41 @@ public enum ProspectReply {
         return .other
     }
 }
+
+
+/// The conversational move Claude picks before writing the line. "silent" means the rep doesn't need
+/// a new line right now (they're mid-thought, or the line on screen still fits).
+public enum Move: String, CaseIterable, Sendable {
+    case answer, clarify, discover, acknowledge, objection, close, silent
+
+    /// "MOVE: discover" -> .discover. nil if the line isn't a MOVE line.
+    public static func parse(_ line: String) -> Move? {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        guard t.uppercased().hasPrefix("MOVE:") else { return nil }
+        let word = t.dropFirst(5).trimmingCharacters(in: .whitespaces).lowercased()
+            .split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
+        return Move(rawValue: word) ?? (word == "handle" ? .objection : nil)
+    }
+}
+
+extension RepTurn {
+    /// The last word leaves the sentence hanging ("...and keep", "...so").
+    public static func hangs(_ lastFinal: String) -> Bool {
+        let t = lastFinal.trimmingCharacters(in: .whitespaces)
+        if t.hasSuffix("?") { return false }
+        let lastWord = t.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).last.map(String.init) ?? ""
+        return danglingWords.contains(lastWord)
+    }
+
+    /// Is the rep still talking? Primary signals: words in the air, the transcriber's own end-of-speech
+    /// call (it hears the pause in the audio), and whether the sentence is left hanging. The fixed
+    /// windows (1.5 s after the last word, 3 s for an unfinished sentence) are only the fallback when
+    /// the transcriber hasn't called it.
+    public static func stillTalking(wordsInTheAir: Bool, endpointed: Bool, lastFinal: String,
+                                    secondsSinceFinal: Double, inFallbackWindow: Bool) -> Bool {
+        if wordsInTheAir { return true }
+        if hangs(lastFinal) { return secondsSinceFinal < midSentenceHold }
+        if endpointed { return false }
+        return inFallbackWindow || midSentence(lastFinal: lastFinal, secondsSince: secondsSinceFinal)
+    }
+}
