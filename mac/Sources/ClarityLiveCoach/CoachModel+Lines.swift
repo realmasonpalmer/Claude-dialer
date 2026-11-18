@@ -218,7 +218,8 @@ extension CoachModel {
             return
         }
         if status == .live, LiveCoach.isOptOut(said, isFinal: false) { handleOptOut(said); return } // clear phrases
-        if status == .live, OptOut.hasAmbiguous(said) {
+        // Hold only if no later time already follows; "...until Tuesday" is a callback and gets a normal answer.
+        if status == .live, OptOut.hasAmbiguous(said), OptOut.matches(said, isFinal: true) {
             // "Don't call me back..." might go on ("...until Tuesday"). No sales line; decide at the full pause.
             pendingAmbiguousOptOut = said
             pendingAmbiguousAt = Date()
