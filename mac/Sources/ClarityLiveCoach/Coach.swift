@@ -157,12 +157,20 @@ final class CoachModel: ObservableObject {
     var yesBranchWanted: String?
     var yesBranchAskedAt = Date.distantPast
     var goalPending = false
+    var goalPendingTurns = 0
+    var priorLineOfferedTime = false
+    var pendingAmbiguousOptOut: String?
     var blockedLoggedID = 0
 
     /// The prospect agreed to the meeting in their own words: now it counts.
-    func confirmGoalIfAgreed(_ said: String) {
-        let offeredTime = !suggestion.offered.isEmpty || GoalEvidence.mentionsTime(suggestion.say)
-        guard goalPending, !goalHit, GoalEvidence.confirms(said, afterTimeOffer: offeredTime) else { return }
+    func confirmGoalIfAgreed(_ said: String, checkingEarlierTurn: Bool = false) {
+        guard goalPending, !goalHit else { return }
+        // The line they answered offered a time: the current one, or (for their earlier "Sure.") the one before it.
+        let offeredTime = !suggestion.offered.isEmpty || GoalEvidence.mentionsTime(suggestion.say) || (checkingEarlierTurn && priorLineOfferedTime)
+        guard GoalEvidence.confirms(said, afterTimeOffer: offeredTime) else {
+            if !checkingEarlierTurn { goalPendingTurns -= 1; if goalPendingTurns <= 0 { goalPending = false } } // expires
+            return
+        }
         goalPending = false
         goalHit = true
         meetingThisWeek = touchpoints.meetingsThisWeek() + 1 // logged when the call ends

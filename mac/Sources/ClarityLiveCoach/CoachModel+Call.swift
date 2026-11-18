@@ -754,6 +754,9 @@ extension CoachModel {
 
     /// Clears everything about this prospect and gets the next opener ready.
     func nextCall() {
+        // The call is over: the next person starts clean, before their opener is prepared below (round 3).
+        doNotCall = false
+        pendingAmbiguousOptOut = nil
         if status != .ready {
             // Reached a person = they spoke, and it wasn't a voicemail or only a screener.
             let theySpoke = turns.contains { $0.speaker == .prospect }

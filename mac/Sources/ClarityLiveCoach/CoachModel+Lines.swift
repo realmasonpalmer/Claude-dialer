@@ -105,7 +105,8 @@ extension CoachModel {
                 for _ in 0..<33 { // up to about 10 s
                     try? await Task.sleep(for: .milliseconds(300))
                     guard let self, !Task.isCancelled else { return }
-                    if !self.signals().repSpeaking && (self.interim[.rep] ?? "").isEmpty { self.showScreenerLineNow(); return }
+                    var sig = self.signals(); sig.queuedIsForNewTopic = true
+                    if !sig.repSpeaking && (self.interim[.rep] ?? "").isEmpty && CoachMachine.canReplace(sig) { self.showScreenerLineNow(); return }
                 }
                 // Still talking after 10 s: they're handling the screener themselves. Don't interrupt.
                 CallTrace.event("suggestion.dropped", ["line": "screener", "why": "the rep kept talking"])
@@ -182,7 +183,14 @@ extension CoachModel {
             CallTrace.event("coach.suppressed", ["said": said, "why": "do not call: no more sales lines this call"])
             return
         }
-        if status == .live, LiveCoach.isOptOut(said) { handleOptOut(said); return }
+        if status == .live, LiveCoach.isOptOut(said, isFinal: false) { handleOptOut(said); return } // clear phrases
+        if status == .live, OptOut.hasAmbiguous(said) {
+            // "Don't call me back..." might go on ("...until Tuesday"). No sales line; decide at the full pause.
+            pendingAmbiguousOptOut = said
+            CallTrace.event("optout.waiting", ["said": said, "why": "might be a callback request; waiting for the full pause"])
+            uncoached = ""
+            return
+        }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
         if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
         // The rep asked a yes/no question and the line for "yes" is ready: a clear yes shows it now,
@@ -222,6 +230,7 @@ extension CoachModel {
                 specTimer?.cancel(); specBasis = nil; specHeld = nil; coachTask?.cancel()
                 uncoached = ""
                 latestProspect = said
+                markRequestStart()
                 seq += 1
                 offer(yb.s, id: seq, kind: .reply, askedAt: Date())
                 return
@@ -585,7 +594,8 @@ extension CoachModel {
             return
         }
         // The call is live and someone already talked: keep the opener the rep is reading.
-        if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect }) {
+        if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect })
+            || signals().repSpeaking || !(interim[.rep] ?? "").isEmpty {
             if s.sayComplete { CallTrace.event("suggestion.dropped", ["line": s.say, "why": "opener arrived after the talk started"], sug: id) }
             return
         }
@@ -613,8 +623,9 @@ extension CoachModel {
             lineSuperseded = true
         }
         // The rep moved past it while it was being written (asked, pivoted, or kept talking): drop it (round 2 #1).
+        let readingOnScript = !lineDelivered && Delivery.onLine(line: suggestion.say, spoken: recentRepChunks.joined(separator: " "))
         let staleWhy = kind == .reply && id != shownID
-            ? QueuedLine.staleReason(ageSeconds: 0, repWordsSinceQueued: repWordsInCall - repWordsAtLastAsk,
+            ? QueuedLine.staleReason(ageSeconds: 0, repWordsSinceQueued: readingOnScript ? 0 : repWordsInCall - repWordsAtLastAsk,
                                      repAskedSinceQueued: QueuedLine.repAskedSinceRequest(requestedAt: askedAt.timeIntervalSinceReferenceDate,
                                                                                           lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate),
                                      repTextSinceQueued: repTextSinceAsk)
@@ -623,7 +634,8 @@ extension CoachModel {
                                              holdLine: holdLine, signals: signals(), staleReason: staleWhy)
         if case .drop(let why) = decision {
             CallTrace.event("suggestion.discarded", ["line": s.say, "why": "stale on arrival: \(why)", "rule": QueuedLine.ruleKind(why)], sug: id)
-            if !why.contains("asked") { followRep(why: "the line arrived after the rep moved on") } // after their own question, wait for the answer
+            // Only when they talked on in their own words: after a question or a pivot, the prospect's answer comes next.
+            if why.hasPrefix("the rep said") { followRep(why: "the line arrived after the rep moved on") }
             return
         }
         if decision == .show {
@@ -678,6 +690,7 @@ extension CoachModel {
         thinking = false
         specBasis = nil
         specHeld = nil
+        markRequestStart()
         seq += 1
         ActivityLog.add("Coach #\(seq): instant answer from your script (\(e.id)), no AI")
         offer(Suggestion(say: e.say, cue: "From your script: \(e.id)", stage: "Objection", sayComplete: true),
@@ -788,6 +801,7 @@ extension CoachModel {
                 self.yesBranch = nil
                 if left.isEmpty, self.status == .live, !self.doNotCall {
                     CallTrace.event("yes_branch.used", ["question": q, "answer": said, "line": s.say, "late": true])
+                    self.markRequestStart()
                     self.seq += 1
                     self.offer(s, id: self.seq, kind: .reply, askedAt: Date())
                 } else {
@@ -796,6 +810,12 @@ extension CoachModel {
                 }
             }
         }
+    }
+
+    /// A yes line or script answer is a new request too: what the rep said before it doesn't make it stale.
+    func markRequestStart() {
+        repWordsAtLastAsk = repWordsInCall
+        repTextSinceAsk = ""
     }
 
     /// The Next button: show the queued line now.
@@ -833,6 +853,7 @@ extension CoachModel {
         pending = nil
         lineSuperseded = false
         if kind == .reply { repTextSinceAsk = ""; repWordsAtLastAsk = repWordsInCall } // round 2 #9
+        priorLineOfferedTime = !suggestion.offered.isEmpty || GoalEvidence.mentionsTime(suggestion.say)
         // The old line: partly said in the rep's own words? Then it isn't "never said" (H1).
         if status == .live, !suggestion.say.isEmpty, !lineDelivered,
            Delivery.likelyCovered(line: suggestion.say, spoken: repSaidSinceShown),
@@ -872,8 +893,9 @@ extension CoachModel {
         // A closing line on screen is only a pending goal; the prospect's words confirm it (N4).
         if s.stage == "Goal reached", !goalHit {
             goalPending = true
+            goalPendingTurns = 2
             // They often agree first ("Tuesday works") and the closing line follows: check their last words too.
-            if let last = turns.last(where: { $0.speaker == .prospect }) { confirmGoalIfAgreed(last.text) }
+            if let last = turns.last(where: { $0.speaker == .prospect }) { confirmGoalIfAgreed(last.text, checkingEarlierTurn: true) }
         }
         if s.stage == "Voicemail" { sawVoicemail = true }
     }
@@ -889,7 +911,8 @@ extension CoachModel {
             guard let self, !Task.isCancelled, self.status == .live, !self.doNotCall, self.lastWordsAt == askedAt,
                   self.turns.last?.speaker == .rep, !self.voicemailActive,
                   (self.interim[.prospect] ?? "").isEmpty, // they're mid-answer
-                  !self.signals().repSpeaking, (self.interim[.rep] ?? "").isEmpty else { return } // never over the rep (C6)
+                  !self.signals().repSpeaking, (self.interim[.rep] ?? "").isEmpty,
+                  CoachMachine.canReplace({ var x = self.signals(); x.queuedIsForNewTopic = true; return x }()) else { return } // never over the rep (C6)
             self.coachTask?.cancel()
             self.thinking = false
             self.seq += 1

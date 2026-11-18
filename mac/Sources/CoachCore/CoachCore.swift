@@ -202,7 +202,14 @@ public enum OptOut {
 
     /// "Don't call me back" can mean "call me later" ("...until Tuesday"). Those only count on a final
     /// transcript, and not when a later time follows. Clear phrases ("take me off your list") count at once.
-    static let ambiguous = ["don't call me back", "do not call me back", "don't call back"]
+    static let ambiguous = ["don't call me back", "do not call me back", "don't call back", "don't call me again",
+                            "do not call me again", "don't call again", "do not call again", "don't call here"]
+
+    /// The words contain a phrase that might be a callback ("...until Tuesday"): wait for the full pause before acting.
+    public static func hasAmbiguous(_ text: String) -> Bool {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'").replacingOccurrences(of: "dont ", with: "don't ")
+        return ambiguous.contains { t.contains($0) }
+    }
     static let deferrals = ["until", "till", "later", "tomorrow", "next", "after", "monday", "tuesday", "wednesday",
                             "thursday", "friday", "in a few", "in an hour", "when", "this afternoon", "tonight"]
 
@@ -227,6 +234,7 @@ public enum SilentRule {
     /// The same, but never pulled from under the rep: not while they talk or are still reading it.
     public static func clearNow(superseded: Bool, delivered: Bool, answered: Bool, signals: CoachSignals) -> Bool {
         guard clearCurrent(superseded: superseded, delivered: delivered, answered: answered) else { return false }
+        if signals.repStarted && !signals.delivered { return false } // partway through it: let them finish
         var s = signals
         s.queuedIsForNewTopic = superseded || s.queuedIsForNewTopic
         return CoachMachine.canReplace(s)
@@ -891,7 +899,9 @@ extension RepTurn {
     public static func stillTalking(wordsInTheAir: Bool, endpointed: Bool, lastFinal: String,
                                     secondsSinceFinal: Double, inFallbackWindow: Bool) -> Bool {
         if wordsInTheAir { return true }
+        let t = lastFinal.trimmingCharacters(in: .whitespaces)
         if hangs(lastFinal) { return secondsSinceFinal < midSentenceHold }
+        if t.hasSuffix(",") { return secondsSinceFinal < midSentenceHold } // "So, essentially," is mid-thought
         if endpointed { return false }
         return inFallbackWindow || midSentence(lastFinal: lastFinal, secondsSince: secondsSinceFinal)
     }
@@ -962,12 +972,14 @@ public enum YesBranchRule {
 /// The meeting is only "booked" when the prospect's words agree, not when a closing line is shown (N4).
 public enum GoalEvidence {
     static let agree = ["works for me", "that works", "sounds good", "send the invite", "send me the invite", "let's do",
-                        "book it", "put me down", "i'm in", "see you then", "perfect", "great"]
+                        "book it", "put me down", "i'm in", "see you then", "that's perfect", "perfect, send"]
     static let times = ["monday", "tuesday", "wednesday", "thursday", "friday", "tomorrow", "next week", " am", " pm", "o'clock"]
 
     public static func mentionsTime(_ text: String) -> Bool {
         let t = " " + text.lowercased() + " "
-        return times.contains(where: { t.contains($0) }) || t.range(of: #"\b\d{1,2}(:\d{2})?\b"#, options: .regularExpression) != nil
+        // A clock time, not any number ("30 seconds" isn't a meeting time).
+        let clock = #"\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?(am|pm|a\.m\.|p\.m\.)|\bat \d{1,2}\b"#
+        return times.contains(where: { t.contains($0) }) || t.range(of: clock, options: .regularExpression) != nil
     }
 
     static let negative = ["difficult", "can't", "cannot", "won't", "busy", "bad", "doesn't work", "don't", "tough", "booked", "out of"]
