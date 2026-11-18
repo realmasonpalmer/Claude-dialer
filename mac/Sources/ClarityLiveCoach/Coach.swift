@@ -160,6 +160,9 @@ final class CoachModel: ObservableObject {
     var goalPendingTurns = 0
     var priorLineOfferedTime = false
     var pendingAmbiguousOptOut: String?
+    var pendingAmbiguousAt = Date.distantPast
+    var pendingOptOutTask: Task<Void, Never>?
+    var screenerRetries = 0
     var blockedLoggedID = 0
 
     /// The prospect agreed to the meeting in their own words: now it counts.
@@ -168,8 +171,7 @@ final class CoachModel: ObservableObject {
         // The line they answered offered a time: the current one, or (for their earlier "Sure.") the one before it.
         let offeredTime = !suggestion.offered.isEmpty || GoalEvidence.mentionsTime(suggestion.say) || (checkingEarlierTurn && priorLineOfferedTime)
         guard GoalEvidence.confirms(said, afterTimeOffer: offeredTime) else {
-            if !checkingEarlierTurn { goalPendingTurns -= 1; if goalPendingTurns <= 0 { goalPending = false } } // expires
-            return
+            return // counted down once per full turn in prospectFinished (Fix 5)
         }
         goalPending = false
         goalHit = true

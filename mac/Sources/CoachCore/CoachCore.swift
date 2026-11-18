@@ -262,7 +262,7 @@ public enum EarlyStart {
     /// Milliseconds to wait for the words to hold still, or nil for "don't start early".
     public static func delayMS(for text: String) -> Int? {
         let t = text.trimmingCharacters(in: .whitespaces)
-        if OptOut.matches(t) { return nil } // handled in code, never drafted
+        if OptOut.matches(t) || OptOut.hasAmbiguous(t) { return nil } // handled in code, never drafted (Fix 3)
         let words = t.split(separator: " ").count
         let finished = t.last.map { ".?!".contains($0) } ?? false
         if finished && words >= minFinishedWords { return 200 }
@@ -1024,5 +1024,36 @@ public enum CoachController {
             return .drop(why)
         }
         return .show
+    }
+}
+
+
+/// A possible opt-out ("Don't call me back") waiting to see if a later time follows (Fix 1).
+/// It is never dropped: it resolves as an opt-out unless a later time actually follows.
+public enum PendingOptOut {
+    public enum Outcome: Equatable, Sendable { case optOut, callback, wait }
+    public static let timeout = 1.2
+
+    /// - later: what the prospect said after the phrase (may be empty).
+    /// - utteranceEnded / callEnded / secondsWaited: what has happened since. Any of them decides it.
+    public static func resolve(pending: String, later: String, utteranceEnded: Bool, callEnded: Bool, secondsWaited: Double) -> Outcome {
+        let decided = !later.isEmpty || utteranceEnded || callEnded || secondsWaited >= timeout
+        guard decided else { return .wait }
+        let whole = (pending + " " + later).trimmingCharacters(in: .whitespaces)
+        return OptOut.matches(whole, isFinal: true) ? .optOut : .callback
+    }
+}
+
+/// A pending goal counts down once per full prospect turn, not per transcript chunk (Fix 5).
+public enum GoalPendingRule {
+    public static func turnsLeft(after turnsLeft: Int, confirmed: Bool) -> Int { confirmed ? 0 : max(0, turnsLeft - 1) }
+}
+
+extension CoachController {
+    /// May an interrupting line (screener, nudge) show right now? Not over the rep's speech or reading (Fix 6).
+    public static func canInterrupt(signals: CoachSignals) -> Bool {
+        var s = signals
+        s.queuedIsForNewTopic = true
+        return !s.repSpeaking && CoachMachine.canReplace(s)
     }
 }

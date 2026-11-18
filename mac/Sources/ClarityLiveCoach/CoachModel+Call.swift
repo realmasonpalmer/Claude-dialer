@@ -182,6 +182,16 @@ extension CoachModel {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        // A possible opt-out still waiting when the call ends is an opt-out: write it now, for this lead (Fix 1b).
+        if let p = pendingAmbiguousOptOut, !doNotCall {
+            pendingAmbiguousOptOut = nil
+            pendingOptOutTask?.cancel()
+            let later = uncoached.trimmingCharacters(in: .whitespaces)
+            if PendingOptOut.resolve(pending: p, later: later, utteranceEnded: false, callEnded: true, secondsWaited: 0) == .optOut {
+                CallTrace.event("optout.flushed", ["said": p, "why": "the call ended before the full pause"])
+                handleOptOut((p + " " + later).trimmingCharacters(in: .whitespaces))
+            }
+        }
         CallTrace.endCall(["lead": calling ?? "?", "seconds": Int(Date().timeIntervalSince(callStartedAt)),
                            "voicemail": sawVoicemail, "they_spoke": turns.contains { $0.speaker == .prospect },
                            "turns": turns.count, "last_line": suggestion.say])

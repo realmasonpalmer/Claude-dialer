@@ -21,6 +21,7 @@ extension CoachModel {
 
     /// Shows the line before the one on screen.
     func back() {
+        guard !doNotCall else { return } // the goodbye line stays (Fix 2)
         let current = historyIndex ?? history.count - 1
         guard current > 0 else { return }
         historyIndex = current - 1
@@ -30,6 +31,7 @@ extension CoachModel {
 
     /// Back to the newest line after looking back.
     func showLatest() {
+        guard !doNotCall else { return } // Fix 2
         guard let latest = history.last else { return }
         historyIndex = nil
         suggestion = latest.s
@@ -118,6 +120,21 @@ extension CoachModel {
 
     private func showScreenerLineNow() {
         guard status == .live, !doNotCall else { return }
+        // Every caller is covered: never over the rep's speech or reading; wait again instead (Fix 6).
+        guard CoachController.canInterrupt(signals: signals()), (interim[.rep] ?? "").isEmpty else {
+            CallTrace.event("screener.waiting", ["why": "the rep is talking or reading"])
+            screenerRetries += 1
+            if screenerRetries <= 30 {
+                screenerWait?.cancel()
+                screenerWait = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard let self, !Task.isCancelled else { return }
+                    self.showScreenerLineNow()
+                }
+            }
+            return
+        }
+        screenerRetries = 0
         screenerActive = true
         coachTask?.cancel()
         thinking = false
@@ -137,6 +154,7 @@ extension CoachModel {
         specTimer?.cancel()
         guard status == .live, !screenerActive, !voicemailActive, !doNotCall else { return } // prepare even while a line is up
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
+        if pendingAmbiguousOptOut != nil || OptOut.hasAmbiguous(text) { return } // never draft on a possible opt-out (Fix 3)
         // "Don't call me back" mid-sentence: stop selling now, don't wait for them to finish.
         if LiveCoach.isOptOut(text, isFinal: false) { handleOptOut(text); return }
         guard isMeaningful(text) else { return }
@@ -176,7 +194,23 @@ extension CoachModel {
         specTimer?.cancel()
         lastEarlyBasis = nil
         earlyDraftsThisTurn = 0
-        let said = uncoached.trimmingCharacters(in: .whitespaces)
+        if goalPending, !goalHit { // once per full turn, not per chunk (Fix 5)
+            goalPendingTurns = GoalPendingRule.turnsLeft(after: goalPendingTurns, confirmed: false)
+            if goalPendingTurns <= 0 { goalPending = false }
+        }
+        var said = uncoached.trimmingCharacters(in: .whitespaces)
+        // A possible opt-out is waiting: decide it first, with whatever they said after it (Fix 1c).
+        if let pendingSaid = pendingAmbiguousOptOut {
+            let outcome = PendingOptOut.resolve(pending: pendingSaid, later: said, utteranceEnded: false, callEnded: false,
+                                                secondsWaited: Date().timeIntervalSince(pendingAmbiguousAt))
+            if outcome != .wait {
+                pendingAmbiguousOptOut = nil
+                pendingOptOutTask?.cancel()
+                if outcome == .optOut { handleOptOut((pendingSaid + " " + said).trimmingCharacters(in: .whitespaces)); return }
+                said = (pendingSaid + " " + said).trimmingCharacters(in: .whitespaces) // a callback request: answer it as one
+                CallTrace.event("optout.not", ["said": said, "why": "a later time followed: a callback request"])
+            }
+        }
         guard !said.isEmpty else { return }
         if doNotCall {
             uncoached = ""
@@ -187,8 +221,22 @@ extension CoachModel {
         if status == .live, OptOut.hasAmbiguous(said) {
             // "Don't call me back..." might go on ("...until Tuesday"). No sales line; decide at the full pause.
             pendingAmbiguousOptOut = said
+            pendingAmbiguousAt = Date()
             CallTrace.event("optout.waiting", ["said": said, "why": "might be a callback request; waiting for the full pause"])
             uncoached = ""
+            // Never left hanging: if no full pause comes in 1.2 s, it's an opt-out (Fix 1a).
+            pendingOptOutTask?.cancel()
+            pendingOptOutTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(PendingOptOut.timeout))
+                guard let self, !Task.isCancelled, let p = self.pendingAmbiguousOptOut else { return }
+                let later = self.uncoached.trimmingCharacters(in: .whitespaces)
+                if PendingOptOut.resolve(pending: p, later: later, utteranceEnded: false, callEnded: false,
+                                         secondsWaited: PendingOptOut.timeout) == .optOut {
+                    self.pendingAmbiguousOptOut = nil
+                    CallTrace.event("optout.timeout", ["said": p, "why": "no full pause within \(PendingOptOut.timeout) s"])
+                    self.handleOptOut((p + " " + later).trimmingCharacters(in: .whitespaces))
+                }
+            }
             return
         }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
@@ -820,7 +868,7 @@ extension CoachModel {
 
     /// The Next button: show the queued line now.
     func promoteNow() {
-        guard let p = pending else { return }
+        guard !doNotCall, let p = pending else { return } // Fix 2
         ActivityLog.add("Coach: Next clicked, queued line shown")
         CallTrace.event("manual", ["action": "Next"], sug: p.id)
         show(p.suggestion, id: p.id, kind: .reply)

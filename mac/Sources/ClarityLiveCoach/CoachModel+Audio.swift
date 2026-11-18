@@ -231,7 +231,8 @@ extension CoachModel {
                 if !text.isEmpty { addFinal(text, from: speaker) }
                 // Opt-out on any prospect final, even one that doesn't end their turn (C7).
                 // Clear opt-out phrases on any final, checked on the whole turn so far, not one chunk (round 3).
-                if speaker == .prospect, !doNotCall, LiveCoach.isOptOut(uncoached + " " + text, isFinal: false) { handleOptOut(uncoached + " " + text) }
+                // addFinal already added this chunk to uncoached: check it as is (Fix 4).
+                if speaker == .prospect, !doNotCall, LiveCoach.isOptOut(uncoached, isFinal: false) { handleOptOut(uncoached) }
                 if speechFinal && speaker == .prospect { prospectFinished() }
                 if !speechFinal && speaker == .prospect { scheduleEarlyStart() } // a final mid-turn is a head start too (M2)
                 if speechFinal && speaker == .rep { repEndpointed = true; promotePendingIfReady() } // the transcriber heard them stop (M1)
@@ -245,9 +246,12 @@ extension CoachModel {
                 // The full pause after "don't call me back": now decide if it was an opt-out or a callback request.
                 if let said = pendingAmbiguousOptOut {
                     pendingAmbiguousOptOut = nil
-                    let whole = (said + " " + uncoached).trimmingCharacters(in: .whitespaces)
-                    if !doNotCall, LiveCoach.isOptOut(whole, isFinal: true) { handleOptOut(whole) }
-                    else { uncoached = whole; CallTrace.event("optout.not", ["said": whole, "why": "a later time followed: a callback request"]) }
+                    pendingOptOutTask?.cancel()
+                    let later = uncoached.trimmingCharacters(in: .whitespaces)
+                    let whole = (said + " " + later).trimmingCharacters(in: .whitespaces)
+                    if PendingOptOut.resolve(pending: said, later: later, utteranceEnded: true, callEnded: false, secondsWaited: 0) == .optOut {
+                        if !doNotCall { handleOptOut(whole) }
+                    } else { uncoached = whole; CallTrace.event("optout.not", ["said": whole, "why": "a later time followed: a callback request"]) }
                 }
                 if !doNotCall { prospectFinished() }
             }
