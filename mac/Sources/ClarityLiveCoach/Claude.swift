@@ -25,7 +25,7 @@ struct ClaudeClient {
     /// Calls onText with all the text so far, each time more arrives. Cancel the surrounding Task to stop early.
     /// onThinking gets the thinking summary so far, when `thinking` asks for display "summarized".
     func stream(system: String, user: String, onText: @escaping (String) -> Void,
-                onThinking: ((String) -> Void)? = nil) async throws {
+                onThinking: ((String) -> Void)? = nil, onUsage: (([String: Int]) -> Void)? = nil) async throws {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -66,6 +66,8 @@ struct ClaudeClient {
 
         var full = ""
         var thought = ""
+        var usage: [String: Int] = [:]
+        defer { if !usage.isEmpty { onUsage?(usage) } }
         for try await line in bytes.lines {
             guard line.hasPrefix("data: "),
                   let json = try? JSONSerialization.jsonObject(with: Data(line.dropFirst(6).utf8)) as? [String: Any],
@@ -82,6 +84,11 @@ struct ClaudeClient {
                       let text = delta["thinking"] as? String {
                 thought += text
                 onThinking(thought)
+            } else if type == "message_start", let u = (json["message"] as? [String: Any])?["usage"] as? [String: Any] {
+                // Input side: plain input, cache reads (cheap, fast) and cache writes.
+                for k in ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"] { if let v = u[k] as? Int { usage[k] = v } }
+            } else if type == "message_delta", let u = json["usage"] as? [String: Any], let out = u["output_tokens"] as? Int {
+                usage["output_tokens"] = out
             } else if type == "error" {
                 let error = json["error"] as? [String: Any]
                 throw APIError(message: (error?["message"] as? String) ?? "Claude stream error")

@@ -171,19 +171,32 @@ enum CoachPrompt {
     static var blockerHints = ""
     /// Open and answered questions, tracked in code (set before each request).
     static var questionFacts = ""
+    /// What the last reply prompt included, for the call trace.
+    static var lastContext: [String: Any] = [:]
 
-    static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?) -> String {
-        // Fast: the last ~60 seconds word for word, plus a short summary of everything before.
+    /// `turns` are finalized transcript only. `speculative`: `latest` is still-changing partial words
+    /// (an early draft), so it's labeled as not final and never written into the call as fact.
+    static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?,
+                      speculative: Bool = false) -> String {
+        // Short call (12 turns or fewer, or no summary yet): every finalized turn, word for word.
+        // Longer: the summary of everything before, plus the last 10 turns word for word.
         let recent = turns.count > 12 && !liveSummary.isEmpty ? Array(turns.suffix(10)) : Array(turns.suffix(300))
         var history = recent.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }
+        let repLast = turns.last { $0.speaker == .rep }?.text ?? ""
+        lastContext = ["mode": recent.count < turns.count ? "summary + last 10 turns" : "full transcript",
+                       "turns_total": turns.count, "turns_verbatim_from": turns.count - recent.count + 1, "turns_verbatim_to": turns.count,
+                       "speculative_latest": speculative]
+        let now = speculative
+            ? "The prospect is still talking. Heard so far (partial, may change, not confirmed): \"\(latest)\""
+            : "The prospect just said: \"\(latest)\""
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         let booking = openTimes.map { "\($0)\n\n" } ?? ""
         return """
         \(about(calling, details))\(opened)\(booking)Call so far, oldest first:
         \(history)
 
-        The prospect just said: "\(latest)"
+        \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
         \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")
         What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most, ending in one question
         (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through

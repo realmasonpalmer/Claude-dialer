@@ -140,7 +140,7 @@ extension CoachModel {
                   normalized(text) != self.specBasis else { return }
             self.ask(.reply, user: CoachPrompt.reply(
                 turns: self.turns, latest: text, calling: self.calling, details: self.recordDetails, style: self.callOpener,
-                openTimes: self.bookingText()
+                openTimes: self.bookingText(), speculative: true
             ), early: text)
         }
     }
@@ -304,6 +304,7 @@ extension CoachModel {
             "kind": "\(kind)", "early": early != nil, "early_basis": early ?? "",
             "system_chars": self.system.count, "system_hash": Self.stableHash(self.system),
             "user_message": user, "summary_version": CallTrace.memVersion,
+            "context": kind == .reply ? CoachPrompt.lastContext : [:], "user_chars": user.count,
         ], req: id)
         specBasis = early.map(normalized)
         specHeld = nil
@@ -323,7 +324,7 @@ extension CoachModel {
                 let gate = LineGate()
                 let started = Date()
                 var firstToken = false
-                try await client.stream(system: system, user: user) { text in
+                try await client.stream(system: system, user: user, onText: { text in
                     if !firstToken, kind == .reply {
                         firstToken = true
                         ActivityLog.add("Coach #\(id): first words from Claude after \(Int(Date().timeIntervalSince(started) * 1000)) ms")
@@ -343,7 +344,10 @@ extension CoachModel {
                                                          "passed": gate.passed, "problems": problems], req: id)
                         if gate.passed { self?.offer(s, id: id, kind: kind, askedAt: askedAt) }
                     }
-                }
+                }, onUsage: { u in
+                    // Token counts and cache use: cache_read > 0 means the system prompt came from cache.
+                    Task { @MainActor in CallTrace.event("claude.usage", u.merging(["ms": Int(Date().timeIntervalSince(started) * 1000)]) { a, _ in a }, req: id) }
+                })
                 if kind == .reply { ActivityLog.add("Coach #\(id): Claude done after \(Int(Date().timeIntervalSince(started) * 1000)) ms") }
                 CallTrace.event("claude.done", ["ms": Int(Date().timeIntervalSince(started) * 1000), "output": finalText,
                                                 "fresh": self?.seq == id], req: id)
