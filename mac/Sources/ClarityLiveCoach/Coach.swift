@@ -156,6 +156,7 @@ final class CoachModel: ObservableObject {
     var yesBranchRepWords = 0
     var yesBranchWanted: String?
     var goalPending = false
+    var blockedLoggedID = 0
 
     /// The prospect agreed to the meeting in their own words: now it counts.
     func confirmGoalIfAgreed(_ said: String) {

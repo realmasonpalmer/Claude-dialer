@@ -86,6 +86,7 @@ enum CallTrace {
     /// Builds an AI-readable bundle for the last call (or a given trace): the trace, a README that
     /// explains every event and points at the code, and the activity log around it. Opens the folder.
     static func exportLast() {
+        queue.sync {} // write every pending event first, so the end of the call is in the copy (M5)
         guard let src = lastFile ?? latestTrace() else { return }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"
         let dir = FileManager.default.homeDirectoryForCurrentUser

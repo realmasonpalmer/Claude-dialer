@@ -59,7 +59,7 @@ extension CoachModel {
             let next = CoachMachine.state(signals())
             if next != coachState {
                 ActivityLog.add("Coach state: \(coachState.rawValue) -> \(next.rawValue)")
-                CallTrace.event("state", ["from": coachState.rawValue, "to": next.rawValue, "signals": "\(signals())"])
+                CallTrace.event("state", ["from": coachState.rawValue, "to": next.rawValue, "signals": signals().trace])
                 coachState = next
             }
         } else if coachState != .idle { coachState = .idle }

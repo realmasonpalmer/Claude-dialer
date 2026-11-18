@@ -252,7 +252,10 @@ extension CoachModel {
         let onlyGreeting = kind == .opener && turns.count <= 1 && said.split(separator: " ").count <= 4
         // "Sure" or "Yes" is filler while the rep talks, but a real answer to the rep's question.
         let repAsked = turns.last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
-        guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else { return }
+        guard !onlyGreeting, isMeaningful(said) || repAsked || turns.count <= 2 else {
+            CallTrace.event("coach.skipped", ["said": said, "why": onlyGreeting ? "a plain greeting; the opener already answers it" : "not meaningful (filler)"])
+            return
+        }
         if instantAnswer(said) { return }
         ask(.reply, user: CoachPrompt.reply(
             turns: turns, latest: said, calling: calling, details: recordDetails, style: callOpener,
@@ -585,7 +588,7 @@ extension CoachModel {
             if pending?.id != id {
                 let why = holdLine ? "held by you" : repSpeaking ? "you're speaking" : "you may be reading"
                 ActivityLog.add("Coach #\(id): line queued (\(why))")
-                CallTrace.event("suggestion.queued", ["line": s.say, "why": why, "signals": "\(signals())"], sug: id)
+                CallTrace.event("suggestion.queued", ["line": s.say, "why": why, "signals": signals().trace], sug: id)
             }
             if let old = pending, old.id != id {
                 CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer queued line replaced it"], sug: old.id)
@@ -640,8 +643,15 @@ extension CoachModel {
 
     /// Called twice a second: a queued line shows once the rep stops speaking.
     func promotePendingIfReady() {
-        guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq),
-              !holdLine, CoachMachine.canReplace(signals()) else { return }
+        guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq) else { return }
+        guard !holdLine, CoachMachine.canReplace(signals()) else {
+            if blockedLoggedID != p.id { // once per queued line, not every tick
+                blockedLoggedID = p.id
+                CallTrace.event("promotion.blocked", ["why": holdLine ? "held by the rep" : "not safe to replace yet",
+                                                      "signals": signals().trace], sug: p.id)
+            }
+            return
+        }
         // The rep's words are the source of truth: if they moved on while this waited, it's stale.
         if let why = QueuedLine.staleReason(ageSeconds: Date().timeIntervalSince(pendingQueuedAt),
                                             repWordsSinceQueued: repWordsInCall - repWordsAtQueue,

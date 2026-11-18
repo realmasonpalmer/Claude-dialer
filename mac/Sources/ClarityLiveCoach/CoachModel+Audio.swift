@@ -233,7 +233,7 @@ extension CoachModel {
                 if speaker == .prospect, !doNotCall, LiveCoach.isOptOut(text) { handleOptOut(text) }
                 if speechFinal && speaker == .prospect { prospectFinished() }
                 if !speechFinal && speaker == .prospect { scheduleEarlyStart() } // a final mid-turn is a head start too (M2)
-                if speechFinal && speaker == .rep { repEndpointed = true } // the transcriber heard them stop
+                if speechFinal && speaker == .rep { repEndpointed = true; promotePendingIfReady() } // the transcriber heard them stop (M1)
             } else {
                 interim[speaker] = text
                 if speaker == .prospect { scheduleEarlyStart() }
@@ -241,7 +241,7 @@ extension CoachModel {
         case .utteranceEnd:
             CallTrace.event("turn.end", ["speaker": speaker == .rep ? "rep" : "prospect", "by": "utterance_end"])
             if speaker == .prospect { prospectFinished() }
-            if speaker == .rep { repEndpointed = true }
+            if speaker == .rep { repEndpointed = true; promotePendingIfReady() } // M1: no wait for the next tick
         case .failed(let message):
             // Keep the call and the last tip; just reconnect this side.
             guard reconnects < 3, let key = Keychain.read(.deepgram) else {

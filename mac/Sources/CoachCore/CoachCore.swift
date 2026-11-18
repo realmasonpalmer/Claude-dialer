@@ -43,6 +43,16 @@ public struct CoachSignals: Sendable {
     }
 }
 
+extension CoachSignals {
+    /// For the trace, as JSON fields (not one long string).
+    public var trace: [String: Any] {
+        ["has_line": hasLine, "prospect_speaking": prospectSpeaking, "rep_speaking": repSpeaking,
+         "seconds_since_shown": (secondsSinceShown * 100).rounded() / 100, "rep_started": repStarted, "delivered": delivered,
+         "prospect_answered": prospectAnsweredSince, "queued": queued, "new_topic": queuedIsForNewTopic, "line_words": lineWords,
+         "overlapping": overlapping, "rep_on_line": repOnLine, "do_not_call": doNotCall]
+    }
+}
+
 public enum CoachMachine {
     /// How long a brand-new line is protected for reading before an un-started line can be swapped.
     public static let readingGrace = 1.2
