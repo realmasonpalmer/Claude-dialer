@@ -729,7 +729,7 @@ public enum LineRepair {
     public static func trimToFit(_ line: String, max: Int) -> String {
         let words = line.split(separator: " ")
         guard words.count > max else { return line }
-        let sentences = line.split(whereSeparator: { ".!?".contains($0) }, omittingEmptySubsequences: true)
+        let sentences = line.split(omittingEmptySubsequences: true, whereSeparator: { ".!?".contains($0) })
         var ends: [String] = []
         var rest = Substring(line)
         for s in sentences {
