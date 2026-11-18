@@ -15,8 +15,8 @@ final class Phase3RaceTests: XCTestCase {
         XCTAssertFalse(CoachMachine.canReplace(s))
         var later = s; later.secondsSinceShown = 5.5
         XCTAssertTrue(CoachMachine.canReplace(later))
-        // The rep has started reading (interim words count as started): no swap.
-        var reading = later; reading.repStarted = true
+        // The rep's interim words are on the wire: they're talking, so no swap.
+        var reading = later; reading.repStarted = true; reading.repSpeaking = true
         XCTAssertFalse(CoachMachine.canReplace(reading))
     }
 

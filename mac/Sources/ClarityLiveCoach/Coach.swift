@@ -394,7 +394,8 @@ final class CoachModel: ObservableObject {
         let repTalking = RepTurn.stillTalking(wordsInTheAir: Date().timeIntervalSince(lastRepSpeechAt) < 0.35 && !repEndpointed,
                                               endpointed: repEndpointed, lastFinal: lastRepFinal,
                                               secondsSinceFinal: Date().timeIntervalSince(lastRepFinalAt), inFallbackWindow: raw.rep)
-        let talk = (rep: repTalking || raw.overlap, prospect: raw.prospect && !(repTalking && RepTurn.hangs(lastRepFinal)), overlap: raw.overlap)
+        let repInterim = !(interim[.rep] ?? "").trimmingCharacters(in: .whitespaces).isEmpty // words on the wire (H2)
+        let talk = (rep: repTalking || raw.overlap || repInterim, prospect: raw.prospect && !(repTalking && RepTurn.hangs(lastRepFinal)), overlap: raw.overlap)
         return CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: talk.prospect, repSpeaking: talk.rep,
                      secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty || !(interim[.rep] ?? "").trimmingCharacters(in: .whitespaces).isEmpty,
                      delivered: lineDelivered, prospectAnsweredSince: answeredAfterDelivery,
