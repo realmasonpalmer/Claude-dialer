@@ -103,7 +103,7 @@ final class TurnTakingTests: XCTestCase {
     func testEarlyStartSkipsFragments() {
         XCTAssertNil(EarlyStart.delayMS(for: "No."))
         XCTAssertNil(EarlyStart.delayMS(for: "No. No."))
-        XCTAssertEqual(EarlyStart.delayMS(for: "I'm not interested, thanks."), 200)
+        XCTAssertEqual(EarlyStart.delayMS(for: "I'm really not interested, thanks."), 200)
         XCTAssertEqual(EarlyStart.delayMS(for: "we already use a partner for that"), 450)
     }
 

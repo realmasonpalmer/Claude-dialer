@@ -677,14 +677,15 @@ extension CoachModel {
             }
             DialHistory.logVoicemail(key, body: "(recorded voicemail dropped)")
             self.showToast("Voicemail dropped")
-            // The message plays (about 20 seconds) and the call ends. If it doesn't, hang up.
+            // The message plays (about 20 seconds) and the call ends. If it doesn't, hang up (this call only).
+            let dropCallID = CallTrace.callID
             for i in 0..<60 {
                 try? await Task.sleep(for: .seconds(1))
                 if self.status != .live { return } // the call ended by itself after the message
                 if i >= 25, await Aircall.lineIsOnCall() == false { break } // never cut the message short
             }
             ActivityLog.add("Voicemail drop: message had time to play, hanging up")
-            if self.status == .live {
+            if self.status == .live, CallTrace.callID == dropCallID {
                 _ = await AircallPhone.shared.hangUp()
                 self.endCall()
             }

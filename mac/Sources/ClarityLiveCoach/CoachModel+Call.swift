@@ -186,7 +186,8 @@ extension CoachModel {
         if let p = pendingAmbiguousOptOut, !doNotCall {
             pendingAmbiguousOptOut = nil
             pendingOptOutTask?.cancel()
-            let later = uncoached.trimmingCharacters(in: .whitespaces)
+            // Include words still in progress ("...until Tuesday" not final yet when they hung up).
+            let later = (uncoached + " " + (interim[.prospect] ?? "")).trimmingCharacters(in: .whitespaces)
             if PendingOptOut.resolve(pending: p, later: later, utteranceEnded: false, callEnded: true, secondsWaited: 0) == .optOut {
                 CallTrace.event("optout.flushed", ["said": p, "why": "the call ended before the full pause"])
                 handleOptOut((p + " " + later).trimmingCharacters(in: .whitespaces))
@@ -663,7 +664,11 @@ extension CoachModel {
         CoachPrompt.liveSummary = ""
         CoachPrompt.summaryCoversTurns = 0
         summaryInFlight = false
-        screenerRetries = 0 // a summary left from the last call never blocks this one (round 2 #2)
+        screenerRetries = 0
+        prospectNos = 0
+        callClosed = false
+        followsThisStretch = 0
+        frozenShownID = -1 // a summary left from the last call never blocks this one (round 2 #2)
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
         doNotCall = false
         timeline = SpeechTimeline()
@@ -672,7 +677,7 @@ extension CoachModel {
         ActivityLog.add("Models this call: live lines \(ClaudeClient.displayName(LiveCoach.client("").model)), "
             + "opener \(ClaudeClient.displayName(CoachSpeed.current.client(apiKey: "").model)) (speed: \(CoachSpeed.current.label)), "
             + "voicemail \(ClaudeClient.displayName(CoachSpeed.fastest.client(apiKey: "").model)), "
-            + "fixes Haiku 5.5 then Sonnet 5.5")
+            + "fixes in code, then one Haiku 5.5 retry")
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }

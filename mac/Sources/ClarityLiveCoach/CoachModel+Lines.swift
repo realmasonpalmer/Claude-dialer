@@ -101,6 +101,7 @@ extension CoachModel {
     /// Instant line for a call screener. No Claude call, no waiting.
     func showScreenerLine() {
         screenerRetries = 0 // each screener gets its own retries
+        screenerCallID = CallTrace.callID
         // Never over the rep mid-sentence (C6): wait up to 3 s for them to stop.
         if signals().repSpeaking || !(interim[.rep] ?? "").isEmpty {
             screenerWait?.cancel()
@@ -120,7 +121,7 @@ extension CoachModel {
     }
 
     private func showScreenerLineNow() {
-        guard status == .live, !doNotCall else { return }
+        guard status == .live, !doNotCall, screenerCallID == CallTrace.callID else { return }
         // Every caller is covered: never over the rep's speech or reading; wait again instead (Fix 6).
         guard CoachController.canInterrupt(signals: signals()), (interim[.rep] ?? "").isEmpty else {
             CallTrace.event("screener.waiting", ["why": "the rep is talking or reading"])
@@ -231,6 +232,20 @@ extension CoachModel {
             return
         }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
+        // Two no's and a go: count their no's; two (or a no plus "yep, thanks") ends it politely, no AI.
+        if status == .live, !voicemailActive, Rejection.isNo(said) { prospectNos += 1 }
+        if status == .live, !voicemailActive, Rejection.callOver(nosSoFar: prospectNos, latest: said), !callClosed {
+            callClosed = true
+            uncoached = ""
+            coachTask?.cancel(); specTimer?.cancel(); pending = nil; yesBranch = nil; yesBranchTask?.cancel()
+            let first = Screener.firstName(calling) ?? ""
+            seq += 1
+            CallTrace.event("call.closing", ["said": said, "nos": prospectNos, "why": "two no's, or a no and a sign-off"])
+            show(Suggestion(say: "Totally understand\(first.isEmpty ? "" : ", \(first)"). Thanks for your time. Have a good one.",
+                            cue: "Two no's: end it kindly.", stage: "Exit", sayComplete: true), id: seq, kind: .reply)
+            return
+        }
+        if callClosed { uncoached = ""; return } // nothing more to sell on this call
         if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
         // The rep asked a yes/no question and the line for "yes" is ready: a clear yes shows it now,
         // with no wait. No, unsure, or anything else gets a fresh answer from their real words.
@@ -264,14 +279,26 @@ extension CoachModel {
             yesBranchTask?.cancel()
             let kind = ProspectReply.kind(said)
             if kind == .yes, yb.ready {
-                CallTrace.event("yes_branch.used", ["question": yb.question, "answer": said, "line": yb.s.say])
-                ActivityLog.add("Coach: they said yes, ready line shown with no wait")
+                // A short wait so "Yeah. ...No, I'm not interested." can cancel it (call 6).
                 specTimer?.cancel(); specBasis = nil; specHeld = nil; coachTask?.cancel()
                 uncoached = ""
                 latestProspect = said
-                markRequestStart()
-                seq += 1
-                offer(yb.s, id: seq, kind: .reply, askedAt: Date())
+                let line = yb.s
+                yesShowTask?.cancel()
+                yesShowTask = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(600))
+                    guard let self, !Task.isCancelled, self.status == .live,
+                          self.uncoached.trimmingCharacters(in: .whitespaces).isEmpty,
+                          (self.interim[.prospect] ?? "").isEmpty else {
+                        CallTrace.event("yes_branch.discarded", ["question": yb.question, "why": "they kept talking after the yes"])
+                        return
+                    }
+                    CallTrace.event("yes_branch.used", ["question": yb.question, "answer": said, "line": line.say])
+                    ActivityLog.add("Coach: they said yes, ready line shown")
+                    self.markRequestStart()
+                    self.seq += 1
+                    self.offer(line, id: self.seq, kind: .reply, askedAt: Date())
+                }
                 return
             }
             CallTrace.event("yes_branch.discarded", ["question": yb.question, "answer": said, "answer_kind": kind.rawValue,
@@ -402,7 +429,7 @@ extension CoachModel {
             } catch {
                 ActivityLog.problem("Opt out: couldn't save DoNotCall in Salesforce: \(error.localizedDescription)")
                 CallTrace.event("crm.failed", ["record": key, "field": "DoNotCall", "error": error.localizedDescription])
-                if let self {
+                if let self, CallTrace.callID == optOutCallID { // never on the next call's screen
                     if self.suggestion.say == LiveCoach.optOutLine {
                         self.suggestion.cue = "Off your list here, but Salesforce didn't save Do Not Call. Mark it by hand."
                     }
@@ -637,7 +664,8 @@ extension CoachModel {
         if id == shownID {
             // Once a line is whole on screen, its words are frozen: a late chunk never changes it (N2).
             if suggestion.sayComplete { return }
-            if status == .live, signals().repSpeaking || !(interim[.rep] ?? "").isEmpty { return } // they're reading it
+            if frozenShownID == id { return }
+            if status == .live, signals().repSpeaking || !(interim[.rep] ?? "").isEmpty { frozenShownID = id; return } // reading it: freeze for good
             if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
             var s = s
             s.say = fillTags(s.say, for: calling) // never show a bare [Name] or [SDR]
@@ -731,7 +759,9 @@ extension CoachModel {
     func instantAnswer(_ said: String) -> Bool {
         guard status == .live, !doNotCall else { return false }
         let answers = scriptAnswers
-        guard let e = answers.match(said) else {
+        // Only when they're answering the rep's question: otherwise a phrase match is out of context.
+        let repJustAsked = turns.dropLast().last { $0.speaker == .rep }?.text.contains("?") ?? false
+        guard repJustAsked, let e = answers.match(said) else {
             CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said])
             return false
         }
@@ -787,6 +817,7 @@ extension CoachModel {
         guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
               let rep = turns.last, rep.speaker == .rep else { return }
         CallTrace.event("follow_rep", ["rep_said": rep.text, "why": why])
+        followsThisStretch += 1
         nextIsRepLed = true
         ask(.reply, user: CoachPrompt.reply(turns: turns, latest: rep.text, calling: calling, details: recordDetails,
                                             style: callOpener, openTimes: bookingText(), repLed: true))
@@ -797,6 +828,7 @@ extension CoachModel {
     func prepareWhileRepTalks(_ text: String) {
         guard status == .live, !doNotCall, !voicemailActive, !screenerActive, !suggestion.say.isEmpty else { return }
         let since = repWordsInCall - repWordsAtLastAsk
+        guard FollowRepLimit.allowed(repWordsSinceLastAsk: since, followsThisStretch: followsThisStretch) else { return }
         guard FollowRep.shouldPrepare(repJustSaid: text, recentRepSpeech: recentRepChunks.joined(separator: " "),
                                       shownLine: suggestion.say, shownLineDelivered: lineDelivered,
                                       repWordsSinceLastAsk: since) else { return }

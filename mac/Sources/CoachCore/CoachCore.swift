@@ -244,7 +244,7 @@ public enum SilentRule {
 /// When to start Claude before the prospect is done. A one or two word fragment ("No.") is not
 /// worth a request: it almost always grows ("No. No. Just don't call me back."), wasting the draft.
 public enum EarlyStart {
-    public static let minFinishedWords = 3
+    public static let minFinishedWords = 4 // real words, not "I", "yeah", "so"
     public static let minUnfinishedWords = 6
 
     /// Another early draft for the same turn only when their meaning moved: 5+ more words, or a sentence
@@ -263,7 +263,8 @@ public enum EarlyStart {
     public static func delayMS(for text: String) -> Int? {
         let t = text.trimmingCharacters(in: .whitespaces)
         if OptOut.matches(t) || OptOut.hasAmbiguous(t) { return nil } // handled in code, never drafted (Fix 3)
-        let words = t.split(separator: " ").count
+        let filler: Set<String> = ["i", "yeah", "so", "um", "uh", "well", "oh", "like", "okay", "ok", "and", "but", "the", "a"]
+        let words = t.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).filter { !filler.contains(String($0)) }.count
         let finished = t.last.map { ".?!".contains($0) } ?? false
         if finished && words >= minFinishedWords { return 200 }
         if words >= minUnfinishedWords { return 450 }
@@ -1059,5 +1060,38 @@ extension CoachController {
         var s = signals
         s.queuedIsForNewTopic = true
         return !s.repSpeaking && CoachMachine.canReplace(s)
+    }
+}
+
+
+/// "Two no's and a go": one no gets one respectful question; two no's (or a no plus a sign-off) ends it (call 6).
+public enum Rejection {
+    static let nos = ["not interested", "not relevant", "no thanks", "no thank you", "not a fit", "i'm good", "we're good",
+                      "not for us", "don't need", "pass on", "not really interested", "doesn't apply", "not something we need"]
+    static let signOffs = ["yep thanks", "yep, thanks", "bye", "take care", "have a good one", "have a good day", "have a great day",
+                           "gotta go", "got to go", "thanks anyway", "thank you anyway"]
+
+    public static func isNo(_ text: String) -> Bool {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        return nos.contains { t.contains($0) }
+    }
+
+    public static func isSignOff(_ text: String) -> Bool {
+        let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'").replacingOccurrences(of: ".", with: "")
+        return signOffs.contains { t.contains($0) }
+    }
+
+    /// Done: two no's, or a no that comes with a sign-off.
+    public static func callOver(nosSoFar: Int, latest: String) -> Bool {
+        nosSoFar >= 2 || (nosSoFar >= 1 && isSignOff(latest))
+    }
+}
+
+/// When to write a line from the rep's own talk (call 6: 12 wasted calls on a monologue).
+public enum FollowRepLimit {
+    public static let minWords = 15
+    /// At most one per stretch of rep talk (until the prospect speaks again), and only after 15+ of their words.
+    public static func allowed(repWordsSinceLastAsk: Int, followsThisStretch: Int) -> Bool {
+        followsThisStretch == 0 && repWordsSinceLastAsk >= minWords
     }
 }
