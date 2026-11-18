@@ -75,8 +75,9 @@ public enum CoachMachine {
         if s.doNotCall { return false } // the goodbye line stays; nothing replaces it
         guard s.hasLine else { return true }
         if s.repSpeaking { return false }
-        // Not started: only something new from the prospect replaces it, never the clock alone.
-        if !s.repStarted { return s.queuedIsForNewTopic && s.secondsSinceShown >= 2 }
+        // Not started: only something new from the prospect replaces it, never the clock alone, and
+        // never before the line has had its reading time (about 4 words a second, up to 5 s).
+        if !s.repStarted { return s.queuedIsForNewTopic && s.secondsSinceShown >= readingTime(words: s.lineWords) }
         return s.delivered || s.queuedIsForNewTopic
     }
 
@@ -657,12 +658,28 @@ public enum QueuedLine {
     /// "heuristic" (the word or time limit, a safety net) or "conversation" (the rep asked their own
     /// question, a real change in the talk). Logged with every drop so the two can be told apart.
     public static func ruleKind(_ reason: String) -> String {
-        reason.contains("asked") ? "conversation" : "heuristic"
+        reason.contains("asked") || reason.contains("pivot") ? "conversation" : "heuristic"
+    }
+
+    /// Phrases a rep uses to change direction, with or without a question mark.
+    static let pivots = ["quick question", "before i let you go", "one last thing", "actually", "let me ask", "can i ask", "curious"]
+
+    /// The rep changed direction in their own words: an unpunctuated question or a pivot phrase.
+    public static func repPivoted(_ text: String) -> Bool {
+        let t = text.lowercased()
+        return pivots.contains(where: { t.contains($0) }) || !QuestionTracker.questions(in: text).isEmpty
+    }
+
+    /// C4: the rep asked a question after this line was requested (even while it was still being written).
+    public static func repAskedSinceRequest(requestedAt: Double, lastRepQuestionAt: Double) -> Bool {
+        lastRepQuestionAt > requestedAt
     }
 
     /// Why it's stale, or nil if it can still be shown.
-    public static func staleReason(ageSeconds: Double, repWordsSinceQueued: Int, repAskedSinceQueued: Bool) -> String? {
+    public static func staleReason(ageSeconds: Double, repWordsSinceQueued: Int, repAskedSinceQueued: Bool,
+                                   repTextSinceQueued: String = "") -> String? {
         if repAskedSinceQueued { return "the rep asked their own question since" }
+        if repPivoted(repTextSinceQueued) { return "the rep pivoted in their own words since" }
         if repWordsSinceQueued >= maxRepWords { return "the rep said \(repWordsSinceQueued) words of their own since" }
         if ageSeconds > maxAge { return String(format: "waited %.0f s; the talk moved on", ageSeconds) }
         return nil

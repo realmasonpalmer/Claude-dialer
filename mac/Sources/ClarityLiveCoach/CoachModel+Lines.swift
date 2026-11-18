@@ -98,6 +98,24 @@ extension CoachModel {
 
     /// Instant line for a call screener. No Claude call, no waiting.
     func showScreenerLine() {
+        // Never over the rep mid-sentence (C6): wait up to 3 s for them to stop.
+        if signals().repSpeaking || !(interim[.rep] ?? "").isEmpty {
+            screenerWait?.cancel()
+            screenerWait = Task { [weak self] in
+                for _ in 0..<10 {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard let self, !Task.isCancelled else { return }
+                    if !self.signals().repSpeaking && (self.interim[.rep] ?? "").isEmpty { break }
+                }
+                self?.showScreenerLineNow()
+            }
+            return
+        }
+        showScreenerLineNow()
+    }
+
+    private func showScreenerLineNow() {
+        guard status == .live, !doNotCall else { return }
         screenerActive = true
         coachTask?.cancel()
         thinking = false
@@ -190,6 +208,8 @@ extension CoachModel {
         if let basis = specBasis {
             specBasis = nil
             if basis != normalized(said) {
+                // Thrown out: stop it now, so it can't show later on any early return below (C5).
+                coachTask?.cancel(); specHeld = nil; thinking = false
                 CallTrace.event("early.wasted", ["basis": basis, "said": said, "why": "they kept talking after the early draft started"])
             }
             if basis == normalized(said) {
@@ -347,7 +367,7 @@ extension CoachModel {
             return
         }
         coachTask?.cancel() // a newer statement makes the old answer stale
-        if kind == .reply { repWordsAtLastAsk = repWordsInCall }
+        if kind == .reply { repWordsAtLastAsk = repWordsInCall; repTextSinceAsk = "" }
         let repLed = nextIsRepLed
         nextIsRepLed = false
         seq += 1
@@ -560,7 +580,9 @@ extension CoachModel {
             if pending?.id != id {
                 pendingQueuedAt = Date()
                 repWordsAtQueue = repWordsAtLastAsk // what the rep had said when this line was asked for
-                repAskedSinceQueue = false
+                // C4: a question the rep asked while this line was still being written counts too.
+                repAskedSinceQueue = QueuedLine.repAskedSinceRequest(requestedAt: askedAt.timeIntervalSinceReferenceDate,
+                                                                     lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate)
             }
             pending = (id, s)
         }
@@ -610,7 +632,8 @@ extension CoachModel {
         // The rep's words are the source of truth: if they moved on while this waited, it's stale.
         if let why = QueuedLine.staleReason(ageSeconds: Date().timeIntervalSince(pendingQueuedAt),
                                             repWordsSinceQueued: repWordsInCall - repWordsAtQueue,
-                                            repAskedSinceQueued: repAskedSinceQueue) {
+                                            repAskedSinceQueued: repAskedSinceQueue,
+                                            repTextSinceQueued: repTextSinceAsk) {
             pending = nil
             ActivityLog.add("Coach #\(p.id): queued line dropped (\(why); \(QueuedLine.ruleKind(why)) rule)")
             CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)",
@@ -766,7 +789,8 @@ extension CoachModel {
             try? await Task.sleep(for: .seconds(6))
             guard let self, !Task.isCancelled, self.status == .live, self.lastWordsAt == askedAt,
                   self.turns.last?.speaker == .rep, !self.voicemailActive,
-                  (self.interim[.prospect] ?? "").isEmpty else { return } // they're mid-answer
+                  (self.interim[.prospect] ?? "").isEmpty, // they're mid-answer
+                  !self.signals().repSpeaking, (self.interim[.rep] ?? "").isEmpty else { return } // never over the rep (C6)
             self.coachTask?.cancel()
             self.thinking = false
             self.seq += 1

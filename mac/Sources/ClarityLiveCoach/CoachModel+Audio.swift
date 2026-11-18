@@ -274,6 +274,8 @@ extension CoachModel {
         if speaker == .prospect, firstProspectAt == nil { firstProspectAt = Date() }
         ActivityLog.add("Heard \(speaker == .rep ? "Rep" : "Them") (final): \(text)")
         if speaker == .rep, pending != nil, text.contains("?") { repAskedSinceQueue = true }
+        if speaker == .rep, text.contains("?") || QueuedLine.repPivoted(text) { lastRepQuestionAt = Date() }
+        if speaker == .rep { repTextSinceAsk += " " + text }
         if speaker == .rep, status == .live, !suggestion.say.isEmpty {
             repSaidSinceShown += " " + text
             if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown) {

@@ -150,6 +150,9 @@ final class CoachModel: ObservableObject {
     var lastRepFinal = ""
     var repEndpointed = false
     var summaryInFlight = false
+    var lastRepQuestionAt = Date.distantPast
+    var repTextSinceAsk = ""
+    var screenerWait: Task<Void, Never>?
     var recentRepChunks: [String] = [] // the rep's last two transcript chunks (a line read across two still counts)
     /// A line written ahead for "yes" to the rep's yes/no question. Never shown until they say yes.
     var yesBranch: (question: String, s: Suggestion, ready: Bool)?
@@ -377,7 +380,7 @@ final class CoachModel: ObservableObject {
                                               secondsSinceFinal: Date().timeIntervalSince(lastRepFinalAt), inFallbackWindow: raw.rep)
         let talk = (rep: repTalking || raw.overlap, prospect: raw.prospect && !(repTalking && RepTurn.hangs(lastRepFinal)), overlap: raw.overlap)
         return CoachSignals(hasLine: !suggestion.say.isEmpty, prospectSpeaking: talk.prospect, repSpeaking: talk.rep,
-                     secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty,
+                     secondsSinceShown: Date().timeIntervalSince(shownAt), repStarted: !repSaidSinceShown.isEmpty || !(interim[.rep] ?? "").trimmingCharacters(in: .whitespaces).isEmpty,
                      delivered: lineDelivered, prospectAnsweredSince: answeredAfterDelivery,
                      queued: pending != nil, queuedIsForNewTopic: lineSuperseded,
                      lineWords: suggestion.say.split(separator: " ").count, overlapping: talk.overlap,

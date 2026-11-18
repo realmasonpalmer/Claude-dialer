@@ -14,7 +14,8 @@ final class CoachCoreTests: XCTestCase {
     // An unstarted line never times out: only something new from the prospect replaces it.
     func testUnstartedLineNeverTimesOut() {
         XCTAssertFalse(CoachMachine.canReplace(sig(shown: 60, words: 20)))
-        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 3, newTopic: true, words: 20)))
+        XCTAssertFalse(CoachMachine.canReplace(sig(shown: 3, newTopic: true, words: 20))) // H2: a 20-word line needs ~5 s
+        XCTAssertTrue(CoachMachine.canReplace(sig(shown: 5.5, newTopic: true, words: 20)))
     }
 
     // Started but not delivered, and the prospect hasn't moved on: keep it.
