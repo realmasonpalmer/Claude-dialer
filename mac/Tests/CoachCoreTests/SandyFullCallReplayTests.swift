@@ -106,7 +106,7 @@ final class SandyFullCallReplayTests: XCTestCase {
                     repSaidSinceShown += " " + turn.text
                     if pending != nil, turn.text.contains("?") { pending!.askedSince = true }
                     // A yes/no question: the line for "yes" is written now, held, never shown before the answer.
-                    yesLine = RepQuestion.closedQuestion(in: turn.text).map { ($0, t + yesLineLatency) }
+                    yesLine = RepQuestion.closedQuestion(in: turn.text).map { (question: $0, readyAt: t + yesLineLatency) }
                     if let y = yesLine { events.append(String(format: "%6.2f  writing the yes line for: %@", t, y.question)) }
                     let delivered = Delivery.delivered(line: shownLine, spoken: repSaidSinceShown)
                     if FollowRep.shouldPrepare(repJustSaid: turn.text, repWordsSinceLastAsk: repWords - repWordsAtLastAsk,
