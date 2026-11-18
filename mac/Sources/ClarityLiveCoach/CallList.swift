@@ -77,15 +77,28 @@ final class CallList: ObservableObject {
             guard !found.isEmpty else { return }
             // Which list is this? (From the address bar while the list page shows.)
             let key = SalesforceChrome.url().flatMap(Self.listKey)
-            if let key, key != listKey {
-                // A different list: start over with what's on screen, then load all of it from Salesforce.
+            if let key, key != listKey, key != rejectedKey {
+                // A different list: try it, but only keep it if Salesforce can load the whole list.
+                // A list Salesforce can't find (Recently Viewed, a search, a temporary filter) never
+                // replaces the list you're calling: you'd get people who aren't on your list.
+                let old = (listKey, records, lastIndex, fullListKey)
                 listKey = key
                 records = found
                 lastIndex = -1
                 fullListKey = nil
                 message = nil
-                save()
-                Task { await loadFullList() }
+                guard Salesforce.isConnected else { save(); return }
+                Task { [weak self] in
+                    guard let self else { return }
+                    let loaded = await self.loadFullList()
+                    if !loaded, self.fullListKey != key, self.listKey == key, old.0 != nil {
+                        (self.listKey, self.records, self.lastIndex, self.fullListKey) = old
+                        self.rejectedKey = key // don't retry it every 3 seconds
+                        ActivityLog.add("List: Chrome shows a list Salesforce can't load. Staying on your call list.")
+                        self.refreshUpNext()
+                    }
+                    self.save()
+                }
                 return
             }
             // Same list. If the screen shows people the saved list doesn't have, or in a different
@@ -133,6 +146,8 @@ final class CallList: ObservableObject {
     /// The list on screen (object + list view), from an address like /lightning/o/Contact/list?filterName=00B...
     @Published private(set) var listKey: ListKey?
     private var fullListKey: ListKey?
+    /// A list Chrome showed that Salesforce couldn't load: ignored until another list is opened.
+    private var rejectedKey: ListKey?
 
     struct ListKey: Equatable, Codable {
         let object: String
