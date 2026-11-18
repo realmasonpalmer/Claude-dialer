@@ -299,7 +299,9 @@ extension CoachModel {
         CallTrace.event("memory.snapshot", ["summary": CoachPrompt.liveSummary, "summary_version": CallTrace.memVersion,
                                             "question_facts": CoachPrompt.questionFacts, "objection_facts": CoachPrompt.objectionFacts, "blocker_hints": CoachPrompt.blockerHints,
                                             "turns": turns.count], req: id)
-        if kind == .reply { ActivityLog.add("Coach #\(id): asking Claude\(early == nil ? "" : " early, from their words so far")") }
+        let requested = (kind == .reply ? LiveCoach.client(key) : (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)).model
+        if kind == .reply { ActivityLog.add("Coach #\(id): asking \(ClaudeClient.displayName(requested))\(early == nil ? "" : " early, from their words so far")") }
+        else { ActivityLog.add("Coach #\(id): \(kind) from \(ClaudeClient.displayName(requested))") }
         CallTrace.event("claude.request", [
             "kind": "\(kind)", "early": early != nil, "early_basis": early ?? "",
             "system_chars": self.system.count, "system_hash": Self.stableHash(self.system),
@@ -347,6 +349,12 @@ extension CoachModel {
                 }, onUsage: { u in
                     // Token counts and cache use: cache_read > 0 means the system prompt came from cache.
                     Task { @MainActor in CallTrace.event("claude.usage", u.merging(["ms": Int(Date().timeIntervalSince(started) * 1000)]) { a, _ in a }, req: id) }
+                }, onModel: { served in
+                    guard served != requested, !served.hasPrefix(requested) else { return }
+                    Task { @MainActor in
+                        ActivityLog.add("Coach #\(id): model switched: asked \(ClaudeClient.displayName(requested)), answered by \(ClaudeClient.displayName(served)) (fallback)")
+                        CallTrace.event("claude.model_switch", ["requested": requested, "served": served], req: id)
+                    }
                 })
                 if kind == .reply { ActivityLog.add("Coach #\(id): Claude done after \(Int(Date().timeIntervalSince(started) * 1000)) ms") }
                 CallTrace.event("claude.done", ["ms": Int(Date().timeIntervalSince(started) * 1000), "output": finalText,
@@ -389,6 +397,7 @@ extension CoachModel {
             let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
             CallTrace.event("claude.retry.request", ["model": model, "user_message": retry], req: id)
             let t0 = Date()
+            ActivityLog.add("Line check: asking \(ClaudeClient.displayName(model)) to fix it")
             try? await LiveCoach.client(key, model: model).stream(system: system, user: retry) { text = $0 }
             var s = Suggestion.parse(text)
             s.sayComplete = true

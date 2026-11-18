@@ -25,7 +25,8 @@ struct ClaudeClient {
     /// Calls onText with all the text so far, each time more arrives. Cancel the surrounding Task to stop early.
     /// onThinking gets the thinking summary so far, when `thinking` asks for display "summarized".
     func stream(system: String, user: String, onText: @escaping (String) -> Void,
-                onThinking: ((String) -> Void)? = nil, onUsage: (([String: Int]) -> Void)? = nil) async throws {
+                onThinking: ((String) -> Void)? = nil, onUsage: (([String: Int]) -> Void)? = nil,
+                onModel: ((String) -> Void)? = nil) async throws {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -84,7 +85,9 @@ struct ClaudeClient {
                       let text = delta["thinking"] as? String {
                 thought += text
                 onThinking(thought)
-            } else if type == "message_start", let u = (json["message"] as? [String: Any])?["usage"] as? [String: Any] {
+            } else if type == "message_start", let m = json["message"] as? [String: Any], let u = m["usage"] as? [String: Any] {
+                // The model that actually answered (differs from the one asked for on a fallback).
+                if let served = m["model"] as? String { onModel?(served) }
                 // Input side: plain input, cache reads (cheap, fast) and cache writes.
                 for k in ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"] { if let v = u[k] as? Int { usage[k] = v } }
             } else if type == "message_delta", let u = json["usage"] as? [String: Any], let out = u["output_tokens"] as? Int {
@@ -112,6 +115,16 @@ extension ClaudeClient {
             throw APIError(message: "Claude's answer wasn't in the expected format. Try again.")
         }
         return json
+    }
+}
+
+extension ClaudeClient {
+    /// "claude-haiku-5-5" -> "Haiku 5.5", for the log.
+    static func displayName(_ model: String) -> String {
+        let parts = model.replacingOccurrences(of: "claude-", with: "").split(separator: "-")
+        guard let name = parts.first else { return model }
+        let version = parts.dropFirst().prefix(2).joined(separator: ".")
+        return name.prefix(1).uppercased() + name.dropFirst() + (version.isEmpty ? "" : " " + version)
     }
 }
 

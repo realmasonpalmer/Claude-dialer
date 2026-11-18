@@ -628,6 +628,10 @@ extension CoachModel {
         timeline = SpeechTimeline()
         CoachPrompt.blockerHints = BlockerBook.hints(campaign.id)
         ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
+        ActivityLog.add("Models this call: live lines \(ClaudeClient.displayName(LiveCoach.client("").model)), "
+            + "opener \(ClaudeClient.displayName(CoachSpeed.current.client(apiKey: "").model)) (speed: \(CoachSpeed.current.label)), "
+            + "voicemail \(ClaudeClient.displayName(CoachSpeed.fastest.client(apiKey: "").model)), "
+            + "fixes Haiku 5.5 then Sonnet 5.5")
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
