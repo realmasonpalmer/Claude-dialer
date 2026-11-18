@@ -209,6 +209,54 @@ public enum EarlyStart {
     }
 }
 
+/// Reading level for every word the rep reads or a prospect hears: 1st to 5th grade.
+/// Flesch-Kincaid grade, with names left out (a name like "Clarity Consulting" is read once,
+/// not sounded out, and shouldn't push a plain line over).
+public enum ReadingLevel {
+    /// The prompt asks for grade 1 to 5. The check allows one grade of slack, since the formula
+    /// is noisy on one or two short sentences.
+    public static let target = 5.0
+    public static let checkMax = 6.0
+
+    public static let rule = """
+    Reading level, always: every word the rep will say, read or send (lines, scripts, voicemails, texts, notes)
+    is at a 1st to 5th grade reading level. Short, common words of one or two syllables. Short sentences,
+    under 12 words each. No jargon, no long words when a short one works ("use" not "utilize", "help" not
+    "facilitate", "about" not "approximately"). Names of people and companies are fine as they are.
+    """
+
+    static func syllables(_ word: String) -> Int {
+        let w = word.lowercased().filter { $0.isLetter }
+        guard !w.isEmpty else { return 0 }
+        if w.count <= 3 { return 1 }
+        let vowels = Set("aeiouy")
+        var count = 0, prev = false
+        for c in w { let v = vowels.contains(c); if v && !prev { count += 1 }; prev = v }
+        if w.hasSuffix("e"), !w.hasSuffix("le"), count > 1 { count -= 1 }
+        if w.hasSuffix("ed"), count > 1, !(w.hasSuffix("ted") || w.hasSuffix("ded")) { count -= 1 }
+        return max(1, count)
+    }
+
+    /// Flesch-Kincaid grade level. Capitalized words after a sentence's first word count as names (1 syllable).
+    public static func grade(_ text: String) -> Double {
+        let sentences = text.split(whereSeparator: { ".?!".contains($0) })
+            .map { $0.split(separator: " ").map(String.init).filter { $0.contains(where: \.isLetter) || $0.contains(where: \.isNumber) } }
+            .filter { !$0.isEmpty }
+        let words = sentences.reduce(0) { $0 + $1.count }
+        guard words > 0 else { return 0 }
+        var syl = 0
+        for s in sentences {
+            for (i, w) in s.enumerated() {
+                let isName = i > 0 && (w.first?.isUppercase ?? false) && w != "I" && !w.hasPrefix("I'")
+                syl += isName ? 1 : (w.allSatisfy({ $0.isNumber || ",.".contains($0) }) ? 2 : syllables(w))
+            }
+        }
+        return 0.39 * Double(words) / Double(sentences.count) + 11.8 * Double(syl) / Double(words) - 15.59
+    }
+
+    public static func tooHard(_ text: String) -> Bool { grade(text) > checkMax }
+}
+
 /// Live line length. The prompt asks for fewer words than the check allows, so a line that runs a
 /// word long passes instead of costing a second fixing it.
 public enum LineBudget {

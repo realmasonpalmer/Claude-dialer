@@ -1,3 +1,4 @@
+import CoachCore
 import Foundation
 
 /// Streams one coaching answer from the Claude API. Raw HTTPS: there is no official Swift SDK.
@@ -37,7 +38,7 @@ struct ClaudeClient {
             "stream": true,
             "output_config": ["effort": effort],
             // The rules and campaign never change during a call, so they are cached.
-            "system": [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]],
+            "system": [["type": "text", "text": system + "\n\n" + ReadingLevel.rule, "cache_control": ["type": "ephemeral"]]],
             "messages": [["role": "user", "content": user]],
         ]
         if let thinking { body["thinking"] = thinking }

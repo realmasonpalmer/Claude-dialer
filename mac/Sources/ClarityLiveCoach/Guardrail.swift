@@ -33,6 +33,10 @@ enum Guardrail {
             out.append("money or percent")
         }
         if say.contains("\u{2014}") { out.append("em dash") }
+        let grade = ReadingLevel.grade(noSlots)
+        if grade > ReadingLevel.checkMax {
+            out.append(String(format: "reading level grade %.1f (max %.0f): use shorter words and sentences", grade, ReadingLevel.target))
+        }
         let timeLike = lower.range(of: #"\b\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)"#, options: .regularExpression) != nil
         if !allowTimes, timeLike || days.contains(where: { noSlots.lowercased().contains($0) }) { out.append("a made-up day or time (use [Slot A])") }
         if lower.contains("show the") || lower.contains("show s") { out.append("an instruction, not a real line") }
