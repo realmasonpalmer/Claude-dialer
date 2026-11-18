@@ -24,6 +24,16 @@ enum MobileOnly {
         noMobile = set
     }
 
+    /// Many at once (a whole list load), one save.
+    static func recordMany(_ rows: [(id: String, mobile: String)]) {
+        var set = noMobile
+        for r in rows {
+            let k = String(r.id.prefix(15))
+            if r.mobile.trimmingCharacters(in: .whitespaces).isEmpty { set.insert(k) } else { set.remove(k) }
+        }
+        noMobile = set
+    }
+
     /// Skip this person on the current call list.
     static func excluded(_ id: String) -> Bool { on && noMobile.contains(String(id.prefix(15))) }
 }

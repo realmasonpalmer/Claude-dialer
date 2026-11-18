@@ -135,6 +135,8 @@ final class CoachModel: ObservableObject {
     var appliedLeadID: String?
     var foreignSkippedID: String?
     var mobileSkippedID: String?
+    var skipsInARow = 0
+    var openerTask: Task<Void, Never>?
     var pendingDialSince: Date?
     @Published var dialing = false
     @Published var dialError: String?

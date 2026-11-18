@@ -231,6 +231,7 @@ enum Salesforce {
         let isContact = view.object == "Contact"
         var callable: Set<String> = []
         var noMobile: [String] = []
+        var mobiles: [(id: String, mobile: String)] = []
         for start in stride(from: 0, to: all.count, by: 200) {
             let ids = all[start..<min(start + 200, all.count)].map(\.id)
                 .filter { $0.allSatisfy { $0.isLetter || $0.isNumber } }
@@ -244,6 +245,7 @@ enum Salesforce {
                 TimeZoneFilter.learn(r) // state and phone say which time zone they're in
                 let mobile = (r["MobilePhone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
                 let phone = (r["Phone"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+                mobiles.append((id, mobile))
                 if mobile.isEmpty && phone.isEmpty {
                     // Only blank statuses: never overwrite Engaged, Champion, and so on.
                     if isContact, (r["Relationship_Status__c"] as? String ?? "").isEmpty { noMobile.append(id) }
@@ -255,6 +257,8 @@ enum Salesforce {
             }
         }
         TimeZoneFilter.save()
+        // Known up front, so "Mobile numbers only" leaves them off the list instead of opening each one to skip it.
+        MobileOnly.recordMany(mobiles)
         if !noMobile.isEmpty { try? await markNotQualityProspect(contactIDs: noMobile) }
         // List views give 18-character Ids; match on the first 15 to be safe.
         let keep = Set(callable.map { String($0.prefix(15)) })

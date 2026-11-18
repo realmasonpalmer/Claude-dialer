@@ -17,7 +17,7 @@ extension CoachModel {
             mobileSkippedID = key
             ActivityLog.add("\(calling ?? key) has no Mobile (Mobile numbers only is on): skipping")
             problem = "No Mobile number. Skipped (Mobile numbers only)."
-            nextLead(dial: Prefs.autoDial)
+            skipNext(why: "no Mobile number (Mobile numbers only is on)")
             return
         }
         // The Chrome list: someone off the list (non-US number, removed) is on screen: move on.
@@ -26,7 +26,7 @@ extension CoachModel {
             foreignSkippedID = key
             ActivityLog.add("\(calling ?? key) is off the list (non-US number or removed): skipping")
             problem = "Off your list. Skipped, on to the next person."
-            nextLead(dial: Prefs.autoDial)
+            skipNext(why: "off the list")
             return
         }
         guard status == .ready, !dialing, leads.isActive, let d = leads.details, !d.doNotCall,
@@ -35,7 +35,7 @@ extension CoachModel {
         ActivityLog.add("\(d.name) isn't a US or Canada number (\(n)): skipping and removing from the list")
         RemovedList.add(d.id)
         problem = "Not a US or Canada number. Skipped, on to the next person."
-        nextLead(dial: Prefs.autoDial)
+        skipNext(why: "not a US or Canada number")
     }
 
     func tick() {
@@ -594,7 +594,22 @@ extension CoachModel {
         if autoDial { startNextSequence() }
     }
 
+    /// Skip to the next person, but never run away: 3 skips in a row with no call stops auto dial
+    /// and says why, instead of flipping through the list opening and closing pages.
+    func skipNext(why: String) {
+        skipsInARow += 1
+        if skipsInARow >= 3 {
+            ActivityLog.problem("Skipped \(skipsInARow) people in a row (last: \(why)). Auto dial stopped so the app doesn't flip through your list.")
+            problem = "Skipped \(skipsInARow) people in a row: \(why). Auto dial stopped. Check the call list settings, then press Next."
+            Prefs.autoDial = false
+            skipsInARow = 0
+            return
+        }
+        nextLead(dial: Prefs.autoDial)
+    }
+
     func startCall() {
+        skipsInARow = 0
         problem = nil
         redialRightAway = false
         autoHungUpThisCall = false

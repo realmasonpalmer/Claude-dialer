@@ -278,8 +278,20 @@ extension CoachModel {
         seq += 1
         instantOpenerID = seq
         show(instantOpener(for: calling), id: seq, kind: .opener)
-        ask(.opener, user: CoachPrompt.opener(calling: calling, details: recordDetails, style: openerStyle,
-                                              scriptOpener: openerStyle == nil ? scriptOpenerLine() : nil))
+        // Claude's personal opener costs tokens: only for someone we'll really call, once they've been
+        // on screen 1.5 s (a skipped person is gone by then), and one request even when several things
+        // (page open, details loaded) ask for it at once.
+        openerTask?.cancel()
+        let key = recordKey()
+        if let key, MobileOnly.excluded(key) || RemovedList.contains(key) { return }
+        openerTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let self, !Task.isCancelled, self.recordKey() == key,
+                  self.status == .ready || (self.status == .live && self.turns.isEmpty) else { return }
+            if let key, MobileOnly.excluded(key) || RemovedList.contains(key) { return }
+            self.ask(.opener, user: CoachPrompt.opener(calling: self.calling, details: self.recordDetails, style: self.openerStyle,
+                                                       scriptOpener: self.openerStyle == nil ? self.scriptOpenerLine() : nil))
+        }
     }
 
     func ask(_ kind: Kind, user: String, early: String? = nil) {

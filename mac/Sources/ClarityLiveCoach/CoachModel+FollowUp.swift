@@ -391,6 +391,8 @@ extension CoachModel {
     /// Automatic mode: notes wait their turn here and go out one at a time while the rep keeps calling.
     func queueLinkedIn(_ f: FollowUp) {
         guard let key = f.key, !linkedInTried.contains(key) else { return }
+        // Never for someone being skipped (no Mobile on a Mobile-only list, or off the list).
+        guard !MobileOnly.excluded(key), !RemovedList.contains(key) else { return }
         linkedInTried.insert(key)
         linkedInQueue.append(f)
         ActivityLog.add("LinkedIn bot: queued \(f.prospect ?? "?") (\(linkedInQueue.count) waiting)")
