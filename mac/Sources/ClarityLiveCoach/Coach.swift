@@ -155,6 +155,18 @@ final class CoachModel: ObservableObject {
     var screenerWait: Task<Void, Never>?
     var yesBranchRepWords = 0
     var yesBranchWanted: String?
+    var goalPending = false
+
+    /// The prospect agreed to the meeting in their own words: now it counts.
+    func confirmGoalIfAgreed(_ said: String) {
+        guard goalPending, !goalHit, GoalEvidence.confirms(said) else { return }
+        goalPending = false
+        goalHit = true
+        meetingThisWeek = touchpoints.meetingsThisWeek() + 1 // logged when the call ends
+        meetingMoments += 1
+        NSSound(named: "Hero")?.play()
+        CallTrace.event("goal.confirmed", ["prospect_said": said])
+    }
     var recentRepChunks: [String] = [] // the rep's last two transcript chunks (a line read across two still counts)
     /// A line written ahead for "yes" to the rep's yes/no question. Never shown until they say yes.
     var yesBranch: (question: String, s: Suggestion, ready: Bool)?

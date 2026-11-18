@@ -807,12 +807,8 @@ extension CoachModel {
             nextOffer = pickNextPair(from: availability.offerSlots())
         }
         if s.stage == "Closing" { availability.refreshIfOlder() } // fresh times while booking
-        if s.stage == "Goal reached", !goalHit {
-            goalHit = true
-            meetingThisWeek = touchpoints.meetingsThisWeek() + 1 // logged when the call ends
-            meetingMoments += 1
-            NSSound(named: "Hero")?.play()
-        }
+        // A closing line on screen is only a pending goal; the prospect's words confirm it (N4).
+        if s.stage == "Goal reached", !goalHit { goalPending = true }
         if s.stage == "Voicemail" { sawVoicemail = true }
     }
 

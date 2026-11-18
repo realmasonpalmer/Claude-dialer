@@ -912,3 +912,18 @@ public enum YesBranchRule {
         RepQuestion.closedQuestion(in: text) == nil && wordsSinceQuestion < QueuedLine.maxRepWords
     }
 }
+
+
+/// The meeting is only "booked" when the prospect's words agree, not when a closing line is shown (N4).
+public enum GoalEvidence {
+    static let agree = ["works for me", "that works", "sounds good", "send the invite", "send me the invite", "let's do",
+                        "book it", "put me down", "i'm in", "see you then", "perfect", "great"]
+    static let times = ["monday", "tuesday", "wednesday", "thursday", "friday", "tomorrow", "next week", " am", " pm", "o'clock"]
+
+    public static func confirms(_ prospectSaid: String) -> Bool {
+        let t = " " + prospectSaid.lowercased() + " "
+        if ProspectReply.kind(prospectSaid) == .no || ProspectReply.kind(prospectSaid) == .unsure { return false }
+        if t.contains(" but ") || t.contains("not ") { return false }
+        return ProspectReply.kind(prospectSaid) == .yes || agree.contains(where: { t.contains($0) }) || times.contains(where: { t.contains($0) })
+    }
+}

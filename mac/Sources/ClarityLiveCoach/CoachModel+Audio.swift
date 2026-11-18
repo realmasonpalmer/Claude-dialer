@@ -298,7 +298,7 @@ extension CoachModel {
             ActivityLog.add("Coach: they answered the delivered line (resolved)")
             CallTrace.event("resolution", ["answer": text, "how": "prospect spoke after the line was delivered"], sug: shownID)
         }
-        if speaker == .prospect { lastHeardThemAt = Date() }
+        if speaker == .prospect { lastHeardThemAt = Date(); confirmGoalIfAgreed(text) }
         if turns.last?.speaker != speaker { CallTrace.turn += 1 }
         // Cut off = this side really came in over the other in audio time (not just answered quickly).
         let kindNow = timeline.segments[speaker == .rep ? .rep : .prospect]?.last?.kind
