@@ -181,7 +181,7 @@ enum CoachPrompt {
     /// `turns` are finalized transcript only. `speculative`: `latest` is still-changing partial words
     /// (an early draft), so it's labeled as not final and never written into the call as fact.
     static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?,
-                      speculative: Bool = false, repLed: Bool = false) -> String {
+                      speculative: Bool = false, repLed: Bool = false, assumeYes: Bool = false) -> String {
         // Short call (12 turns or fewer, or no summary yet): every finalized turn, word for word.
         // Longer: the summary of everything before, plus the last 10 turns word for word.
         let recent = turns.count > 12 && !liveSummary.isEmpty ? Array(turns.suffix(10)) : Array(turns.suffix(300))
@@ -191,7 +191,9 @@ enum CoachPrompt {
         lastContext = ["mode": recent.count < turns.count ? "summary + last 10 turns" : "full transcript",
                        "turns_total": turns.count, "turns_verbatim_from": turns.count - recent.count + 1, "turns_verbatim_to": turns.count,
                        "speculative_latest": speculative, "rep_led": repLed, "shown_lines_included": min(shownLines.count, 5)]
-        let now = repLed
+        let now = assumeYes
+            ? "The rep just asked: \"\(latest)\"\nThe prospect hasn't answered. Write the line for if they say yes. If the rep asked permission to explain, this is the script's next approved pitch, said simply. If it was a discovery question, this is the follow-up to a yes."
+            : repLed
             ? "The rep went off script and just said, in their own words: \"\(latest)\"\nThe prospect hasn't answered yet. Give the rep the next line that builds on what they just said."
             : speculative
             ? "The prospect is still talking. Heard so far (partial, may change, not confirmed): \"\(latest)\""

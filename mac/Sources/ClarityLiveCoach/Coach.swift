@@ -148,6 +148,9 @@ final class CoachModel: ObservableObject {
     var nextIsRepLed = false
     var repLedIDs: Set<Int> = []
     var lastRepFinal = ""
+    /// A line written ahead for "yes" to the rep's yes/no question. Never shown until they say yes.
+    var yesBranch: (question: String, s: Suggestion, ready: Bool)?
+    var yesBranchTask: Task<Void, Never>?
     var lastRepFinalAt = Date.distantPast
     var pendingDialSince: Date?
     @Published var dialing = false

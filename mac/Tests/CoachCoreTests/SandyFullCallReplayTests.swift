@@ -40,6 +40,7 @@ final class SandyFullCallReplayTests: XCTestCase {
         "Correct.": ("Thanks, Sandy. Quick reason: sales leaders tell us reps lose hours typing call notes. Does that sound familiar to you?", 0.95),
     ]
     let followLatency = 1.0
+    let yesLineLatency = 1.0 // Haiku writing the "yes" line while the rep waits for the answer
 
     struct Shown { let at: Double; let id: Int; let line: String }
     struct Request { let id: Int; let askedAt: Double; let readyAt: Double; let line: String; let repWords: Int; let repLed: Bool }
@@ -54,6 +55,8 @@ final class SandyFullCallReplayTests: XCTestCase {
         var shown: [Shown] = [Shown(at: 0, id: 0, line: opener)]
         var events: [String] = []
         var followsWhileTalking = 0
+        var yesLine: (question: String, readyAt: Double)?
+        var yesUsed: [Double] = []
 
         func repSpeaking(_ t: Double) -> Bool {
             // The app's rule: words in the air, or within 1.5 s after (the last-word window),
@@ -102,6 +105,9 @@ final class SandyFullCallReplayTests: XCTestCase {
                     repWords += n; repWordsSinceShown += n
                     repSaidSinceShown += " " + turn.text
                     if pending != nil, turn.text.contains("?") { pending!.askedSince = true }
+                    // A yes/no question: the line for "yes" is written now, held, never shown before the answer.
+                    yesLine = RepQuestion.closedQuestion(in: turn.text).map { ($0, t + yesLineLatency) }
+                    if let y = yesLine { events.append(String(format: "%6.2f  writing the yes line for: %@", t, y.question)) }
                     let delivered = Delivery.delivered(line: shownLine, spoken: repSaidSinceShown)
                     if FollowRep.shouldPrepare(repJustSaid: turn.text, repWordsSinceLastAsk: repWords - repWordsAtLastAsk,
                                                onShownLine: Delivery.onLine(line: shownLine, spoken: turn.text),
@@ -114,7 +120,18 @@ final class SandyFullCallReplayTests: XCTestCase {
                 } else {
                     if Delivery.delivered(line: shownLine, spoken: repSaidSinceShown) { answeredAfterDelivery = true }
                     let greeting = shownID == 0 && turn.text.split(separator: " ").count <= 4 && repWords == 0
-                    if !greeting {
+                    let kind = ProspectReply.kind(turn.text)
+                    if let y = yesLine, kind == .yes, y.readyAt <= t {
+                        yesLine = nil
+                        seq += 1
+                        repWordsAtLastAsk = repWords
+                        let r = Request(id: seq, askedAt: t, readyAt: t, line: "YES LINE after \"\(y.question)\"", repWords: repWords, repLed: false)
+                        superseded = true // they answered the rep's question
+                        yesUsed.append(t)
+                        events.append(String(format: "%6.2f  \"%@\" is a yes: ready line, no wait", t, turn.text))
+                        if CoachMachine.canReplace(signals(t)) { show(r, t) } else { pending = (r, t, false) }
+                    } else if !greeting {
+                        yesLine = nil
                         let h = haikuAfter[turn.text] ?? (line: "ANSWER: \(turn.text)", seconds: 1.0)
                         ask(t, line: h.line, latency: h.seconds, repLed: false)
                     }
@@ -147,12 +164,15 @@ final class SandyFullCallReplayTests: XCTestCase {
         }
         print("Sandy replay:\n" + events.joined(separator: "\n"))
 
-        // A. The line written after "Sure." shows while it's still useful, not 23.6 s later.
-        let afterSure = shown.first { $0.line.hasPrefix("Thanks, Sandy. Lots of") }
-        if let a = afterSure { XCTAssertLessThan(a.at - 23.72, 5, "the line after Sure showed too late") }
+        // A. "Sure." to "Can I get 30 seconds?": the pitch was written while the rep asked, so it shows at once.
+        let afterSure = shown.first { $0.at >= 23.72 }
+        XCTAssertNotNil(afterSure)
+        if let a = afterSure { XCTAssertLessThan(a.at - 23.72, 0.1, "the line after Sure wasn't ready") }
+        // "Correct." to "...Yeah?" (a yes/no question) also used a ready line. Open questions ("What CRM?") didn't.
+        XCTAssertEqual(yesUsed.count, 2)
         // B. No stale line: queued lines only show after passing QueuedLine.staleReason (step 3), and the
         // 23 s old pitch never comes back once the rep has pitched in their own words.
-        XCTAssertFalse(shown.contains { $0.at > 40 && $0.line.hasPrefix("Thanks, Sandy. Lots of") },
+        XCTAssertFalse(shown.contains { $0.line.hasPrefix("Thanks, Sandy. Lots of") },
                        "the old pitch showed after the rep had pitched in their own words")
         // C. The coach prepared lines while the rep improvised, not only after they stopped.
         XCTAssertGreaterThan(followsWhileTalking, 0, "no line was prepared while the rep was talking off script")

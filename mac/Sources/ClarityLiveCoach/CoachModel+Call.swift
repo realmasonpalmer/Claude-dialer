@@ -637,6 +637,8 @@ extension CoachModel {
         earlyDraftsThisTurn = 0
         repWordsAtLastAsk = 0
         repLedIDs = []
+        yesBranch = nil
+        yesBranchTask?.cancel()
         loggedSystemHash = ""
         logSystemIfChanged() // the full static instructions + script Claude gets this call
         phoneSawHangUp = false

@@ -643,9 +643,60 @@ public enum FollowRep {
 /// is longer than the usual 1.5 s window. A line never changes in the middle of their sentence.
 public enum RepTurn {
     public static let midSentenceHold = 3.0
+    /// Words that leave a sentence hanging ("...take notes and keep", "...so", "...to the").
+    public static let danglingWords: Set<String> = ["and", "or", "but", "so", "to", "the", "a", "an", "of", "with",
+        "for", "in", "on", "at", "because", "like", "that", "which", "if", "then", "keep", "is", "are", "was",
+        "we", "you", "i", "my", "your", "our", "um", "uh", "just", "kind", "sort", "what", "how"]
+
+    /// Still mid-sentence? Two signals, not punctuation alone: the transcriber's punctuation, and
+    /// whether the last word leaves the sentence hanging. 3 s of silence ends it either way.
     public static func midSentence(lastFinal: String, secondsSince: Double) -> Bool {
         let t = lastFinal.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty, secondsSince < midSentenceHold else { return false }
-        return !(t.last.map { ".?!".contains($0) } ?? true)
+        if t.hasSuffix("?") { return false } // a question is a finished turn
+        let lastWord = t.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).last.map(String.init) ?? ""
+        if danglingWords.contains(lastWord) { return true }
+        return !(t.last.map { ".!".contains($0) } ?? true)
+    }
+}
+
+
+/// The rep asked a yes/no question ("Can I get 30 seconds?", "Does that sound familiar?", "...yeah?"):
+/// the line for "yes" can be written before they answer. Open questions ("What do you use?") aren't.
+public enum RepQuestion {
+    static let closedStarts: Set<String> = ["can", "could", "would", "will", "do", "does", "did", "is", "are", "was",
+        "were", "have", "has", "mind", "may", "should", "okay", "ok", "sound", "fair", "right", "yeah", "correct", "cool", "make"]
+
+    /// The last question in what the rep said, if it's a yes/no question.
+    public static func closedQuestion(in text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard t.hasSuffix("?") else { return nil }
+        let sentence = t.dropLast().split(whereSeparator: { ".?!".contains($0) }).last.map(String.init) ?? ""
+        var words = sentence.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+        while let w = words.first, ["so", "and", "but", "well", "hey", "um", "uh", "like", "just"].contains(w) { words.removeFirst() }
+        guard let first = words.first else { return nil }
+        return closedStarts.contains(first) ? sentence.trimmingCharacters(in: .whitespaces) + "?" : nil
+    }
+}
+
+/// What kind of answer the prospect gave to the rep's yes/no question. Only a clear yes uses the
+/// line written ahead; no, unsure, or anything else gets a fresh answer from their real words.
+public enum ProspectReply {
+    public enum Kind: String, Sendable { case yes, no, unsure, other }
+    static let yesWords: Set<String> = ["yes", "yeah", "yep", "yup", "sure", "okay", "ok", "correct", "right", "absolutely",
+        "definitely", "totally", "go", "ahead", "fire", "away", "shoot", "of", "course", "please", "alright", "fine", "i", "guess", "it", "does", "is", "true"]
+
+    public static func kind(_ text: String) -> Kind {
+        let t = " " + text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
+        let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+        guard !words.isEmpty else { return .other }
+        if ["not sure", "maybe", "depends", "hmm", "i don't know", "kind of", "sort of", "we'll see"].contains(where: { t.contains($0) }) { return .unsure }
+        if words.contains("no") || words.contains("nope") || words.contains("nah") || t.contains("not really")
+            || t.contains("not interested") || t.contains("i'm good") || t.contains("don't") || t.contains("not now") { return .no }
+        if words.count <= 5, words.allSatisfy(yesWords.contains),
+           words.contains(where: { ["yes", "yeah", "yep", "yup", "sure", "okay", "ok", "correct", "right", "absolutely", "definitely", "go", "shoot", "alright", "fine", "true"].contains($0) }) {
+            return .yes
+        }
+        return .other
     }
 }
