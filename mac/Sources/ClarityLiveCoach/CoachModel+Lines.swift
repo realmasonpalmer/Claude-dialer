@@ -186,8 +186,25 @@ extension CoachModel {
         if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
         // The rep asked a yes/no question and the line for "yes" is ready: a clear yes shows it now,
         // with no wait. No, unsure, or anything else gets a fresh answer from their real words.
+        // Too old: the talk moved on since the question. Drop it and answer fresh.
+        if yesBranch != nil, !YesBranchRule.usable(ageSinceQuestion: Date().timeIntervalSince(yesBranchAskedAt)) {
+            CallTrace.event("yes_branch.discarded", ["question": yesBranch?.question ?? "", "why": "expired"])
+            yesBranch = nil; yesBranchTask?.cancel()
+        }
         if let yb = yesBranch, !yb.ready, ProspectReply.kind(said) == .yes {
             yesBranchWanted = said // nearly done: use it when it lands instead of starting over (H3)
+            // ...but never dead air: after 1.2 s, give up on it and answer from their words.
+            let waitFor = yb.question
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(YesBranchRule.maxWait))
+                guard let self, self.yesBranchWanted == said, self.yesBranch?.question == waitFor else { return }
+                self.yesBranchWanted = nil
+                self.yesBranch = nil
+                self.yesBranchTask?.cancel()
+                CallTrace.event("yes_branch.discarded", ["question": waitFor, "why": "not ready within \(YesBranchRule.maxWait) s"])
+                self.ask(.reply, user: CoachPrompt.reply(turns: self.turns, latest: said, calling: self.calling,
+                                                         details: self.recordDetails, style: self.callOpener, openTimes: self.bookingText()))
+            }
             specTimer?.cancel(); specBasis = nil; specHeld = nil; coachTask?.cancel()
             uncoached = ""
             latestProspect = said
@@ -275,7 +292,7 @@ extension CoachModel {
         let callID = CallTrace.callID // the summary belongs to this call only
         summaryInFlight = true
         Task {
-            defer { self.summaryInFlight = false }
+            defer { if CallTrace.callID == callID { self.summaryInFlight = false } }
             var c = LiveCoach.client(key)
             c.maxTokens = 250
             var text = ""
@@ -717,6 +734,7 @@ extension CoachModel {
         guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
               let q = RepQuestion.closedQuestion(in: text), let key = Keychain.read(.anthropic) else { return }
         yesBranchRepWords = 0
+        yesBranchAskedAt = Date()
         let user = CoachPrompt.reply(turns: turns, latest: q, calling: calling, details: recordDetails, style: callOpener,
                                      openTimes: bookingText(), assumeYes: true)
         let system = self.system
@@ -820,7 +838,11 @@ extension CoachModel {
         }
         if s.stage == "Closing" { availability.refreshIfOlder() } // fresh times while booking
         // A closing line on screen is only a pending goal; the prospect's words confirm it (N4).
-        if s.stage == "Goal reached", !goalHit { goalPending = true }
+        if s.stage == "Goal reached", !goalHit {
+            goalPending = true
+            // They often agree first ("Tuesday works") and the closing line follows: check their last words too.
+            if let last = turns.last(where: { $0.speaker == .prospect }) { confirmGoalIfAgreed(last.text) }
+        }
         if s.stage == "Voicemail" { sawVoicemail = true }
     }
 

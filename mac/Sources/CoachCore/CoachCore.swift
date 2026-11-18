@@ -921,6 +921,12 @@ public enum YesBranchRule {
     public static func keep(afterRepSaid text: String, wordsSinceQuestion: Int) -> Bool {
         RepQuestion.closedQuestion(in: text) == nil && wordsSinceQuestion < QueuedLine.maxRepWords
     }
+
+    /// A ready yes line expires: older than this since the question, it's not used, even on a clear yes.
+    public static let maxAge = 12.0
+    /// If they say yes while it's still being written, wait at most this long, then answer fresh.
+    public static let maxWait = 1.2
+    public static func usable(ageSinceQuestion: Double) -> Bool { ageSinceQuestion <= maxAge }
 }
 
 

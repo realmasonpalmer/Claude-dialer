@@ -155,6 +155,7 @@ final class CoachModel: ObservableObject {
     var screenerWait: Task<Void, Never>?
     var yesBranchRepWords = 0
     var yesBranchWanted: String?
+    var yesBranchAskedAt = Date.distantPast
     var goalPending = false
     var blockedLoggedID = 0
 

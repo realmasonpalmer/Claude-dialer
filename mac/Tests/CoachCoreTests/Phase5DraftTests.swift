@@ -9,4 +9,11 @@ final class Phase5DraftTests: XCTestCase {
         XCTAssertFalse(YesBranchRule.keep(afterRepSaid: "We help sales teams get hours back after calls.", wordsSinceQuestion: 12))
         XCTAssertEqual(ProspectReply.kind("Sure."), .yes)
     }
+
+    // A yes line from 20 s ago is never used, even on a clear yes; waiting for one is bounded.
+    func testYesLineExpiresAndWaitIsBounded() {
+        XCTAssertTrue(YesBranchRule.usable(ageSinceQuestion: 3))
+        XCTAssertFalse(YesBranchRule.usable(ageSinceQuestion: 20))
+        XCTAssertLessThanOrEqual(YesBranchRule.maxWait, 1.5)
+    }
 }
