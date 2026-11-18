@@ -100,6 +100,7 @@ extension CoachModel {
 
     /// Instant line for a call screener. No Claude call, no waiting.
     func showScreenerLine() {
+        screenerRetries = 0 // each screener gets its own retries
         // Never over the rep mid-sentence (C6): wait up to 3 s for them to stop.
         if signals().repSpeaking || !(interim[.rep] ?? "").isEmpty {
             screenerWait?.cancel()
@@ -154,6 +155,7 @@ extension CoachModel {
         specTimer?.cancel()
         guard status == .live, !screenerActive, !voicemailActive, !doNotCall else { return } // prepare even while a line is up
         let text = (uncoached + " " + (interim[.prospect] ?? "")).trimmed
+        if pendingAmbiguousOptOut != nil, !(interim[.prospect] ?? "").isEmpty { armPendingOptOutTimer() } // still talking: wait more
         if pendingAmbiguousOptOut != nil || OptOut.hasAmbiguous(text) { return } // never draft on a possible opt-out (Fix 3)
         // "Don't call me back" mid-sentence: stop selling now, don't wait for them to finish.
         if LiveCoach.isOptOut(text, isFinal: false) { handleOptOut(text); return }
@@ -225,19 +227,7 @@ extension CoachModel {
             pendingAmbiguousAt = Date()
             CallTrace.event("optout.waiting", ["said": said, "why": "might be a callback request; waiting for the full pause"])
             uncoached = ""
-            // Never left hanging: if no full pause comes in 1.2 s, it's an opt-out (Fix 1a).
-            pendingOptOutTask?.cancel()
-            pendingOptOutTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(PendingOptOut.timeout))
-                guard let self, !Task.isCancelled, let p = self.pendingAmbiguousOptOut else { return }
-                let later = self.uncoached.trimmingCharacters(in: .whitespaces)
-                if PendingOptOut.resolve(pending: p, later: later, utteranceEnded: false, callEnded: false,
-                                         secondsWaited: PendingOptOut.timeout) == .optOut {
-                    self.pendingAmbiguousOptOut = nil
-                    CallTrace.event("optout.timeout", ["said": p, "why": "no full pause within \(PendingOptOut.timeout) s"])
-                    self.handleOptOut((p + " " + later).trimmingCharacters(in: .whitespaces))
-                }
-            }
+            armPendingOptOutTimer()
             return
         }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
@@ -374,6 +364,7 @@ extension CoachModel {
     /// "Take me off your list": the goodbye line, DoNotCall written in Salesforce, off every list, hang up. No AI.
     func handleOptOut(_ said: String) {
         guard !doNotCall else { return }
+        let optOutCallID = CallTrace.callID
         doNotCall = true // terminal: every later draft, early start and queued line is blocked
         specTimer?.cancel()
         coachTask?.cancel()
@@ -417,7 +408,8 @@ extension CoachModel {
                 ActivityLog.problem("Opt out: couldn't set status to \(status): \(error.localizedDescription)")
             }
             try? await Task.sleep(for: .seconds(6)) // time to say goodbye
-            guard let self, self.status == .live, AircallPhone.isOn else { return }
+            // Only this call: never hang up the next person if a new call started in the meantime.
+            guard let self, self.status == .live, AircallPhone.isOn, CallTrace.callID == optOutCallID else { return }
             _ = await AircallPhone.shared.hangUp()
         }
     }
@@ -635,6 +627,7 @@ extension CoachModel {
         if id == shownID {
             // Once a line is whole on screen, its words are frozen: a late chunk never changes it (N2).
             if suggestion.sayComplete { return }
+            if status == .live, signals().repSpeaking || !(interim[.rep] ?? "").isEmpty { return } // they're reading it
             if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
             var s = s
             s.say = fillTags(s.say, for: calling) // never show a bare [Name] or [SDR]
@@ -861,6 +854,29 @@ extension CoachModel {
         }
     }
 
+    /// The possible opt-out's timer: (re)started on the phrase and on any new prospect words. When it runs out with
+    /// no later time said, it's an opt-out.
+    func armPendingOptOutTimer() {
+        pendingOptOutTask?.cancel()
+        pendingAmbiguousAt = Date()
+        pendingOptOutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(PendingOptOut.timeout))
+            guard let self, !Task.isCancelled, let p = self.pendingAmbiguousOptOut else { return }
+            let later = self.uncoached.trimmingCharacters(in: .whitespaces)
+            switch PendingOptOut.resolve(pending: p, later: later, utteranceEnded: false, callEnded: false,
+                                         secondsWaited: PendingOptOut.timeout) {
+            case .optOut:
+                self.pendingAmbiguousOptOut = nil
+                CallTrace.event("optout.timeout", ["said": p, "why": "no later time within \(PendingOptOut.timeout) s"])
+                self.handleOptOut((p + " " + later).trimmingCharacters(in: .whitespaces))
+            case .callback:
+                self.pendingAmbiguousOptOut = nil
+                CallTrace.event("optout.not", ["said": p + " " + later, "why": "a later time followed: a callback request"])
+            case .wait: break
+            }
+        }
+    }
+
     /// A yes line or script answer is a new request too: what the rep said before it doesn't make it stale.
     func markRequestStart() {
         repWordsAtLastAsk = repWordsInCall
@@ -957,7 +973,8 @@ extension CoachModel {
         let askedAt = lastWordsAt
         stillWithMeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
-            guard let self, !Task.isCancelled, self.status == .live, !self.doNotCall, self.lastWordsAt == askedAt,
+            guard let self, !Task.isCancelled, self.status == .live, !self.doNotCall, !self.thinking, self.pending == nil,
+                  self.lastWordsAt == askedAt,
                   self.turns.last?.speaker == .rep, !self.voicemailActive,
                   (self.interim[.prospect] ?? "").isEmpty, // they're mid-answer
                   !self.signals().repSpeaking, (self.interim[.rep] ?? "").isEmpty,

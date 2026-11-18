@@ -662,7 +662,8 @@ extension CoachModel {
         phoneButtonGone = 0
         CoachPrompt.liveSummary = ""
         CoachPrompt.summaryCoversTurns = 0
-        summaryInFlight = false // a summary left from the last call never blocks this one (round 2 #2)
+        summaryInFlight = false
+        screenerRetries = 0 // a summary left from the last call never blocks this one (round 2 #2)
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
         doNotCall = false
         timeline = SpeechTimeline()
@@ -767,6 +768,7 @@ extension CoachModel {
         // The call is over: the next person starts clean, before their opener is prepared below (round 3).
         doNotCall = false
         pendingAmbiguousOptOut = nil
+        pendingOptOutTask?.cancel()
         if status != .ready {
             // Reached a person = they spoke, and it wasn't a voicemail or only a screener.
             let theySpoke = turns.contains { $0.speaker == .prospect }

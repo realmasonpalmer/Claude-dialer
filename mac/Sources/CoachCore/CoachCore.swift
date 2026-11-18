@@ -1032,12 +1032,16 @@ public enum CoachController {
 /// It is never dropped: it resolves as an opt-out unless a later time actually follows.
 public enum PendingOptOut {
     public enum Outcome: Equatable, Sendable { case optOut, callback, wait }
-    public static let timeout = 1.2
+    /// Long enough for "Don't call me back... until Tuesday" with a real pause. Restarts on any new prospect words.
+    public static let timeout = 2.5
 
     /// - later: what the prospect said after the phrase (may be empty).
     /// - utteranceEnded / callEnded / secondsWaited: what has happened since. Any of them decides it.
     public static func resolve(pending: String, later: String, utteranceEnded: Bool, callEnded: Bool, secondsWaited: Double) -> Outcome {
-        let decided = !later.isEmpty || utteranceEnded || callEnded || secondsWaited >= timeout
+        // A pause alone (utterance end with nothing after) doesn't decide it: only their next words, the call ending,
+        // or the full timeout. Deepgram's 1.0 s pause call came before the timer and cut the window short.
+        let decided = !later.isEmpty || callEnded || secondsWaited >= timeout
+        _ = utteranceEnded
         guard decided else { return .wait }
         let whole = (pending + " " + later).trimmingCharacters(in: .whitespaces)
         return OptOut.matches(whole, isFinal: true) ? .optOut : .callback

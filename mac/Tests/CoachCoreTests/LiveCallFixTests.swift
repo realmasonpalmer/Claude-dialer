@@ -6,7 +6,12 @@ final class LiveCallFixTests: XCTestCase {
     // Fix 1a: no utterance end ever comes; after 1.3 s it's an opt-out.
     func testFix1a_TimeoutResolvesAsOptOut() {
         XCTAssertEqual(PendingOptOut.resolve(pending: "Don't call me back.", later: "", utteranceEnded: false, callEnded: false, secondsWaited: 0.5), .wait)
-        XCTAssertEqual(PendingOptOut.resolve(pending: "Don't call me back.", later: "", utteranceEnded: false, callEnded: false, secondsWaited: 1.3), .optOut)
+        XCTAssertEqual(PendingOptOut.resolve(pending: "Don't call me back.", later: "", utteranceEnded: false, callEnded: false, secondsWaited: 2.6), .optOut)
+    }
+    // A 1.5 s pause (Deepgram's pause call included) doesn't decide it; "until Tuesday" after it is a callback.
+    func testPauseThenCallbackIsNotOptOut() {
+        XCTAssertEqual(PendingOptOut.resolve(pending: "Don't call me back", later: "", utteranceEnded: true, callEnded: false, secondsWaited: 1.5), .wait)
+        XCTAssertEqual(PendingOptOut.resolve(pending: "Don't call me back", later: "until Tuesday.", utteranceEnded: false, callEnded: false, secondsWaited: 1.6), .callback)
     }
     // Fix 1b: the call ends first: still an opt-out.
     func testFix1b_CallEndFlushesAsOptOut() {

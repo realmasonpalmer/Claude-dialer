@@ -244,7 +244,8 @@ extension CoachModel {
             CallTrace.event("turn.end", ["speaker": speaker == .rep ? "rep" : "prospect", "by": "utterance_end"])
             if speaker == .prospect {
                 // The full pause after "don't call me back": now decide if it was an opt-out or a callback request.
-                if let said = pendingAmbiguousOptOut {
+                if let said = pendingAmbiguousOptOut, !uncoached.trimmingCharacters(in: .whitespaces).isEmpty {
+                    // Only once they've said more: a bare pause is left to the timer (it may still be "...until Tuesday").
                     pendingAmbiguousOptOut = nil
                     pendingOptOutTask?.cancel()
                     let later = uncoached.trimmingCharacters(in: .whitespaces)
