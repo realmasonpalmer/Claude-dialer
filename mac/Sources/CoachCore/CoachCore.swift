@@ -902,3 +902,13 @@ public enum CallMemoryRules {
         !inFlight && totalTurns > 12 && totalTurns - summaryCovers >= 6
     }
 }
+
+
+/// When to keep or drop the line written ahead for "yes" (H3).
+public enum YesBranchRule {
+    /// Keep it through small talk after the question ("Just a quick one."); drop it for a new yes/no
+    /// question (a new one is written) or once the rep has said 8+ more words (the context moved on).
+    public static func keep(afterRepSaid text: String, wordsSinceQuestion: Int) -> Bool {
+        RepQuestion.closedQuestion(in: text) == nil && wordsSinceQuestion < QueuedLine.maxRepWords
+    }
+}

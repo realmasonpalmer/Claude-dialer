@@ -153,6 +153,8 @@ final class CoachModel: ObservableObject {
     var lastRepQuestionAt = Date.distantPast
     var repTextSinceAsk = ""
     var screenerWait: Task<Void, Never>?
+    var yesBranchRepWords = 0
+    var yesBranchWanted: String?
     var recentRepChunks: [String] = [] // the rep's last two transcript chunks (a line read across two still counts)
     /// A line written ahead for "yes" to the rep's yes/no question. Never shown until they say yes.
     var yesBranch: (question: String, s: Suggestion, ready: Bool)?

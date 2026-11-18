@@ -232,6 +232,7 @@ extension CoachModel {
                 // Opt-out on any prospect final, even one that doesn't end their turn (C7).
                 if speaker == .prospect, !doNotCall, LiveCoach.isOptOut(text) { handleOptOut(text) }
                 if speechFinal && speaker == .prospect { prospectFinished() }
+                if !speechFinal && speaker == .prospect { scheduleEarlyStart() } // a final mid-turn is a head start too (M2)
                 if speechFinal && speaker == .rep { repEndpointed = true } // the transcriber heard them stop
             } else {
                 interim[speaker] = text

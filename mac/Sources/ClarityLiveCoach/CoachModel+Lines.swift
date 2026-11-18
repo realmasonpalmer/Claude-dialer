@@ -150,7 +150,7 @@ extension CoachModel {
         // Draft early once their meaning is clear: a finished sentence (200 ms), or 6+ words that
         // stopped changing (450 ms). Each new word cancels the wait, so there's no flood of requests.
         // A yes to the rep's question, with the yes line already written: no draft needed.
-        if yesBranch?.ready == true, ProspectReply.kind(text) == .yes { return }
+        if yesBranch != nil, ProspectReply.kind(text) == .yes { return } // ready or still being written
         // One or two word fragments ("No.") almost always grow: drafting on them wastes a request.
         guard let wait = EarlyStart.delayMS(for: text),
               EarlyStart.shouldRedraft(previous: lastEarlyBasis, text: text, draftsThisTurn: earlyDraftsThisTurn) else { return }
@@ -186,6 +186,14 @@ extension CoachModel {
         if voicemailActive { uncoached = ""; return } // no coaching while a greeting plays
         // The rep asked a yes/no question and the line for "yes" is ready: a clear yes shows it now,
         // with no wait. No, unsure, or anything else gets a fresh answer from their real words.
+        if let yb = yesBranch, !yb.ready, ProspectReply.kind(said) == .yes {
+            yesBranchWanted = said // nearly done: use it when it lands instead of starting over (H3)
+            specTimer?.cancel(); specBasis = nil; specHeld = nil; coachTask?.cancel()
+            uncoached = ""
+            latestProspect = said
+            CallTrace.event("yes_branch.waiting", ["question": yb.question, "answer": said])
+            return
+        }
         if let yb = yesBranch {
             yesBranch = nil
             yesBranchTask?.cancel()
@@ -685,10 +693,18 @@ extension CoachModel {
     /// answer. It's held, never shown, until the prospect actually says yes. Open questions ("What do
     /// you use?") get nothing ahead: the answer comes from their real words.
     func prepareYesBranch(_ text: String) {
+        // Keep the ready line through small talk; drop it for a new question or once the talk moved on (H3).
+        if yesBranch != nil {
+            yesBranchRepWords += text.split(separator: " ").count
+            if YesBranchRule.keep(afterRepSaid: text, wordsSinceQuestion: yesBranchRepWords) { return }
+            CallTrace.event("yes_branch.discarded", ["question": yesBranch?.question ?? "", "why": "the rep moved on or asked a new question"])
+        }
         yesBranchTask?.cancel()
         yesBranch = nil
+        yesBranchWanted = nil
         guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
               let q = RepQuestion.closedQuestion(in: text), let key = Keychain.read(.anthropic) else { return }
+        yesBranchRepWords = 0
         let user = CoachPrompt.reply(turns: turns, latest: q, calling: calling, details: recordDetails, style: callOpener,
                                      openTimes: bookingText(), assumeYes: true)
         let system = self.system
@@ -697,8 +713,11 @@ extension CoachModel {
         let started = Date()
         yesBranchTask = Task { [weak self] in
             var text = ""
-            try? await LiveCoach.client(key).stream(system: system, user: user) { text = $0 }
+            try? await LiveCoach.client(key).stream(system: system, user: user, onText: { text = $0 }, onUsage: { u in
+                Task { @MainActor in CallTrace.event("claude.usage", u.merging(["yes_branch": 1]) { a, _ in a }) }
+            })
             guard let self, !Task.isCancelled, self.yesBranch?.question == q else { return }
+            CallTrace.event("claude.done", ["yes_branch": true, "ms": Int(Date().timeIntervalSince(started) * 1000), "output": text])
             var s = Suggestion.parse(text)
             s.sayComplete = true
             let problems = s.skip || s.say.isEmpty ? ["empty"] : Self.lineProblems(s)
@@ -707,6 +726,19 @@ extension CoachModel {
             CallTrace.event("yes_branch.ready", ["question": q, "line": s.say, "ms": Int(Date().timeIntervalSince(started) * 1000),
                                                  "passed": left.isEmpty, "problems": left])
             if left.isEmpty { self.yesBranch = (q, s, true) } else { self.yesBranch = nil }
+            // They already said yes while this was being written: show it now, or fall back to a normal answer.
+            if let said = self.yesBranchWanted {
+                self.yesBranchWanted = nil
+                self.yesBranch = nil
+                if left.isEmpty, self.status == .live, !self.doNotCall {
+                    CallTrace.event("yes_branch.used", ["question": q, "answer": said, "line": s.say, "late": true])
+                    self.seq += 1
+                    self.offer(s, id: self.seq, kind: .reply, askedAt: Date())
+                } else {
+                    self.ask(.reply, user: CoachPrompt.reply(turns: self.turns, latest: said, calling: self.calling,
+                                                             details: self.recordDetails, style: self.callOpener, openTimes: self.bookingText()))
+                }
+            }
         }
     }
 
