@@ -132,22 +132,28 @@ extension CoachModel {
         // Draft early once their meaning is clear: a finished sentence (200 ms), or 6+ words that
         // stopped changing (450 ms). Each new word cancels the wait, so there's no flood of requests.
         // One or two word fragments ("No.") almost always grow: drafting on them wastes a request.
-        guard let wait = EarlyStart.delayMS(for: text) else { return }
+        guard let wait = EarlyStart.delayMS(for: text),
+              EarlyStart.shouldRedraft(previous: lastEarlyBasis, text: text, draftsThisTurn: earlyDraftsThisTurn) else { return }
         specTimer = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(wait))
             guard let self, !Task.isCancelled, !self.doNotCall,
+                  EarlyStart.shouldRedraft(previous: self.lastEarlyBasis, text: text, draftsThisTurn: self.earlyDraftsThisTurn),
                   (self.uncoached + " " + (self.interim[.prospect] ?? "")).trimmed == text,
                   normalized(text) != self.specBasis else { return }
             self.ask(.reply, user: CoachPrompt.reply(
                 turns: self.turns, latest: text, calling: self.calling, details: self.recordDetails, style: self.callOpener,
                 openTimes: self.bookingText(), speculative: true
             ), early: text)
+            self.lastEarlyBasis = text
+            self.earlyDraftsThisTurn += 1
         }
     }
 
     /// The prospect stopped talking. Decide if the rep needs a new line.
     func prospectFinished() {
         specTimer?.cancel()
+        lastEarlyBasis = nil
+        earlyDraftsThisTurn = 0
         let said = uncoached.trimmingCharacters(in: .whitespaces)
         guard !said.isEmpty else { return }
         if doNotCall {
@@ -404,6 +410,16 @@ extension CoachModel {
         var problems = Self.lineProblems(bad)
         ActivityLog.add("Line check: failed (\(problems.joined(separator: "; "))): \(bad.say)")
         CallTrace.event("check.fail", ["line": bad.say, "problems": problems], req: id)
+        // Formatting only (an abbreviation like CRM, an em dash): fix it in code, no second request.
+        if problems.allSatisfy({ $0.hasPrefix("abbreviation") || $0 == "em dash" }), let fixed = LineRepair.fix(bad.say) {
+            var s = bad
+            s.say = fixed
+            if Self.lineProblems(s).isEmpty {
+                ActivityLog.add("Line check: fixed in code (no extra request)")
+                CallTrace.event("check.fixed_locally", ["from": bad.say, "line": fixed], req: id)
+                return s
+            }
+        }
         for model in ["claude-haiku-5-5", "claude-sonnet-5-5"] {
             var text = ""
             let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
@@ -494,6 +510,11 @@ extension CoachModel {
             if let old = pending, old.id != id {
                 CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer queued line replaced it"], sug: old.id)
             }
+            if pending?.id != id {
+                pendingQueuedAt = Date()
+                repWordsAtQueue = repWordsInCall
+                repAskedSinceQueue = false
+            }
             pending = (id, s)
         }
     }
@@ -539,9 +560,31 @@ extension CoachModel {
     func promotePendingIfReady() {
         guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq),
               !holdLine, CoachMachine.canReplace(signals()) else { return }
+        // The rep's words are the source of truth: if they moved on while this waited, it's stale.
+        if let why = QueuedLine.staleReason(ageSeconds: Date().timeIntervalSince(pendingQueuedAt),
+                                            repWordsSinceQueued: repWordsInCall - repWordsAtQueue,
+                                            repAskedSinceQueued: repAskedSinceQueue) {
+            pending = nil
+            ActivityLog.add("Coach #\(p.id): queued line dropped (\(why))")
+            CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)"], sug: p.id)
+            // They asked their own question: the next move is the prospect's answer. Otherwise write the
+            // next line from where the rep actually is.
+            if !repAskedSinceQueue { followRep() }
+            return
+        }
         ActivityLog.add("Coach #\(p.id): queued line shown")
         CallTrace.event("suggestion.promoted", ["why": "safe to replace now (rep stopped, line read or delivered)"], sug: p.id)
         show(p.suggestion, id: p.id, kind: .reply)
+    }
+
+    /// The rep went off script and paused without asking anything: the next line builds on what they
+    /// actually said, not on what the script expected.
+    func followRep() {
+        guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
+              let rep = turns.last, rep.speaker == .rep else { return }
+        CallTrace.event("follow_rep", ["rep_said": rep.text, "why": "the rep moved on from the queued line"])
+        ask(.reply, user: CoachPrompt.reply(turns: turns, latest: rep.text, calling: calling, details: recordDetails,
+                                            style: callOpener, openTimes: bookingText(), repLed: true))
     }
 
     /// The Next button: show the queued line now.
@@ -563,6 +606,9 @@ extension CoachModel {
         if let old = pending, old.id != id {
             ActivityLog.add("Coach #\(old.id): queued line discarded (newer one shown)")
             CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer line was shown"], sug: old.id)
+        }
+        if status == .live, kind == .reply || kind == .opener, !s.say.isEmpty {
+            CoachPrompt.shownLines.append(s.say)
         }
         if status == .live {
             CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "kind": "\(kind)",

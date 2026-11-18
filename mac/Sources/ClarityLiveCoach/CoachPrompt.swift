@@ -173,13 +173,15 @@ enum CoachPrompt {
     static var questionFacts = ""
     /// Objections raised, answered, and what the prospect said after (tracked in code).
     static var objectionFacts = ""
+    /// Lines already shown to the rep this call (never repeat one the rep has covered).
+    static var shownLines: [String] = []
     /// What the last reply prompt included, for the call trace.
     static var lastContext: [String: Any] = [:]
 
     /// `turns` are finalized transcript only. `speculative`: `latest` is still-changing partial words
     /// (an early draft), so it's labeled as not final and never written into the call as fact.
     static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?,
-                      speculative: Bool = false) -> String {
+                      speculative: Bool = false, repLed: Bool = false) -> String {
         // Short call (12 turns or fewer, or no summary yet): every finalized turn, word for word.
         // Longer: the summary of everything before, plus the last 10 turns word for word.
         let recent = turns.count > 12 && !liveSummary.isEmpty ? Array(turns.suffix(10)) : Array(turns.suffix(300))
@@ -188,10 +190,13 @@ enum CoachPrompt {
         let repLast = turns.last { $0.speaker == .rep }?.text ?? ""
         lastContext = ["mode": recent.count < turns.count ? "summary + last 10 turns" : "full transcript",
                        "turns_total": turns.count, "turns_verbatim_from": turns.count - recent.count + 1, "turns_verbatim_to": turns.count,
-                       "speculative_latest": speculative]
-        let now = speculative
+                       "speculative_latest": speculative, "rep_led": repLed, "shown_lines_included": min(shownLines.count, 5)]
+        let now = repLed
+            ? "The rep went off script and just said, in their own words: \"\(latest)\"\nThe prospect hasn't answered yet. Give the rep the next line that builds on what they just said."
+            : speculative
             ? "The prospect is still talking. Heard so far (partial, may change, not confirmed): \"\(latest)\""
             : "The prospect just said: \"\(latest)\""
+        let shown = shownLines.suffix(5).map { "- \($0)" }.joined(separator: "\n")
         let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
         let booking = openTimes.map { "\($0)\n\n" } ?? ""
         return """
@@ -200,6 +205,11 @@ enum CoachPrompt {
 
         \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
         \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
+        \(shown.isEmpty ? "" : "Lines already shown to the rep this call (don't repeat them):\n" + shown + "\n")
+        The rep's actual words are the truth; the script is the guide. If the rep already covered something in
+        their own words (the reason for the call, the pitch, a question), it's done: never repeat it. Coach from
+        where the rep really is toward the next goal of the script.
+        If the prospect asked a question, the first sentence answers it plainly and directly.
         What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most, ending in one question
         (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through
         better, use it and add a line OFF SCRIPT: yes.

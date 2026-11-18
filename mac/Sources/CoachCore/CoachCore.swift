@@ -55,7 +55,11 @@ public enum CoachMachine {
         // Only real overlap is an interruption. One side answering right after the other is a normal turn.
         if s.overlapping { return .interrupted }
         // Delivering = saying the line on screen. Any other rep talk ("okay", small talk) is just talking.
-        if s.repSpeaking { return s.hasLine && (s.repOnLine || s.delivered) ? .delivering : .repTalking }
+        // Once delivered and answered, new rep talk is the rep's own words, not this line.
+        if s.repSpeaking {
+            let onThisLine = s.hasLine && !(s.delivered && s.prospectAnsweredSince) && (s.repOnLine || s.delivered)
+            return onThisLine ? .delivering : .repTalking
+        }
         if s.queued && s.queuedIsForNewTopic && s.repStarted && !s.delivered { return .superseded }
         if s.prospectSpeaking { return .listening }
         guard s.hasLine else { return .idle }
@@ -197,6 +201,18 @@ public enum EarlyStart {
     public static let minFinishedWords = 3
     public static let minUnfinishedWords = 6
 
+    /// Another early draft for the same turn only when their meaning moved: 5+ more words, or a sentence
+    /// finished since the last draft. Stops a burst of near-identical requests while they talk.
+    public static let maxDraftsPerTurn = 2
+    public static func shouldRedraft(previous: String?, text: String, draftsThisTurn: Int) -> Bool {
+        guard draftsThisTurn < maxDraftsPerTurn else { return false }
+        guard let previous else { return true }
+        let grew = text.split(separator: " ").count - previous.split(separator: " ").count
+        let finishedNow = (text.trimmingCharacters(in: .whitespaces).last.map { ".?!".contains($0) } ?? false)
+        let finishedBefore = (previous.trimmingCharacters(in: .whitespaces).last.map { ".?!".contains($0) } ?? false)
+        return grew >= 5 || (finishedNow && !finishedBefore && grew >= 2)
+    }
+
     /// Milliseconds to wait for the words to hold still, or nil for "don't start early".
     public static func delayMS(for text: String) -> Int? {
         let t = text.trimmingCharacters(in: .whitespaces)
@@ -297,22 +313,19 @@ public enum Delivery {
     }
 
     /// Which rule (if any) counted it delivered: "overall" or "question".
+    /// A line with a question is delivered when its question is asked (or nearly all of it is said):
+    /// half the words of the intro is not the point of the line.
     public static func rule(line: String, spoken: String) -> String? {
-        if confidence(line: line, spoken: spoken) >= 0.5 { return "overall" }
-        if let q = line.split(separator: "?").first.map(String.init),
-           let lastSentence = q.split(whereSeparator: { ".!".contains($0) }).last.map(String.init),
-           confidence(line: lastSentence, spoken: spoken) >= 0.6 { return "question" }
-        return nil
+        if line.contains("?") {
+            if let q = line.split(separator: "?").first.map(String.init),
+               let lastSentence = q.split(whereSeparator: { ".!".contains($0) }).last.map(String.init),
+               confidence(line: lastSentence, spoken: spoken) >= 0.6 { return "question" }
+            return confidence(line: line, spoken: spoken) >= 0.8 ? "overall" : nil
+        }
+        return confidence(line: line, spoken: spoken) >= 0.5 ? "overall" : nil
     }
 
-    public static func delivered(line: String, spoken: String) -> Bool {
-        if confidence(line: line, spoken: spoken) >= 0.5 { return true }
-        // The question at the end is the part that matters.
-        if let q = line.split(separator: "?").first.map(String.init),
-           let lastSentence = q.split(whereSeparator: { ".!".contains($0) }).last.map(String.init),
-           confidence(line: lastSentence, spoken: spoken) >= 0.6 { return true }
-        return false
-    }
+    public static func delivered(line: String, spoken: String) -> Bool { rule(line: line, spoken: spoken) != nil }
 }
 
 /// Approved answers from the script (objections, questions, blockers), matched in code: no AI wait.
@@ -473,10 +486,14 @@ public struct ObjectionTracker: Sendable {
 
     /// Common cold-call objections: a name and the phrases that mean it.
     public static let kinds: [(String, [String])] = [
+        ("won't share", ["can't discuss", "cannot discuss", "not something i can discuss", "can't share", "cannot share",
+                         "not something i can share", "confidential", "can't talk about", "not able to discuss", "not at liberty"]),
+        ("ending the call", ["thank you for calling", "thanks for calling", "thanks for the call", "have a good day",
+                             "have a great day", "i have to go", "i've got to go", "gotta go", "i need to go"]),
         ("not interested", ["not interested", "no interest", "not for us", "we're good", "we are good", "i'm good", "pass on"]),
         ("no time", ["no time", "too busy", "i'm busy", "in a meeting", "bad time", "not a good time", "driving"]),
         ("send info", ["send me an email", "send me something", "send me info", "email me", "send it over", "send me some"]),
-        ("already have it", ["we already have", "we already use", "we use", "already working with", "we have a partner", "we have someone", "in house", "in-house"]),
+        ("already have it", ["we already have", "we already use", "we use another", "we use a ", "already working with", "we have a partner", "we have someone", "in house", "in-house"]),
         ("happy as is", ["happy with", "it's working", "works fine", "we're fine", "don't need", "do not need", "no need"]),
         ("price", ["too expensive", "no budget", "can't afford", "cost too much", "costs too much", "not in the budget"]),
         ("wrong person", ["not the right person", "not my area", "not my department", "talk to someone else", "i don't handle"]),
@@ -550,6 +567,8 @@ public struct ObjectionTracker: Sendable {
         objections.map { o in
             var line = "- \(o.kind) (turn \(o.raisedTurn), \"\(o.raisedText)\"): "
             switch o.status {
+            case .raised where o.kind == "won't share": line += "they won't share this. Respect it: don't ask about it again"
+            case .raised where o.kind == "ending the call": line += "they're ending the call. Thank them and close politely, no more questions"
             case .raised: line += "NOT answered yet"
             case .addressed: line += "rep answered it, prospect hasn't responded yet. NOT resolved"
             case .resolved: line += "resolved: they said \"\(o.evidenceText)\""
@@ -558,5 +577,41 @@ public struct ObjectionTracker: Sendable {
             }
             return line
         }.joined(separator: "\n")
+    }
+}
+
+
+/// A line waiting in the queue (held while the rep talked) is only shown if it still fits.
+/// The rep's own words are the source of truth: if they've moved on, the old line is dropped.
+public enum QueuedLine {
+    public static let maxAge = 8.0
+    public static let maxRepWords = 8
+
+    /// Why it's stale, or nil if it can still be shown.
+    public static func staleReason(ageSeconds: Double, repWordsSinceQueued: Int, repAskedSinceQueued: Bool) -> String? {
+        if repAskedSinceQueued { return "the rep asked their own question since" }
+        if repWordsSinceQueued >= maxRepWords { return "the rep said \(repWordsSinceQueued) words of their own since" }
+        if ageSeconds > maxAge { return String(format: "waited %.0f s; the talk moved on", ageSeconds) }
+        return nil
+    }
+}
+
+/// Small, safe fixes done in code, so a line isn't sent back to Claude (about a second) for formatting.
+public enum LineRepair {
+    public static let abbreviations: [String: String] = [
+        "CRM": "customer system", "ROI": "return", "SDR": "rep", "SDRs": "reps", "BDR": "rep", "BDRs": "reps",
+        "AE": "account rep", "AEs": "account reps", "KPI": "goal", "KPIs": "goals", "RevOps": "revenue team",
+        "SaaS": "software", "B2B": "business", "ASAP": "soon", "FYI": "just so you know",
+    ]
+
+    /// The line with known abbreviations spelled out and em dashes turned to commas, or nil if an
+    /// all-caps word we don't know is left (that one still goes back to Claude).
+    public static func fix(_ line: String) -> String? {
+        var out = line.replacingOccurrences(of: "\u{2014}", with: ",").replacingOccurrences(of: "\u{2013}", with: ",")
+        for (abbr, plain) in abbreviations {
+            out = out.replacingOccurrences(of: "\\b\(abbr)\\b", with: plain, options: .regularExpression)
+        }
+        let leftover = out.split(whereSeparator: { !$0.isLetter }).filter { $0.count >= 2 && $0.allSatisfy(\.isUppercase) && $0 != "AI" }
+        return leftover.isEmpty ? out : nil
     }
 }

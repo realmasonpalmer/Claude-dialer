@@ -137,6 +137,13 @@ final class CoachModel: ObservableObject {
     var mobileSkippedID: String?
     var skipsInARow = 0
     var openerTask: Task<Void, Never>?
+    // The queued line: when it was queued and what the rep has said since (it's dropped if they moved on).
+    var pendingQueuedAt = Date.distantPast
+    var repWordsAtQueue = 0
+    var repAskedSinceQueue = false
+    // Early drafts for the prospect's current turn (to stop bursts of near-identical requests).
+    var lastEarlyBasis: String?
+    var earlyDraftsThisTurn = 0
     var pendingDialSince: Date?
     @Published var dialing = false
     @Published var dialError: String?

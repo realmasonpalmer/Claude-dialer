@@ -632,6 +632,9 @@ extension CoachModel {
         questionTracker = QuestionTracker()
         objectionTracker = ObjectionTracker()
         CoachPrompt.objectionFacts = ""
+        CoachPrompt.shownLines = []
+        lastEarlyBasis = nil
+        earlyDraftsThisTurn = 0
         loggedSystemHash = ""
         logSystemIfChanged() // the full static instructions + script Claude gets this call
         phoneSawHangUp = false
