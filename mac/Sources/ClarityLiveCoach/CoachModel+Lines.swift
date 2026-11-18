@@ -297,7 +297,7 @@ extension CoachModel {
         let askedAt = Date()
         logSystemIfChanged()
         CallTrace.event("memory.snapshot", ["summary": CoachPrompt.liveSummary, "summary_version": CallTrace.memVersion,
-                                            "question_facts": CoachPrompt.questionFacts, "blocker_hints": CoachPrompt.blockerHints,
+                                            "question_facts": CoachPrompt.questionFacts, "objection_facts": CoachPrompt.objectionFacts, "blocker_hints": CoachPrompt.blockerHints,
                                             "turns": turns.count], req: id)
         if kind == .reply { ActivityLog.add("Coach #\(id): asking Claude\(early == nil ? "" : " early, from their words so far")") }
         CallTrace.event("claude.request", [

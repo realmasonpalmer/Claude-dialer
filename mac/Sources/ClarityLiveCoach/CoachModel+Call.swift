@@ -614,6 +614,8 @@ extension CoachModel {
         BeepDetector.shared.reset()
         CallTrace.beginCall(lead: calling, attempt: currentAttempts)
         questionTracker = QuestionTracker()
+        objectionTracker = ObjectionTracker()
+        CoachPrompt.objectionFacts = ""
         loggedSystemHash = ""
         logSystemIfChanged() // the full static instructions + script Claude gets this call
         phoneSawHangUp = false

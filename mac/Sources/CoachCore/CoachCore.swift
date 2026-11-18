@@ -448,3 +448,115 @@ public struct QuestionTracker: Sendable {
         return lines.joined(separator: "\n")
     }
 }
+
+/// Objections on this call, tracked in code from the transcript (no AI).
+/// Addressed is not resolved: "addressed" only means the rep answered it. Only the prospect's
+/// next words can mark it resolved, still open, or uncertain.
+public struct ObjectionTracker: Sendable {
+    public enum Status: String, Sendable { case raised, addressed, resolved, stillOpen = "still_open", uncertain }
+    public struct Objection: Sendable, Equatable {
+        public let id: Int
+        public let kind: String          // e.g. "not interested"
+        public let raisedText: String    // their exact words
+        public let raisedTurn: Int       // transcript turn number
+        public var status: Status
+        public var addressedText = ""    // the rep's answer
+        public var addressedTurn = 0
+        public var evidenceText = ""     // the prospect's words that decided resolved / still open / uncertain
+        public var evidenceTurn = 0
+    }
+    public struct Change: Sendable, Equatable {
+        public let objection: Objection
+        public let from: Status?
+        public let why: String
+    }
+
+    /// Common cold-call objections: a name and the phrases that mean it.
+    public static let kinds: [(String, [String])] = [
+        ("not interested", ["not interested", "no interest", "not for us", "we're good", "we are good", "i'm good", "pass on"]),
+        ("no time", ["no time", "too busy", "i'm busy", "in a meeting", "bad time", "not a good time", "driving"]),
+        ("send info", ["send me an email", "send me something", "send me info", "email me", "send it over", "send me some"]),
+        ("already have it", ["we already have", "we already use", "we use", "already working with", "we have a partner", "we have someone", "in house", "in-house"]),
+        ("happy as is", ["happy with", "it's working", "works fine", "we're fine", "don't need", "do not need", "no need"]),
+        ("price", ["too expensive", "no budget", "can't afford", "cost too much", "costs too much", "not in the budget"]),
+        ("wrong person", ["not the right person", "not my area", "not my department", "talk to someone else", "i don't handle"]),
+        ("call later", ["call me later", "call back later", "call me next", "reach out next", "maybe later", "not right now"]),
+        ("trust", ["how did you get my number", "who gave you", "is this a sales call", "is this a scam"]),
+    ]
+    static let stillOpenWords = ["no", "nope", "still not", "not interested", "i said", "like i said", "already told you", "not really", "i don't think so"]
+    static let resolvedWords = ["sure", "okay", "ok", "go ahead", "yeah", "yes", "tell me", "what is it", "how does", "how much", "what do you",
+                                "that's fair", "fair enough", "makes sense", "i guess so", "interesting", "send it", "let's do", "that works"]
+    static let uncertainWords = ["hmm", "maybe", "i don't know", "not sure", "we'll see", "possibly", "i guess"]
+
+    public private(set) var objections: [Objection] = []
+    private var nextID = 1
+    public init() {}
+
+    /// The objection kind in these words, or nil. Script "sounds like" phrases can add their own kinds.
+    public static func detect(_ text: String, extra: [(String, [String])] = []) -> String? {
+        let t = " " + text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
+        return (extra + kinds).first { $0.1.contains { t.contains($0) } }?.0
+    }
+
+    static func has(_ text: String, _ words: [String]) -> Bool {
+        let t = " " + text.lowercased().components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'")).inverted).joined(separator: " ") + " "
+        return words.contains { t.contains(" \($0) ") }
+    }
+
+    /// Feed each finalized turn. `turn` is the transcript turn number (for evidence in the trace).
+    public mutating func add(turn text: String, from speaker: QuestionTracker.Speaker, turn: Int,
+                             extra: [(String, [String])] = []) -> [Change] {
+        var out: [Change] = []
+        func set(_ i: Int, _ s: Status, why: String) {
+            let from = objections[i].status
+            objections[i].status = s
+            out.append(Change(objection: objections[i], from: from, why: why))
+        }
+        if speaker == .rep {
+            // The rep answered any objection still waiting. Addressed, not resolved.
+            for i in objections.indices where [.raised, .stillOpen].contains(objections[i].status) && text.split(separator: " ").count >= 3 {
+                objections[i].addressedText = text
+                objections[i].addressedTurn = turn
+                set(i, .addressed, why: "rep answered it (turn \(turn)); waiting on the prospect")
+            }
+            return out
+        }
+        // Prospect: first judge any objection the rep just addressed, from their words only.
+        let newKind = Self.detect(text, extra: extra)
+        for i in objections.indices where objections[i].status == .addressed {
+            objections[i].evidenceText = text
+            objections[i].evidenceTurn = turn
+            if newKind == objections[i].kind || Self.has(text, Self.stillOpenWords) {
+                set(i, .stillOpen, why: "prospect pushed back again (turn \(turn))")
+            } else if Self.has(text, Self.uncertainWords) {
+                set(i, .uncertain, why: "prospect's answer is unsure (turn \(turn))")
+            } else if Self.has(text, Self.resolvedWords) || (newKind == nil && text.split(separator: " ").count >= 6) {
+                set(i, .resolved, why: "prospect moved on or agreed (turn \(turn))")
+            } else {
+                set(i, .uncertain, why: "prospect's answer doesn't settle it (turn \(turn))")
+            }
+        }
+        // A new objection (not one already open of the same kind).
+        if let kind = newKind, !objections.contains(where: { $0.kind == kind && $0.status != .resolved }) {
+            objections.append(Objection(id: nextID, kind: kind, raisedText: text, raisedTurn: turn, status: .raised))
+            nextID += 1
+            out.append(Change(objection: objections[objections.count - 1], from: nil, why: "prospect raised it (turn \(turn))"))
+        }
+        return out
+    }
+
+    /// For Claude's context. Empty when there are none.
+    public var promptText: String {
+        objections.map { o in
+            var line = "- \(o.kind) (turn \(o.raisedTurn), \"\(o.raisedText)\"): "
+            switch o.status {
+            case .raised: line += "NOT answered yet"
+            case .addressed: line += "rep answered it, prospect hasn't responded yet. NOT resolved"
+            case .resolved: line += "resolved: they said \"\(o.evidenceText)\""
+            case .stillOpen: line += "STILL OPEN after the rep's answer: they said \"\(o.evidenceText)\""
+            case .uncertain: line += "unclear: they said \"\(o.evidenceText)\""
+            }
+            return line
+        }.joined(separator: "\n")
+    }
+}

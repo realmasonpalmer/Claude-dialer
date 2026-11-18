@@ -327,6 +327,7 @@ final class CoachModel: ObservableObject {
     /// Hold: the rep pinned the current line; nothing replaces it until they release.
     /// Questions asked, answered, interrupted, abandoned (CoachCore), from finished turns.
     var questionTracker = QuestionTracker()
+    var objectionTracker = ObjectionTracker()
     @Published var holdLine = false {
         didSet { if holdLine != oldValue { CallTrace.event("manual", ["action": holdLine ? "Hold" : "Release", "line": suggestion.say]) } }
     }

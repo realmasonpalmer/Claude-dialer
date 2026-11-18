@@ -297,6 +297,16 @@ extension CoachModel {
             }
         }
         CoachPrompt.questionFacts = questionTracker.promptText // current before the next prompt is built
+        for c in objectionTracker.add(turn: text, from: speaker == .rep ? .rep : .prospect, turn: CallTrace.turn) {
+            let o = c.objection
+            CallTrace.event("objection.\(o.status.rawValue)", [
+                "id": o.id, "kind": o.kind, "from": c.from?.rawValue ?? "none", "to": o.status.rawValue, "why": c.why,
+                "raised": ["turn": o.raisedTurn, "text": o.raisedText],
+                "addressed": ["turn": o.addressedTurn, "text": o.addressedText],
+                "evidence": ["turn": o.evidenceTurn, "text": o.evidenceText]])
+            ActivityLog.add("Objection \(o.kind): \(c.from?.rawValue ?? "new") -> \(o.status.rawValue)")
+        }
+        CoachPrompt.objectionFacts = objectionTracker.promptText
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
         } else {

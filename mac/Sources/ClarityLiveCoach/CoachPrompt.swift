@@ -171,6 +171,8 @@ enum CoachPrompt {
     static var blockerHints = ""
     /// Open and answered questions, tracked in code (set before each request).
     static var questionFacts = ""
+    /// Objections raised, answered, and what the prospect said after (tracked in code).
+    static var objectionFacts = ""
     /// What the last reply prompt included, for the call trace.
     static var lastContext: [String: Any] = [:]
 
@@ -197,7 +199,7 @@ enum CoachPrompt {
         \(history)
 
         \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
-        \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")
+        \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
         What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most, ending in one question
         (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through
         better, use it and add a line OFF SCRIPT: yes.
