@@ -1,4 +1,5 @@
 import SwiftUI
+import CoachCore
 
 /// Counts every touchpoint on this Mac (no Salesforce needed): dials, pickups, conversations,
 /// voicemails, texts, LinkedIn notes and meetings booked. Filled in automatically by the coach.
@@ -12,6 +13,8 @@ final class Touchpoints: ObservableObject {
         let at: Date
         /// The campaign it happened in (older events have none).
         var campaign: String? = nil
+        /// The person (Lead or Contact Id), when it's a call.
+        var lead: String? = nil
     }
 
     /// The campaign being worked right now; every touchpoint is tagged with it.
@@ -43,19 +46,27 @@ final class Touchpoints: ObservableObject {
         }
     }
 
-    func log(_ kind: Kind) {
-        events.append(Event(kind: kind, at: Date(), campaign: currentCampaign))
+    func log(_ kind: Kind, at: Date = Date(), campaign: String? = nil, lead: String? = nil) {
+        events.append(Event(kind: kind, at: at, campaign: campaign ?? currentCampaign, lead: lead))
         // Keep about two years, so the file stays small.
         let cutoff = Calendar.current.date(byAdding: .day, value: -730, to: Date()) ?? .distantPast
         if events.first.map({ $0.at < cutoff }) == true { events.removeAll { $0.at < cutoff } }
-        if let data = try? JSONEncoder().encode(events) { try? data.write(to: Self.file, options: .atomic) }
+        save()
+    }
+
+    private func save() {
+        do {
+            try JSONEncoder().encode(events).write(to: Self.file, options: .atomic)
+        } catch {
+            ActivityLog.problem("My numbers: couldn't save touchpoints.json (\(error.localizedDescription))")
+        }
     }
 
     /// Wipes today's counts (all campaigns). Older days stay.
     func resetToday() {
         let start = Self.start(of: .today)
         events.removeAll { $0.at >= start }
-        if let data = try? JSONEncoder().encode(events) { try? data.write(to: Self.file, options: .atomic) }
+        save()
     }
 
     /// Every contact today, across all campaigns (dials + texts + LinkedIn), for the daily goal.
@@ -113,7 +124,12 @@ final class Touchpoints: ObservableObject {
         count(.dial, in: period) + count(.text, in: period) + count(.linkedin, in: period) + count(.linkedinMessage, in: period)
     }
 
-    private static func start(of period: Period) -> Date {
+    /// Human answer, prospect reach and conversation rates, from the call records (per dial).
+    func pickupStats(in period: Period) -> PickupStats {
+        PickupStats(CallAttemptStore.shared.finished(since: Self.start(of: period), campaign: showCampaign))
+    }
+
+    static func start(of period: Period) -> Date {
         let cal = Calendar.current
         let now = Date()
         switch period {
@@ -138,6 +154,7 @@ struct TouchpointsCard: View {
         let t = touchpoints
         let dials = t.count(.dial, in: period)
         let pickups = t.count(.pickup, in: period)
+        let ps = t.pickupStats(in: period)
         let meetings = t.count(.meeting, in: period)
         VStack(alignment: .leading, spacing: 8) {
             // Folded: one line. Click to see everything.
@@ -178,8 +195,14 @@ struct TouchpointsCard: View {
                 GridRow { stat("Conversations", t.count(.conversation, in: period)); stat("Voicemails", t.count(.voicemail, in: period)) }
                 GridRow { stat("Texts", t.count(.text, in: period)); stat("LinkedIn notes", t.count(.linkedin, in: period)) }
                 GridRow { stat("LinkedIn messages", t.count(.linkedinMessage, in: period)); stat("Meetings booked", meetings) }
-                GridRow { stat("Pickup rate", percent(pickups, of: dials)); Color.clear.frame(height: 1) }
             }
+            // Per dial, from the call records (decided by fixed rules when each call ends).
+            Text("Rates per dial (\(ps.placedDials) placed)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                GridRow { stat("Human answer", rate(ps.humanAnswerRate)); stat("Conversation", rate(ps.conversationRate)) }
+                GridRow { stat("Prospect reach", rate(ps.prospectReachRate)); Text("\(ps.leadsReached) of \(ps.leadsAttempted) people").font(.caption).foregroundStyle(.secondary) }
+            }
+            .help("Human answer: a person answered (gatekeepers count). Prospect reach: people you reached ÷ people you dialed. Conversation: real talks with the prospect ÷ dials.")
             if meetings > 0 {
                 Text("\(dials / max(meetings, 1)) calls per meeting").font(.caption).foregroundStyle(.secondary)
             }
@@ -204,6 +227,8 @@ struct TouchpointsCard: View {
             Text(label).font(.callout).foregroundStyle(.secondary)
         }
     }
+
+    private func rate(_ r: Double?) -> String { r.map { "\(Int(($0 * 100).rounded()))%" } ?? "–" }
 
     private func percent(_ part: Int, of whole: Int) -> String {
         whole == 0 ? "–" : "\(Int((Double(part) / Double(whole) * 100).rounded()))%"
