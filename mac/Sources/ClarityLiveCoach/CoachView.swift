@@ -194,6 +194,8 @@ struct CoachView: View {
     @EnvironmentObject var campaigns: CampaignStore
     @Environment(\.openWindow) private var openWindow
     @State private var showTranscript = false
+    /// THINK mode: the rep asked to see the full SAY line for this suggestion (resets on the next one).
+    @State private var showFullLine = false
     /// Redraws when Salesforce or Aircall connects or disconnects.
     @ObservedObject private var connections = Connections.shared
     @State private var showHelp = false
@@ -885,12 +887,19 @@ struct CoachView: View {
             lineText(inTour && coach.status == .ready ? TourSample.line
                  : coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, and upload your keys file." : "Getting your line ready...")
-                 : coach.suggestion.say, emphasized: false) // frozen for the model test: plain line
+                 : cardLine, emphasized: false) // frozen for the model test: plain line
                 .font(lineFont)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(lineIsSoft ? Color.secondary : Color.primary)
                 .opacity(coach.historyIndex == nil ? 1 : 0.6)
+            // THINK mode: one thought on the card; the full line only when the rep asks (⌘⇧L).
+            if thinkShown || showFullLine {
+                Button(showFullLine ? "Back to the short thought" : "Full line (⌘⇧L)") { showFullLine.toggle() }
+                    .buttonStyle(.link).font(.caption2)
+                    .keyboardShortcut("l", modifiers: [.command, .shift])
+                    .help("Show the full suggested sentence. Only while the app is in front, so it never touches your typing.")
+            }
             if let n = coach.meetingThisWeek, coach.status == .live {
                 Text("Meeting \(n) this week")
                     .font(.caption.weight(.semibold))
@@ -909,7 +918,21 @@ struct CoachView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.edge, lineWidth: 0.5))
         .overlay(MeetingGlow(trigger: coach.meetingMoments))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
+        .onChange(of: coach.suggestion.say) { showFullLine = false }
     }
+
+    /// THINK mode is on and this card is a normal live line (not a script row, nudge or history).
+    private var thinkActive: Bool {
+        Think.enabled && coach.status == .live && coach.kind == .reply && !coach.suggestion.nudge && coach.historyIndex == nil
+    }
+    /// What the big line shows: the thought in THINK mode, otherwise (or on request, or when missing) SAY.
+    private var cardLine: String {
+        guard thinkActive else { return coach.suggestion.say }
+        return Think.primary(think: coach.suggestion.think, say: coach.suggestion.say,
+                             exact: coach.suggestion.rowTag != nil, enabled: true, showFull: showFullLine)
+    }
+    /// A thought (not SAY) is on the card right now.
+    private var thinkShown: Bool { thinkActive && cardLine != coach.suggestion.say }
 
     /// The line on the card: big and bold, or a little softer for a nudge.
     private var lineFont: Font {
@@ -945,7 +968,9 @@ struct CoachView: View {
         case .opener: return "WHEN THEY PICK UP"
         case .screener: return "A ROBOT ANSWERED · SAY THIS"
         case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
-        case .reply: return coach.suggestion.rowTag != nil ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
+        case .reply:
+            if thinkActive { return coach.suggestion.rowTag != nil ? "EXACT" : "" } // THINK mode: no "SAY THIS"
+            return coach.suggestion.rowTag != nil ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
         }
     }
 

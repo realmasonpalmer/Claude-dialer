@@ -110,7 +110,7 @@ enum CoachPrompt {
         Answer in exactly this format and nothing else:
         MOVE: <answer, clarify, discover, acknowledge, objection, close or silent>
         STAGE: <one of: \(stages.joined(separator: ", "))>
-        SAY: <the line the rep should say next>
+        \(Think.promptLine(enabled: Think.enabled))SAY: <the line the rep should say next>
         CUE: <why, or how to say it, under 10 words>
 
         For silent, write only:
