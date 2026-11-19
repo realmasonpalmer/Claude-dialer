@@ -29,8 +29,10 @@ final class LineLookTests: XCTestCase {
                              repStarted: false, delivered: true, prospectAnsweredSince: true, queued: true,
                              queuedIsForNewTopic: true, lineWords: 10, overlapping: false, repOnLine: false, doNotCall: false)
         XCTAssertTrue(CoachController.waitForProspect(s))
-        XCTAssertEqual(CoachController.offer(isOpenerOrVoicemail: false, firstLine: false, holdLine: false, signals: s), .queue)
-        XCTAssertEqual(CoachController.offer(isOpenerOrVoicemail: true, firstLine: false, holdLine: false, signals: s), .show)
+        XCTAssertEqual(CoachController.promote(holdLine: false, signals: s, ageSeconds: 1, repWordsSinceQueued: 0,
+                                               repAskedSinceQueued: false, repTextSinceQueued: ""), .wait)
+        var optOut = s; optOut.doNotCall = true
+        XCTAssertFalse(CoachController.waitForProspect(optOut))
         var quiet = s; quiet.prospectSpeaking = false
         XCTAssertFalse(CoachController.waitForProspect(quiet))
     }

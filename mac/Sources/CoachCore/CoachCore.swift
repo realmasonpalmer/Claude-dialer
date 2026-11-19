@@ -1020,8 +1020,8 @@ public enum CoachController {
     public enum Offer: Equatable, Sendable { case show, queue, drop(String) }
     public enum Promote: Equatable, Sendable { case wait, show, drop(String) }
 
-    /// An ordinary new line waits while the prospect is talking, so the rep's eyes stay on them.
-    /// It shows when they stop. Exceptions live elsewhere and are untouched: openers, voicemail,
+    /// A queued line waits while the prospect is talking, so the rep's eyes stay on them.
+    /// It shows when they stop. (A line arriving right as they finish, like the ready "yes" line, still shows.) Exceptions live elsewhere and are untouched: openers, voicemail,
     /// screeners, opt-out (the goodbye line), and a line the rep asked for with Space.
     public static func waitForProspect(_ s: CoachSignals) -> Bool {
         s.hasLine && s.prospectSpeaking && !s.doNotCall
@@ -1034,7 +1034,6 @@ public enum CoachController {
                              staleReason: String? = nil) -> Offer {
         if isOpenerOrVoicemail || firstLine { return .show }
         if let why = staleReason { return .drop(why) }
-        if waitForProspect(signals) { return .queue }
         return !holdLine && CoachMachine.canReplace(signals) ? .show : .queue
     }
 

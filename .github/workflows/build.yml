@@ -27,4 +27,4 @@ jobs:
         working-directory: mac
         run: |
           set -o pipefail
-          status=0; swift test --filter CoachCoreTests > test.log 2>&1 || status=$?; echo "=== FAILURES ==="; grep -nE "failed|error" test.log | grep -v "with 0 failures" | head -40; echo "=== END ==="; tail -15 test.log; exit $status
+          status=0; swift test --filter CoachCoreTests > test.log 2>&1 || status=$?; echo "=== FAILURES ==="; grep -nE "failed|error|XCTAssert" test.log | grep -v "warning\|with 0 failures" | head -40; echo "=== END ==="; tail -15 test.log; exit $status
