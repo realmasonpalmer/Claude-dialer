@@ -856,7 +856,9 @@ public enum RepQuestion {
         var words = sentence.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
         while let w = words.first, ["so", "and", "but", "well", "hey", "um", "uh", "like", "just"].contains(w) { words.removeFirst() }
         guard let first = words.first else { return nil }
-        return closedStarts.contains(first) ? sentence.trimmingCharacters(in: .whitespaces) + "?" : nil
+        // A tag question ("You guys use Salesforce, right") is yes/no whatever its first word.
+        let tagged = ["right", "correct", "yeah", "true", "huh"].contains(words.last ?? "") && words.count > 2
+        return tagged || closedStarts.contains(first) ? sentence.trimmingCharacters(in: .whitespaces) + "?" : nil
     }
 }
 
