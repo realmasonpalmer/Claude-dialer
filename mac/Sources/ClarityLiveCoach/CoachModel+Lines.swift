@@ -440,21 +440,21 @@ extension CoachModel {
                                   "why": "opt-out phrase", "said": said, "cancelled_request": seq])
         coachState = .doNotCall
         seq += 1
-        show(Suggestion(say: LiveCoach.optOutLine, cue: "Opt out. Off your list here. Saving Do Not Call in Salesforce...", stage: "Exit", sayComplete: true), id: seq, kind: .reply)
+        show(Suggestion(say: LiveCoach.optOutLine, cue: "Opt out. Say goodbye, then hang up. Saving Do Not Call in Salesforce...", stage: "Exit", sayComplete: true), id: seq, kind: .reply)
         guard let key = currentAttemptKey else { return }
         RemovedList.add(key)
         followUp = nil // no text, no LinkedIn
         CallTrace.event("crm.suppress", ["record": key, "actions": ["DoNotCall", "status", "off every list", "no text"]])
         outcomeSaved.insert(String(key.prefix(15))) // nothing more to log
         ActivityLog.add("Opt out from \(calling ?? key): \"\(said)\". Off every list, no text, writing DoNotCall and status")
-        CallTrace.event("intent", ["intent": "opt_out", "said": said, "why": "opt-out phrase in their words", "action": "goodbye line, DoNotCall, hang up"])
+        CallTrace.event("intent", ["intent": "opt_out", "said": said, "why": "opt-out phrase in their words", "action": "goodbye line and DoNotCall; the rep hangs up"])
         Task { [weak self] in
             do {
                 try await Salesforce.setDoNotCall(key)
                 ActivityLog.add("Opt out: DoNotCall saved in Salesforce for \(self?.calling ?? key)")
                 CallTrace.event("crm.saved", ["record": key, "field": "DoNotCall"])
                 // Only now say it's saved in Salesforce (the line itself stays as is).
-                if let self, self.suggestion.say == LiveCoach.optOutLine { self.suggestion.cue = "Opt out. Do Not Call saved in Salesforce." }
+                if let self, self.suggestion.say == LiveCoach.optOutLine { self.suggestion.cue = "Opt out. Do Not Call saved in Salesforce. Hang up when you're done." }
             } catch {
                 ActivityLog.problem("Opt out: couldn't save DoNotCall in Salesforce: \(error.localizedDescription)")
                 CallTrace.event("crm.failed", ["record": key, "field": "DoNotCall", "error": error.localizedDescription])
@@ -473,10 +473,7 @@ extension CoachModel {
             } catch {
                 ActivityLog.problem("Opt out: couldn't set status to \(status): \(error.localizedDescription)")
             }
-            try? await Task.sleep(for: .seconds(6)) // time to say goodbye
-            // Only this call: never hang up the next person if a new call started in the meantime.
-            guard let self, self.status == .live, AircallPhone.isOn, CallTrace.callID == optOutCallID else { return }
-            _ = await AircallPhone.shared.hangUp()
+            // No automatic hang-up: the rep says goodbye and hangs up themselves.
         }
     }
 
