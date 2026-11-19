@@ -13,7 +13,7 @@ final class Phase3RaceTests: XCTestCase {
         let s = CoachSignals(hasLine: true, prospectSpeaking: false, repSpeaking: false, secondsSinceShown: 2.5, repStarted: false,
                              delivered: false, prospectAnsweredSince: false, queued: true, queuedIsForNewTopic: true, lineWords: 20)
         XCTAssertFalse(CoachMachine.canReplace(s))
-        var later = s; later.secondsSinceShown = 5.5
+        var later = s; later.secondsSinceShown = 7
         XCTAssertTrue(CoachMachine.canReplace(later))
         // The rep's interim words are on the wire: they're talking, so no swap.
         var reading = later; reading.repStarted = true; reading.repSpeaking = true

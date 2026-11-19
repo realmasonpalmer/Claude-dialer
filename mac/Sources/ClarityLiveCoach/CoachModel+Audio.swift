@@ -233,7 +233,7 @@ extension CoachModel {
                 // Clear opt-out phrases on any final, checked on the whole turn so far, not one chunk (round 3).
                 // addFinal already added this chunk to uncoached: check it as is (Fix 4).
                 if speaker == .prospect, !doNotCall, LiveCoach.isOptOut(uncoached, isFinal: false) { handleOptOut(uncoached) }
-                if speaker == .prospect { followsThisStretch = 0 } // a new stretch of rep talk can get one follow line
+                if speaker == .prospect { followsThisStretch = 0; yesShowTask?.cancel() } // new prospect words: the waiting yes line is stale
                 // A possible opt-out in a mid-turn final: hold it now, so a hang-up before the turn ends can't lose it.
                 if speaker == .prospect, !speechFinal, !doNotCall, pendingAmbiguousOptOut == nil,
                    OptOut.hasAmbiguous(uncoached), OptOut.matches(uncoached, isFinal: true) {
@@ -244,9 +244,10 @@ extension CoachModel {
                 }
                 if speechFinal && speaker == .prospect { prospectFinished() }
                 if !speechFinal && speaker == .prospect { scheduleEarlyStart() } // a final mid-turn is a head start too (M2)
-                if speechFinal && speaker == .rep { repEndpointed = true; promotePendingIfReady() } // the transcriber heard them stop (M1)
+                if speechFinal && speaker == .rep { repEndpointed = true; followPausedUntilQuiet = false; promotePendingIfReady() } // the transcriber heard them stop (M1)
             } else {
                 interim[speaker] = text
+                if speaker == .prospect, !text.isEmpty { yesShowTask?.cancel(); openerWaitTask?.cancel() } // they kept talking
                 if speaker == .prospect { scheduleEarlyStart() }
             }
         case .utteranceEnd:
@@ -305,7 +306,7 @@ extension CoachModel {
             repSaidSinceShown += " " + text
             if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown) {
                 lineDelivered = true
-                callLinesUsed += 1
+                if testLineCounted { callLinesUsed += 1 }
                 let conf = Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)
                 ActivityLog.add(String(format: "Coach: line delivered (meaning %.0f%% said)", conf * 100))
                 let ev = Delivery.evidence(line: suggestion.say, spoken: repSaidSinceShown)

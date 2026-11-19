@@ -41,7 +41,7 @@ final class LiveCallFixTests: XCTestCase {
         var s = CoachSignals(hasLine: true, prospectSpeaking: false, repSpeaking: false, secondsSinceShown: 2, repStarted: false,
                              delivered: false, prospectAnsweredSince: false, queued: false, queuedIsForNewTopic: false, lineWords: 20)
         XCTAssertFalse(CoachController.canInterrupt(signals: s))
-        s.secondsSinceShown = 6; s.repSpeaking = true
+        s.secondsSinceShown = 7; s.repSpeaking = true
         XCTAssertFalse(CoachController.canInterrupt(signals: s))
         s.repSpeaking = false
         XCTAssertTrue(CoachController.canInterrupt(signals: s))

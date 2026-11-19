@@ -18,6 +18,7 @@ enum SpaceKey {
     private static var watcher: Timer?
     private static let queue = DispatchQueue(label: "clarity.space-key")
     private static var asked = false
+    private static var checking = false // one Chrome check at a time: no backlog when Chrome is slow
 
     /// Called when a call starts. Asks for Accessibility once; installs the key tap when allowed.
     static func install() {
@@ -64,13 +65,14 @@ enum SpaceKey {
             watcher?.invalidate()
             chromeEditable = true
             watcher = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
-                guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.hasPrefix("com.google.Chrome") == true else { return }
+                guard !checking, NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.hasPrefix("com.google.Chrome") == true else { return }
+                checking = true
                 queue.async {
                     let js = "var e=document.activeElement;(e&&(e.isContentEditable||/^(input|textarea|select)$/i.test(e.tagName)))?'1':'0'"
                     let script = "tell application \"Google Chrome\" to execute active tab of front window javascript \"\(js)\""
                     let r = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue
                     let editable = r != "0" // unknown counts as a text box: never steal a space we can't check
-                    DispatchQueue.main.async { chromeEditable = editable }
+                    DispatchQueue.main.async { chromeEditable = editable; checking = false }
                 }
             }
         }

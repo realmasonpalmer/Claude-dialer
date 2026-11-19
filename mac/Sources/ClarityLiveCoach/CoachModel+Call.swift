@@ -783,6 +783,10 @@ extension CoachModel {
     /// Clears everything about this prospect and gets the next opener ready.
     func nextCall() {
         SpaceKey.callLive = false // Space is normal again everywhere
+        yesShowTask?.cancel()
+        openerWaitTask?.cancel()
+        testLineCounted = false
+        followPausedUntilQuiet = false
         // The call is over: the next person starts clean, before their opener is prepared below (round 3).
         doNotCall = false
         pendingAmbiguousOptOut = nil

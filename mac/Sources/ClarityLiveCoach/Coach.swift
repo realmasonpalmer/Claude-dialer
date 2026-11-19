@@ -176,6 +176,9 @@ final class CoachModel: ObservableObject {
     var nextAskModel: String?
     var freshLineIDs: Set<Int> = []
     var spaceMonitor: Any?
+    var testLineCounted = false
+    var openerWaitTask: Task<Void, Never>?
+    var followPausedUntilQuiet = false
     var blockedLoggedID = 0
 
     /// The prospect agreed to the meeting in their own words: now it counts.

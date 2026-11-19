@@ -16,7 +16,7 @@ extension CoachModel {
         case "Closing", "Goal reached": step = 3
         default: step = nil // Objection, Exit: stay where we are
         }
-        if let step, step > journeyStep { journeyStep = step }
+        if let step { journeyStep = step } // follows the call both ways (calls aren't linear)
     }
 
     /// Shows the line before the one on screen.
@@ -148,6 +148,7 @@ extension CoachModel {
     }
 
     private func showScreenerLineNow() {
+        yesShowTask?.cancel()
         guard status == .live, !doNotCall, screenerCallID == CallTrace.callID else { return }
         // Every caller is covered: never over the rep's speech or reading; wait again instead (Fix 6).
         guard CoachController.canInterrupt(signals: signals()), (interim[.rep] ?? "").isEmpty else {
@@ -316,7 +317,8 @@ extension CoachModel {
                 yesShowTask?.cancel()
                 yesShowTask = Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(600))
-                    guard let self, !Task.isCancelled, self.status == .live,
+                    guard let self, !Task.isCancelled, self.status == .live, !self.doNotCall, !self.callClosed,
+                          !self.voicemailActive, !self.screenerActive,
                           self.uncoached.trimmingCharacters(in: .whitespaces).isEmpty,
                           (self.interim[.prospect] ?? "").isEmpty else {
                         CallTrace.event("yes_branch.discarded", ["question": yb.question, "why": "they kept talking after the yes"])
@@ -361,8 +363,15 @@ extension CoachModel {
             screenerActive = false
             latestProspect = said
             if let opener = openerBeforeScreener {
-                seq += 1
-                show(opener, id: seq, kind: .opener)
+                // Not on the mutual "Hello?": wait for 0.8 s of quiet, so the rep isn't reading over the greeting.
+                openerWaitTask?.cancel()
+                openerWaitTask = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(800))
+                    guard let self, !Task.isCancelled, self.status == .live, !self.doNotCall,
+                          (self.interim[.prospect] ?? "").isEmpty, self.uncoached.isEmpty else { return }
+                    self.seq += 1
+                    self.show(opener, id: self.seq, kind: .opener)
+                }
                 return
             }
         }
@@ -420,6 +429,7 @@ extension CoachModel {
     /// "Take me off your list": the goodbye line, DoNotCall written in Salesforce, off every list, hang up. No AI.
     func handleOptOut(_ said: String) {
         guard !doNotCall else { return }
+        yesShowTask?.cancel()
         let optOutCallID = CallTrace.callID
         doNotCall = true // terminal: every later draft, early start and queued line is blocked
         specTimer?.cancel()
@@ -607,7 +617,9 @@ extension CoachModel {
 
     /// The house rules for a live line (offered meeting times are allowed).
     static func lineProblems(_ s: Suggestion) -> [String] {
-        Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil, allowTimes: true)
+        let p = Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil, allowTimes: true)
+        // A script row copied word for word ("S2 open" is 26 words) isn't sent back for being long.
+        return s.rowTag == nil ? p : p.filter { !$0.contains("words (max") }
     }
 
     /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
@@ -739,7 +751,7 @@ extension CoachModel {
                                      repTextSinceQueued: repTextSinceAsk)
             : nil
         if freshLineIDs.contains(id) { // the rep pressed space: show it now, whatever is on screen
-            freshLineIDs.remove(id)
+            defer { freshLineIDs.remove(id) } // still marked while show() counts it
             CallTrace.event("suggestion.fresh", ["line": s.say, "why": "the rep asked for a fresh line"], sug: id)
             show(s, id: id, kind: kind)
             return
@@ -862,7 +874,8 @@ extension CoachModel {
     func prepareWhileRepTalks(_ text: String) {
         guard status == .live, !doNotCall, !voicemailActive, !screenerActive, !suggestion.say.isEmpty else { return }
         let since = repWordsInCall - repWordsAtLastAsk
-        guard FollowRepLimit.allowed(repWordsSinceLastAsk: since, followsThisStretch: followsThisStretch) else { return }
+        guard !followPausedUntilQuiet,
+              FollowRepLimit.allowed(repWordsSinceLastAsk: since, followsThisStretch: followsThisStretch) else { return }
         guard FollowRep.shouldPrepare(repJustSaid: text, recentRepSpeech: recentRepChunks.joined(separator: " "),
                                       shownLine: suggestion.say, shownLineDelivered: lineDelivered,
                                       repWordsSinceLastAsk: since) else { return }
@@ -870,6 +883,7 @@ extension CoachModel {
             pending = nil
             let why = "the rep said \(since) words of their own since"
             ActivityLog.add("Coach #\(p.id): queued line dropped while you talk (\(why); heuristic rule)")
+            followPausedUntilQuiet = true // they're on their own roll: no more drafts until they pause
             CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)", "rule": "heuristic"], sug: p.id)
         }
         followRep(why: "preparing ahead: the rep is off script (\(since) words since the last request)")
@@ -982,6 +996,8 @@ extension CoachModel {
         // Still an unfilled slot ([Day], [Firm] we don't know): never show it. Keep the current line (script rule).
         if status == .live, kind == .reply, TokenFill.hasOpenSlot(s.say) {
             CallTrace.event("suggestion.dropped", ["line": s.say, "why": "a [slot] couldn't be filled"], sug: id)
+            ActivityLog.add("Coach: a line had a blank to fill (\(s.say)); kept the current line")
+            showToast("No line with a blank in it. Say it your way, or press space for a fresh one.")
             return
         }
         if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
@@ -991,7 +1007,12 @@ extension CoachModel {
         }
         if status == .live, kind == .reply || kind == .opener, !s.say.isEmpty {
             CoachPrompt.shownLines.append(s.say)
-            if !s.nudge, s.say != LiveCoach.optOutLine { callLinesShown += 1 }
+            // Model test: only lines the call's model wrote (not the instant opener, script answers or a space-bar
+            // Sonnet line), and a line replaced before it could be read doesn't count as ignored.
+            if testLineCounted, !lineDelivered, Date().timeIntervalSince(shownAt) < 2 { callLinesShown -= 1 }
+            testLineCounted = kind == .reply && !s.nudge && s.say != LiveCoach.optOutLine && !freshLineIDs.contains(id)
+                && !s.cue.hasPrefix("From your script") && !s.cue.hasPrefix("Two no")
+            if testLineCounted { callLinesShown += 1 }
         }
         if status == .live {
             CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "move": s.move, "kind": "\(kind)",
@@ -1049,13 +1070,15 @@ extension CoachModel {
 
     func scheduleStillWithMe() {
         stillWithMeTask?.cancel()
-        guard let last = turns.last, last.speaker == .rep, last.text.trimmed.hasSuffix("?"),
+        guard let last = turns.last, last.speaker == .rep,
+              RepQuestion.asQuestion(last.text).hasSuffix("?") || !QuestionTracker.questions(in: last.text).isEmpty,
               turns.contains(where: { $0.speaker == .prospect }),
               !voicemailActive, !screenerActive, !phoneTreeActive, !badNumberThisCall else { return }
         let askedAt = lastWordsAt
         stillWithMeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
             guard let self, !Task.isCancelled, self.status == .live, !self.doNotCall, !self.thinking, self.pending == nil,
+                  self.lineDelivered, // only after a line was said, then real silence (never over the rep's own thought)
                   self.lastWordsAt == askedAt,
                   self.turns.last?.speaker == .rep, !self.voicemailActive,
                   (self.interim[.prospect] ?? "").isEmpty, // they're mid-answer

@@ -97,6 +97,7 @@ extension CoachModel {
 
     /// Instant voicemail card: the script written before the call, or "mailbox full, move on".
     func showVoicemail(mailboxFull: Bool) {
+        yesShowTask?.cancel()
         if !sawVoicemail { UserDefaults.standard.set(UserDefaults.standard.integer(forKey: PrefKey.voicemailsSeen) + 1, forKey: PrefKey.voicemailsSeen) }
         voicemailActive = true
         sawVoicemail = true

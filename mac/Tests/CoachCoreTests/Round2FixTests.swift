@@ -34,7 +34,7 @@ final class Round2FixTests: XCTestCase {
         XCTAssertFalse(SilentRule.clearNow(superseded: true, delivered: false, answered: false, signals: s))
         s.repSpeaking = false; s.repStarted = false; s.secondsSinceShown = 1
         XCTAssertFalse(SilentRule.clearNow(superseded: true, delivered: false, answered: false, signals: s)) // still reading
-        s.secondsSinceShown = 6
+        s.secondsSinceShown = 7
         XCTAssertTrue(SilentRule.clearNow(superseded: true, delivered: false, answered: false, signals: s))
     }
 

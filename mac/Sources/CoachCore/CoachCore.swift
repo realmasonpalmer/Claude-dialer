@@ -58,7 +58,8 @@ public enum CoachMachine {
     public static let readingGrace = 1.2
 
     /// Silent reading can't be seen, so protect it by length: about 4 words a second, 1.2 to 5 seconds.
-    public static func readingTime(words: Int) -> Double { min(5, max(readingGrace, Double(words) / 4)) }
+    /// Reading under pressure: about 3 words a second, plus about 1.5 s to start speaking. 2 to 6.5 s.
+    public static func readingTime(words: Int) -> Double { min(6.5, max(2.0, Double(words) / 3 + 1.5)) }
 
     public static func state(_ s: CoachSignals) -> CoachState {
         if s.doNotCall { return .doNotCall }
@@ -74,7 +75,7 @@ public enum CoachMachine {
         if s.prospectSpeaking { return .listening }
         guard s.hasLine else { return .idle }
         if s.delivered && s.prospectAnsweredSince { return .resolved }
-        if !s.repStarted { return s.secondsSinceShown < readingTime(words: s.lineWords) ? .ready : .reading }
+        if !s.repStarted { return .reading } // one steady label while it's theirs to read (no flicker)
         return .reading
     }
 
@@ -838,8 +839,17 @@ public enum RepQuestion {
     /// Check-ins ("Still with me?") aren't a real ask: a "yeah" to them isn't a yes to anything.
     static let checkIns = ["still with me", "you there", "can you hear me", "are you there", "did i lose you", "still there"]
 
-    public static func closedQuestion(in text: String) -> String? {
+    /// Questions often come through with no "?" ("You guys use Salesforce right"). Treat a tag ending as one.
+    public static func asQuestion(_ text: String) -> String {
         let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.hasSuffix("?") else { return t }
+        let l = t.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".!, "))
+        let tags = [" right", " correct", " yeah", " yes", " no", " true", " fair"]
+        return tags.contains(where: { l.hasSuffix($0) }) ? l + "?" : t
+    }
+
+    public static func closedQuestion(in raw: String) -> String? {
+        let t = asQuestion(raw)
         guard t.hasSuffix("?") else { return nil }
         if checkIns.contains(where: { t.lowercased().contains($0) }) { return nil }
         let sentence = t.dropLast().split(whereSeparator: { ".?!".contains($0) }).last.map(String.init) ?? ""
@@ -1070,13 +1080,16 @@ extension CoachController {
 
 /// "Two no's and a go": one no gets one respectful question; two no's (or a no plus a sign-off) ends it (call 6).
 public enum Rejection {
-    static let nos = ["not interested", "not relevant", "no thanks", "no thank you", "not a fit", "i'm good", "we're good",
-                      "not for us", "don't need", "pass on", "not really interested", "doesn't apply", "not something we need"]
+    // Only clear no's. Reflex brush-offs ("we're good", "I'm good") don't count: they often open up right after.
+    static let nos = ["not interested", "not relevant", "no thanks", "no thank you", "not a fit",
+                      "not for us", "not really interested", "doesn't apply", "not something we need"]
     static let signOffs = ["yep thanks", "yep, thanks", "bye", "take care", "have a good one", "have a good day", "have a great day",
                            "gotta go", "got to go", "thanks anyway", "thank you anyway"]
 
     public static func isNo(_ text: String) -> Bool {
         let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        // "...though our CRM data is a mess": a no that opens a door isn't a no.
+        if [" but ", " though", " however", " although"].contains(where: { t.contains($0) }) { return false }
         if nos.contains(where: { t.contains($0) }) { return true }
         // "I don't think this is really relevant", "this isn't relevant to us"
         let negated = ["don't think", "not", "isn't", "doesn't"].contains { t.contains($0) }
