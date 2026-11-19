@@ -30,6 +30,12 @@ If the prospect asks a question, answer it in one sentence, then ask the next st
 If nothing matches, use the fallback for the current stage.
 If the SDR and prospect talk at once, show nothing until the prospect stops.
 After the SDR asks a question, show nothing for 4 seconds of silence. At 6 seconds show: “Still with me?”
+Never ask the same question twice. If they said “I don’t know”, move on to something new.
+A yes only counts for the last real ask. “Let’s see” is not a yes. “Yeah” to “Still with me?” is not a yes.
+“No. I’m not really interested” is a no.
+After the first no that follows the pitch, never repeat the last question. Use a new angle, or say:
+“Understood. Can I send one short email and leave it there?”
+[Name], [Firm], [SDR], [Day] and [Time] must be filled in before a line shows. If a value is unknown, use the fallback line.
 
 BANNED WORDS AND CLAIMS
 Never show a line that says or implies any of these:
@@ -41,6 +47,10 @@ Anthropic sent us or asked for the call
 “AI never messes up”
 A client name
 A price, a dollar value or a gift card
+“Fully compliant”, or what any regulator accepts
+How long data is kept, or whether anything is trained on their data
+Liability, or who is responsible if something goes wrong
+Any claim about another AI tool (ChatGPT, Copilot, Gemini or others)
 
 TRANSCRIPT NOISE
 Treat these as the same word:
@@ -63,6 +73,10 @@ line_type: screen, tree, gatekeeper, decision_maker, voicemail
 stage: S0 to S8
 problem_named: yes or no
 no_count: 0, 1, 2
+referral_given: yes or no. “Talk to someone in IT” is progress, not a no. Capture the department or name,
+  then use the referral path. Never ask again who decides.
+who_on_line: after a call-screen bot, the next human voice is the lead until they say otherwise.
+  Never use gatekeeper lines on them.
 slots: name, role, firm, crm, notetaker, email, direct_line, callback_time, meeting_time
 
 PICK ORDER
@@ -72,6 +86,7 @@ Second no
 Voicemail, phone tree or call screen
 Gatekeeper
 Prospect asked a direct question
+Referral given (G9) or a check-in answer (“yeah” to “Still with me?”)
 Objection
 Stage branch
 Stage fallback
@@ -86,6 +101,10 @@ G5 voicemail	“leave a message”, “after the tone”, “not available”	Sh
 G6 wrong person	“not my area”, “I don’t handle that”	“Who owns that? Can I say you sent me?”	Get name and direct_line. S8
 G7 left company	“no longer with”, “between jobs”, “my next gig”	“Thanks for telling me. Who took over your role there?”	S8
 G8 bad time	“driving”, “in a meeting”, “call me later”	“No problem. Is later today or tomorrow morning better?”	Get callback_time. End.
+G9 dont know who	“I don’t know who”, “ask IT”, “someone in IT”	“No problem. Is there a front desk or email for IT I can try?”	referral_given = yes. S8
+G13 other ai	“we use ChatGPT”, “we use Copilot”, “we have Gemini”	“Good to hear. No need to switch. Want to test Claude on one real task and compare?”	S6
+G14 safe	“is it safe”, “is it secure”	“Fair to ask. Your security team can check the proof. Want me to send it?”	Get email. S6
+G14b data	“where does our data go”, “who sees our data”	“Fair question. The exact terms are in writing, so I’ll send them. What email works best?”	Get email. S6
 
 S1: GATEKEEPER
 Enter when line_type = gatekeeper. Never pitch here.
@@ -143,6 +162,7 @@ S5 referrals	“word of mouth”, “referrals”	“Good sign. When a referral 
 S5 uses claude	“we use Claude”, “we built our own”, “we have seats”	“Great. What’s the one tool you wish Claude could talk to?”	S5
 S5 ai company	“we’re an AI shop”, “we build AI”	“Then you’re ahead of most. Is there anything on the sales side your team still does by hand?”	S5
 S5 dont know	“I don’t know”, “not sure”	“No worries. Who on your team would know?”	Get name. S8
+S5 not allowed	“AI isn’t allowed here”, “we can’t use AI”, “IT won’t allow it”	“Who has to approve a new AI tool there?”	Get name. S8
 S5 fallback	anything else	“Got it. And after that, who updates the client record?”	S5
 
 S6: THE ASK
@@ -150,7 +170,7 @@ Enter only when problem_named = yes.
 ID	Sounds like	Say	Then
 S6 ask	entry	“Sounds worth a look. Oliver, our managing partner, does a free 45 minute AI health check. I have [Day] at [Time] or [Day] at [Time]. Which is better?”	S6
 S6 yes	picks a time, “that works”, “Thursday”	Show S7 line.	S7
-S6 what is it	“what is that”, “what do you do in it”	“Oliver looks at how your team handles client calls and shows what AI can take off their plate. [Day] or [Day]?”	S6
+S6 what is it	“what is that”, “what do you do in it”	“It’s a small pilot. We pick one task and one number, like hours on call notes. Does that sound fair?”	S6
 S6 too long	“that’s a long time”, “45 minutes?”	“We can do 20. If it’s not useful in ten, you hang up. [Day] or [Day]?”	S6
 S6 calendar	“let me check”, “not sure of my schedule”	“Sure, I’ll hold. Or I can text you two times right now. Which is easier?”	S6
 S6 away	“out of town”, “not this week”	“No problem. Which week are you back? I’ll hold a time now.”	S6

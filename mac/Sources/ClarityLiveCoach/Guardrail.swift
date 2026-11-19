@@ -6,7 +6,12 @@ import Foundation
 enum Guardrail {
     static let banned = ["awesome", "super excited", "beautiful day", "my friend", "brother", "to be honest",
                          "selected", "assigned", "referred", "certified", "replace", "never messes up",
-                         "roadmap", "transformation", "maturity", "enablement", "digital"]
+                         "roadmap", "transformation", "maturity", "enablement", "digital",
+                         // never-say: compliance, data terms, liability, other AI tools
+                         "fully compliant", "100% compliant", "regulators accept", "approved by regulators", "hipaa compliant",
+                         "we never store", "we don't store", "never trained on", "train on your data", "trained on your data",
+                         "days of retention", "retention", "liable", "liability",
+                         "better than chatgpt", "better than copilot", "better than gemini", "chatgpt can't", "copilot can't"]
     private static let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
                                "tomorrow", "next week"]
 

@@ -835,9 +835,13 @@ public enum RepQuestion {
         "were", "have", "has", "mind", "may", "should", "okay", "ok", "sound", "fair", "right", "yeah", "correct", "cool", "make"]
 
     /// The last question in what the rep said, if it's a yes/no question.
+    /// Check-ins ("Still with me?") aren't a real ask: a "yeah" to them isn't a yes to anything.
+    static let checkIns = ["still with me", "you there", "can you hear me", "are you there", "did i lose you", "still there"]
+
     public static func closedQuestion(in text: String) -> String? {
         let t = text.trimmingCharacters(in: .whitespaces)
         guard t.hasSuffix("?") else { return nil }
+        if checkIns.contains(where: { t.lowercased().contains($0) }) { return nil }
         let sentence = t.dropLast().split(whereSeparator: { ".?!".contains($0) }).last.map(String.init) ?? ""
         var words = sentence.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
         while let w = words.first, ["so", "and", "but", "well", "hey", "um", "uh", "like", "just"].contains(w) { words.removeFirst() }
@@ -1096,5 +1100,13 @@ public enum FollowRepLimit {
     /// At most one per stretch of rep talk (until the prospect speaks again), and only after 15+ of their words.
     public static func allowed(repWordsSinceLastAsk: Int, followsThisStretch: Int) -> Bool {
         followsThisStretch == 0 && repWordsSinceLastAsk >= minWords
+    }
+}
+
+
+/// A line with a slot still unfilled ("[Name]", "[Day]") never shows (script rule: token fill).
+public enum TokenFill {
+    public static func hasOpenSlot(_ line: String) -> Bool {
+        line.range(of: #"\[[^\]]{1,30}\]"#, options: .regularExpression) != nil
     }
 }

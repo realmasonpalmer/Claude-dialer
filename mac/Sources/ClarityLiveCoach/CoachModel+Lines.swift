@@ -945,6 +945,11 @@ extension CoachModel {
         }
         var s = s
         s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
+        // Still an unfilled slot ([Day], [Firm] we don't know): never show it. Keep the current line (script rule).
+        if status == .live, kind == .reply, TokenFill.hasOpenSlot(s.say) {
+            CallTrace.event("suggestion.dropped", ["line": s.say, "why": "a [slot] couldn't be filled"], sug: id)
+            return
+        }
         if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
         if let old = pending, old.id != id {
             ActivityLog.add("Coach #\(old.id): queued line discarded (newer one shown)")
