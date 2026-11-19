@@ -311,13 +311,7 @@ struct CoachView: View {
         }
         .padding(.horizontal, margin)
         .padding(.vertical, gap)
-        .background(
-            // Command-J: a different line right now (no visible button needed).
-            Button("") { coach.newLine() }
-                .keyboardShortcut("j", modifiers: .command)
-                .opacity(0)
-                .allowsHitTesting(false)
-        )
+        // The space bar gets a fresh line during a call (see CoachModel.installSpaceKey).
         .onAppear {
             if !tourSeen, coach.status == .ready { tourStep = 0 } // first open: the welcome card
             campaigns.ensureSelectedActive()
@@ -883,7 +877,7 @@ struct CoachView: View {
                             .buttonStyle(.link).font(.caption2)
                             .help("Show the new line now. It shows by itself when you stop talking.")
                     }
-                    Button("Fresh line (Space or ⌘J)") { coach.newLine() }
+                    Button("Fresh line (Space)") { coach.newLine() }
                         .buttonStyle(.link).font(.caption2)
                         .help("Don't like this line? Get a new one right now.")
                 }
