@@ -848,7 +848,7 @@ struct CoachView: View {
             }
             HStack(spacing: 6) {
                 Text(cardLabel)
-                    .font(.subheadline.weight(.bold)) // the move: readable in one glance
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
                 // Which script row (or which opener) this line is, so the rep learns what works.
                 if showAll {
@@ -885,7 +885,7 @@ struct CoachView: View {
             lineText(inTour && coach.status == .ready ? TourSample.line
                  : coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, and upload your keys file." : "Getting your line ready...")
-                 : coach.suggestion.say, emphasized: !inTour && !lineIsSoft && coach.suggestion.rowTag == nil)
+                 : coach.suggestion.say, emphasized: false) // frozen for the model test: plain line
                 .font(lineFont)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -945,7 +945,7 @@ struct CoachView: View {
         case .opener: return "WHEN THEY PICK UP"
         case .screener: return "A ROBOT ANSWERED · SAY THIS"
         case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
-        case .reply: return LineLook.label(move: coach.suggestion.move, exact: coach.suggestion.rowTag != nil)
+        case .reply: return coach.suggestion.rowTag != nil ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
         }
     }
 
