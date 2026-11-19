@@ -80,15 +80,13 @@ enum Cadence {
     /// Spacing counts from their last call, so someone who fell behind gets their next step now,
     /// then waits the normal gap. Never several days in a row to catch up.
     static func isDue(_ id: String) -> Bool {
-        if pickedUp(id) { return false }
-        guard let s = step(for: id) else { return false }
-        if s.index == 0 { return true }
-        guard let since = daysSinceLastCall(id) else { return true }
-        return since >= gap(before: s.index)
+        // No call-day schedule: anyone on the list can be called any day. They stop after a pickup,
+        // when taken off the list, at the daily dial limit, or when called today (checked elsewhere).
+        !pickedUp(id)
     }
 
     /// All 5 call days used.
-    static func isFinished(_ id: String) -> Bool { step(for: id) == nil }
+    static func isFinished(_ id: String) -> Bool { false } // no 5-day limit: the plan never "finishes" on its own
 
     /// The most dials per person per day.
     static let dialsPerDay = 2
@@ -111,12 +109,7 @@ enum Cadence {
         let dialsToday = p.dials.filter { cal.isDateInToday($0) }.count
         if dialsToday >= dialsPerDay { return "Already called \(dialsToday) times today. The plan is \(dialsPerDay)." }
         if dialsToday > 0 { return nil } // the 2nd dial today
-        guard let s = step(for: id) else { return "All \(callDays.count) call days are done." }
-        if s.index > 0, !isDue(id), let since = daysSinceLastCall(id) {
-            let wait = gap(before: s.index) - since
-            return "Not due today. Their next call is in \(wait) day\(wait == 1 ? "" : "s")."
-        }
-        return nil
+        return nil // any day works: no call-day schedule
     }
 
     /// Still on the plan, just not due today (resting between call days, or already called today).
