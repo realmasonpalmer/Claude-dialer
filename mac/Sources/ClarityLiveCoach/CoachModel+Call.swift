@@ -672,7 +672,8 @@ extension CoachModel {
         prospectTurnsAfterFirstNo = 0
         closedOnSecondNo = false
         followsThisStretch = 0
-        frozenShownID = -1 // a summary left from the last call never blocks this one (round 2 #2)
+        frozenShownID = -1
+        installSpaceKey() // a summary left from the last call never blocks this one (round 2 #2)
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
         doNotCall = false
         timeline = SpeechTimeline()

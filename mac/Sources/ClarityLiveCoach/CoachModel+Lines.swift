@@ -78,8 +78,35 @@ extension CoachModel {
         return [first] + (second.map { [$0] } ?? [])
     }
 
+    /// Space bar during a live call: a fresh line from the whole call, word for word, on Sonnet, shown at once.
+    func freshLine() {
+        guard status == .live, !doNotCall, !voicemailActive, !callClosed else { return }
+        let latest = uncoached.trimmed.isEmpty ? (turns.last?.text ?? "") : uncoached.trimmed
+        CallTrace.event("manual", ["action": "space: fresh line", "was": suggestion.say])
+        ActivityLog.add("Space: fresh line from the whole call (Sonnet)")
+        holdLine = false
+        nextAskModel = "claude-sonnet-5-5"
+        freshLineIDs.insert(seq + 1) // the id ask() is about to use
+        ask(.reply, user: CoachPrompt.reply(turns: turns, latest: latest, calling: calling, details: recordDetails, style: callOpener,
+                                            openTimes: bookingText(), fullContext: true)
+            + "\nThe rep pressed for a fresh line. Read the whole call and give the best next line for this exact moment.")
+    }
+
+    /// Space bar while this app is in front and a call is live (not while typing in a text box).
+    func installSpaceKey() {
+        guard spaceMonitor == nil else { return }
+        spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.keyCode == 49, event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+                  self.status == .live, !(NSApp.keyWindow?.firstResponder is NSText) else { return event }
+            self.freshLine()
+            return nil // used: don't also type a space
+        }
+    }
+
     /// The rep asked for a different line right now. Skips the wait and the hold.
     func newLine(extra: String = "The rep asked for a different line than the last one.") {
+        // ⌘J and the space bar are one feature: the fresh line from the whole call.
+        if status == .live, !voicemailActive { freshLine(); return }
         CallTrace.event("manual", ["action": "Different line", "was": suggestion.say])
         guard status == .live, !voicemailActive else { return }
         let latest = uncoached.trimmed.isEmpty ? (turns.last { $0.speaker == .prospect }?.text ?? "") : uncoached.trimmed
@@ -496,7 +523,9 @@ extension CoachModel {
         CallTrace.event("memory.snapshot", ["summary": CoachPrompt.liveSummary, "summary_version": CallTrace.memVersion,
                                             "question_facts": CoachPrompt.questionFacts, "objection_facts": CoachPrompt.objectionFacts, "blocker_hints": CoachPrompt.blockerHints,
                                             "turns": turns.count], req: id)
-        let requested = (kind == .reply ? LiveCoach.client(key) : (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)).model
+        let override = kind == .reply ? nextAskModel : nil // a space-bar fresh line uses Sonnet
+        nextAskModel = nil
+        let requested = (kind == .reply ? LiveCoach.client(key, model: override) : (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)).model
         if kind == .reply { ActivityLog.add("Coach #\(id): asking \(ClaudeClient.displayName(requested))\(early == nil ? "" : " early, from their words so far")") }
         else { ActivityLog.add("Coach #\(id): \(kind) from \(ClaudeClient.displayName(requested))") }
         CallTrace.event("claude.request", [
@@ -509,7 +538,7 @@ extension CoachModel {
         specHeld = nil
         confirmedAt = nil
         // Live lines: Haiku, short and fast. Voicemails also Haiku, so the message is ready before the beep.
-        let client = kind == .reply ? LiveCoach.client(key)
+        let client = kind == .reply ? LiveCoach.client(key, model: override)
             : (kind == .voicemail ? CoachSpeed.fastest : CoachSpeed.current).client(apiKey: key)
         let system = self.system
         thinking = true
@@ -712,6 +741,12 @@ extension CoachModel {
                                                                                           lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate),
                                      repTextSinceQueued: repTextSinceAsk)
             : nil
+        if freshLineIDs.contains(id) { // the rep pressed space: show it now, whatever is on screen
+            freshLineIDs.remove(id)
+            CallTrace.event("suggestion.fresh", ["line": s.say, "why": "the rep asked for a fresh line"], sug: id)
+            show(s, id: id, kind: kind)
+            return
+        }
         let decision = CoachController.offer(isOpenerOrVoicemail: kind == .opener || kind == .voicemail, firstLine: shownID == 0,
                                              holdLine: holdLine, signals: signals(), staleReason: staleWhy)
         if case .drop(let why) = decision {

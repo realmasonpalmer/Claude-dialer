@@ -883,7 +883,7 @@ struct CoachView: View {
                             .buttonStyle(.link).font(.caption2)
                             .help("Show the new line now. It shows by itself when you stop talking.")
                     }
-                    Button("Different line ⌘J") { coach.newLine() }
+                    Button("Fresh line (Space or ⌘J)") { coach.newLine() }
                         .buttonStyle(.link).font(.caption2)
                         .help("Don't like this line? Get a new one right now.")
                 }

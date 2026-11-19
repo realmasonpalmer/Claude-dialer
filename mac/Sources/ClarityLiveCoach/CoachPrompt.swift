@@ -198,10 +198,10 @@ enum CoachPrompt {
     /// `turns` are finalized transcript only. `speculative`: `latest` is still-changing partial words
     /// (an early draft), so it's labeled as not final and never written into the call as fact.
     static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?,
-                      speculative: Bool = false, repLed: Bool = false, assumeYes: Bool = false) -> String {
+                      speculative: Bool = false, repLed: Bool = false, assumeYes: Bool = false, fullContext: Bool = false) -> String {
         // Short call (12 turns or fewer, or no summary yet): every finalized turn, word for word.
         // Longer: the summary of everything before, plus the last 10 turns word for word.
-        let start = CallMemoryRules.verbatimStart(totalTurns: turns.count, summaryCovers: summaryCoversTurns, hasSummary: !liveSummary.isEmpty)
+        let start = fullContext ? 0 : CallMemoryRules.verbatimStart(totalTurns: turns.count, summaryCovers: summaryCoversTurns, hasSummary: !liveSummary.isEmpty)
         let recent = Array(turns[start...].suffix(300))
         var history = recent.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }

@@ -173,6 +173,9 @@ final class CoachModel: ObservableObject {
     var followsThisStretch = 0
     var yesShowTask: Task<Void, Never>?
     var frozenShownID = -1
+    var nextAskModel: String?
+    var freshLineIDs: Set<Int> = []
+    var spaceMonitor: Any?
     var blockedLoggedID = 0
 
     /// The prospect agreed to the meeting in their own words: now it counts.
