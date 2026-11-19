@@ -479,7 +479,7 @@ public struct QuestionTracker: Sendable {
                                  "could", "would", "will", "should", "have", "has", "any", "which"]
 
     /// The questions in a turn: sentences ending in "?" (or starting like a question when no punctuation came through).
-    static func questions(in text: String) -> [String] {
+    public static func questions(in text: String) -> [String] {
         var out: [String] = []
         var current = ""
         for ch in text {
