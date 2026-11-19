@@ -664,7 +664,7 @@ extension CoachModel {
         phoneButtonGone = 0
         CoachPrompt.liveSummary = ""
         CoachPrompt.summaryCoversTurns = 0
-        summaryInFlight = false
+        summaryInFlight = false // a summary left from the last call never blocks this one
         screenerRetries = 0
         prospectNos = 0
         callClosed = false
@@ -677,7 +677,7 @@ extension CoachModel {
         installSpaceKey()
         SpaceKey.onFresh = { [weak self] in self?.freshLine() }
         SpaceKey.install()
-        SpaceKey.callLive = true // Space in Chrome = fresh line, during this call only // a summary left from the last call never blocks this one (round 2 #2)
+        SpaceKey.callLive = true // Space in Chrome = fresh line, during this call only
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
         doNotCall = false
         timeline = SpeechTimeline()
