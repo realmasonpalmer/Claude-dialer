@@ -1110,3 +1110,25 @@ public enum TokenFill {
         line.range(of: #"\[[^\]]{1,30}\]"#, options: .regularExpression) != nil
     }
 }
+
+
+/// Haiku vs Sonnet scoreboard math: is a difference real or luck?
+public enum ModelTest {
+    /// Two-proportion z score. |z| >= 1.96 is about 95% sure the difference is real.
+    public static func z(_ a: Int, of n1: Int, vs b: Int, of n2: Int) -> Double {
+        guard n1 > 0, n2 > 0 else { return 0 }
+        let p1 = Double(a) / Double(n1), p2 = Double(b) / Double(n2)
+        let p = Double(a + b) / Double(n1 + n2)
+        let se = (p * (1 - p) * (1 / Double(n1) + 1 / Double(n2))).squareRoot()
+        return se == 0 ? 0 : (p1 - p2) / se
+    }
+
+    /// "Haiku wins", "Sonnet wins" or "too close to call yet".
+    public static func verdict(_ a: Int, of n1: Int, vs b: Int, of n2: Int, names: (String, String)) -> String {
+        let score = z(a, of: n1, vs: b, of: n2)
+        if n1 < 20 || n2 < 20 { return "not enough calls yet (need 20+ each)" }
+        if score >= 1.96 { return "\(names.0) wins (95% sure)" }
+        if score <= -1.96 { return "\(names.1) wins (95% sure)" }
+        return "too close to call yet"
+    }
+}

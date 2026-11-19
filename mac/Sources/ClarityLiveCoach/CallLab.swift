@@ -41,6 +41,10 @@ struct CallRecord: Codable, Identifiable {
     var score: Int
     var summary: CallSummary?
     var liveModel: String? = nil // which model wrote the live lines (Haiku vs Sonnet test)
+    var linesShown: Int? = nil   // coach lines shown on the call
+    var linesUsed: Int? = nil    // of those, lines the rep actually said
+    var hadNo: Bool? = nil       // the prospect said no at least once
+    var pastFirstNo: Bool? = nil // the talk kept going after their first no
 
     var good: Bool { score >= 50 }
 }
@@ -99,7 +103,11 @@ final class CallLab: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: PrefKey.labAnalyzedAt) }
     }
 
+    /// The one lab, so any report (Next debug, exports) can include the model scoreboard.
+    static weak var shared: CallLab?
+
     init() {
+        defer { CallLab.shared = self }
         learning = UserDefaults.standard.object(forKey: PrefKey.learnFromCalls) as? Bool ?? true
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         records = (try? JSONDecoder().decode([CallRecord].self, from: Data(contentsOf: recordsFile))) ?? []
@@ -107,17 +115,42 @@ final class CallLab: ObservableObject {
         prune()
     }
 
-    /// Haiku vs Sonnet so far, answered calls only: calls, average score, reached the ask, meetings.
+    /// Haiku vs Sonnet, every answered call so far, side by side, with a winner once it's not luck.
     func modelComparison() -> String {
-        let parts = LiveCoach.testModels.map { m -> String in
-            let r = records.filter { $0.liveModel == m }
-            guard !r.isEmpty else { return "\(ClaudeClient.displayName(m)): no calls yet" }
-            let avg = r.map(\.score).reduce(0, +) / r.count
-            let ask = r.filter { $0.stages.contains("Closing") || $0.stages.contains("Goal reached") }.count
-            let met = r.filter(\.goal).count
-            return "\(ClaudeClient.displayName(m)): \(r.count) calls, score \(avg), reached ask \(ask * 100 / r.count)%, meetings \(met)"
+        struct T { var calls = 0, shown = 0, used = 0, ask = 0, withNo = 0, pastNo = 0, meetings = 0, score = 0 }
+        var t: [String: T] = [:]
+        for r in records {
+            guard let m = r.liveModel else { continue }
+            var x = t[m] ?? T()
+            x.calls += 1
+            x.shown += r.linesShown ?? 0
+            x.used += r.linesUsed ?? 0
+            if r.stages.contains("Closing") || r.stages.contains("Goal reached") { x.ask += 1 }
+            if r.hadNo == true { x.withNo += 1; if r.pastFirstNo == true { x.pastNo += 1 } }
+            if r.goal { x.meetings += 1 }
+            x.score += r.score
+            t[m] = x
         }
-        return "Model test: " + parts.joined(separator: " | ")
+        let h = t["claude-haiku-5-5"] ?? T(), s = t["claude-sonnet-5-5"] ?? T()
+        func pct(_ a: Int, _ b: Int) -> String { b == 0 ? "-" : "\(a)/\(b) (\(a * 100 / b)%)" }
+        func row(_ name: String, _ a: String, _ b: String) -> String {
+            name.padding(toLength: 22, withPad: " ", startingAt: 0) + a.padding(toLength: 20, withPad: " ", startingAt: 0) + b
+        }
+        let names = ("Sonnet", "Haiku")
+        return """
+        MODEL TEST (all answered calls so far; calls alternate Haiku and Sonnet)
+        \(row("", "Haiku 5.5", "Sonnet 5.5"))
+        \(row("Answered calls", "\(h.calls)", "\(s.calls)"))
+        \(row("Lines used (not ignored)", pct(h.used, h.shown), pct(s.used, s.shown)))
+        \(row("Reached the ask", pct(h.ask, h.calls), pct(s.ask, s.calls)))
+        \(row("Got past the first no", pct(h.pastNo, h.withNo), pct(s.pastNo, s.withNo)))
+        \(row("Meetings booked", pct(h.meetings, h.calls), pct(s.meetings, s.calls)))
+        \(row("Average call score", h.calls == 0 ? "-" : "\(h.score / h.calls)", s.calls == 0 ? "-" : "\(s.score / s.calls)"))
+        Winner, lines used: \(ModelTest.verdict(s.used, of: s.shown, vs: h.used, of: h.shown, names: names))
+        Winner, reached the ask: \(ModelTest.verdict(s.ask, of: s.calls, vs: h.ask, of: h.calls, names: names))
+        Winner, past the first no: \(ModelTest.verdict(s.pastNo, of: s.withNo, vs: h.pastNo, of: h.withNo, names: names))
+        Winner, meetings: \(ModelTest.verdict(s.meetings, of: s.calls, vs: h.meetings, of: h.calls, names: names))
+        """
     }
 
     func records(for campaign: Campaign) -> [CallRecord] {

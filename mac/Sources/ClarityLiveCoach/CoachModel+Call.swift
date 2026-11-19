@@ -667,6 +667,10 @@ extension CoachModel {
         screenerRetries = 0
         prospectNos = 0
         callClosed = false
+        callLinesShown = 0
+        callLinesUsed = 0
+        prospectTurnsAfterFirstNo = 0
+        closedOnSecondNo = false
         followsThisStretch = 0
         frozenShownID = -1 // a summary left from the last call never blocks this one (round 2 #2)
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
@@ -837,7 +841,9 @@ extension CoachModel {
         let record = CallRecord(
             campaignID: campaign.id, campaignVersion: campaign.version, openerID: usedOpener?.id,
             talkSeconds: talk, prospectTurns: prospectTurns, stages: Array(stagesSeen).sorted(),
-            goal: goalHit, score: score, liveModel: LiveCoach.callModel
+            goal: goalHit, score: score, liveModel: LiveCoach.callModel,
+            linesShown: callLinesShown, linesUsed: callLinesUsed,
+            hadNo: prospectNos > 0, pastFirstNo: prospectNos > 0 && prospectTurnsAfterFirstNo >= 2 && !closedOnSecondNo
         )
         let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         lab.add(record, campaign: campaign, transcript: transcript, person: calling)

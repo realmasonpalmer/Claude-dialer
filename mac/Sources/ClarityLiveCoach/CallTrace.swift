@@ -95,6 +95,7 @@ enum CallTrace {
         try? FileManager.default.copyItem(at: src, to: dir.appendingPathComponent("trace.jsonl"))
         try? readme.write(to: dir.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         try? ActivityLog.recent(lines: 600).write(to: dir.appendingPathComponent("activity-log.txt"), atomically: true, encoding: .utf8)
+        try? (CallLab.shared?.modelComparison() ?? "").write(to: dir.appendingPathComponent("model-test.txt"), atomically: true, encoding: .utf8)
         NSWorkspace.shared.open(dir)
     }
 

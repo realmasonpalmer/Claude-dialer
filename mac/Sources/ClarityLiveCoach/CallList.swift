@@ -414,6 +414,8 @@ final class CallList: ObservableObject {
         Up next: \(upNext().map { "\($0.record.name) at \($0.position)" } ?? "none")
         Called today: \(calledToday.count)
         Chrome blocked: \(chromeBlocked)
+
+        \(CallLab.shared?.modelComparison() ?? "")
         """
     }
 

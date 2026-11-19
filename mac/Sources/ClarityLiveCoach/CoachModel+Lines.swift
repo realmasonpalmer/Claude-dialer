@@ -233,9 +233,11 @@ extension CoachModel {
         }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
         // Two no's and a go: count their no's; two (or a no plus "yep, thanks") ends it politely, no AI.
+        if status == .live, prospectNos > 0 { prospectTurnsAfterFirstNo += 1 }
         if status == .live, !voicemailActive, Rejection.isNo(said) { prospectNos += 1 }
         if status == .live, !voicemailActive, Rejection.callOver(nosSoFar: prospectNos, latest: said), !callClosed {
             callClosed = true
+            closedOnSecondNo = prospectNos >= 2
             uncoached = ""
             coachTask?.cancel(); specTimer?.cancel(); pending = nil; yesBranch = nil; yesBranchTask?.cancel()
             let first = Screener.firstName(calling) ?? ""
@@ -957,6 +959,7 @@ extension CoachModel {
         }
         if status == .live, kind == .reply || kind == .opener, !s.say.isEmpty {
             CoachPrompt.shownLines.append(s.say)
+            if !s.nudge, s.say != LiveCoach.optOutLine { callLinesShown += 1 }
         }
         if status == .live {
             CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "move": s.move, "kind": "\(kind)",

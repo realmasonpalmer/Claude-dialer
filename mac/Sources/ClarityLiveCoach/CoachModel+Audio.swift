@@ -305,6 +305,7 @@ extension CoachModel {
             repSaidSinceShown += " " + text
             if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown) {
                 lineDelivered = true
+                callLinesUsed += 1
                 let conf = Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)
                 ActivityLog.add(String(format: "Coach: line delivered (meaning %.0f%% said)", conf * 100))
                 let ev = Delivery.evidence(line: suggestion.say, spoken: repSaidSinceShown)

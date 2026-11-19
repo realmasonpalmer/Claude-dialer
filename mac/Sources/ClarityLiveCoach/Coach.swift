@@ -166,6 +166,10 @@ final class CoachModel: ObservableObject {
     var screenerCallID = ""
     var prospectNos = 0 { didSet { CoachPrompt.prospectNos = prospectNos } }
     var callClosed = false
+    var callLinesShown = 0
+    var callLinesUsed = 0
+    var prospectTurnsAfterFirstNo = 0
+    var closedOnSecondNo = false
     var followsThisStretch = 0
     var yesShowTask: Task<Void, Never>?
     var frozenShownID = -1
