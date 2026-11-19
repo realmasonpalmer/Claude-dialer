@@ -1020,6 +1020,13 @@ public enum CoachController {
     public enum Offer: Equatable, Sendable { case show, queue, drop(String) }
     public enum Promote: Equatable, Sendable { case wait, show, drop(String) }
 
+    /// An ordinary new line waits while the prospect is talking, so the rep's eyes stay on them.
+    /// It shows when they stop. Exceptions live elsewhere and are untouched: openers, voicemail,
+    /// screeners, opt-out (the goodbye line), and a line the rep asked for with Space.
+    public static func waitForProspect(_ s: CoachSignals) -> Bool {
+        s.hasLine && s.prospectSpeaking && !s.doNotCall
+    }
+
     /// A finished line arrives. Openers, voicemails and the first line show at once; anything else
     /// only if the line on screen can be replaced now, else it waits in the queue.
     /// `staleReason`: why the rep has moved past this line since it was asked for (checked before showing too).
@@ -1027,13 +1034,14 @@ public enum CoachController {
                              staleReason: String? = nil) -> Offer {
         if isOpenerOrVoicemail || firstLine { return .show }
         if let why = staleReason { return .drop(why) }
+        if waitForProspect(signals) { return .queue }
         return !holdLine && CoachMachine.canReplace(signals) ? .show : .queue
     }
 
     /// A queued line, checked on each tick or when the rep's speech ends: wait, show, or drop as stale.
     public static func promote(holdLine: Bool, signals: CoachSignals, ageSeconds: Double, repWordsSinceQueued: Int,
                                repAskedSinceQueued: Bool, repTextSinceQueued: String) -> Promote {
-        guard !holdLine, CoachMachine.canReplace(signals) else { return .wait }
+        guard !holdLine, !waitForProspect(signals), CoachMachine.canReplace(signals) else { return .wait }
         if let why = QueuedLine.staleReason(ageSeconds: ageSeconds, repWordsSinceQueued: repWordsSinceQueued,
                                             repAskedSinceQueued: repAskedSinceQueued, repTextSinceQueued: repTextSinceQueued) {
             return .drop(why)

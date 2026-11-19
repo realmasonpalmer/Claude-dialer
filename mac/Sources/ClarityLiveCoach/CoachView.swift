@@ -848,7 +848,7 @@ struct CoachView: View {
             }
             HStack(spacing: 6) {
                 Text(cardLabel)
-                    .font(.caption2.weight(.semibold))
+                    .font(.subheadline.weight(.bold)) // the move: readable in one glance
                     .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
                 // Which script row (or which opener) this line is, so the rep learns what works.
                 if showAll {
@@ -882,10 +882,10 @@ struct CoachView: View {
                         .help("Don't like this line? Get a new one right now.")
                 }
             }
-            Text(inTour && coach.status == .ready ? TourSample.line
+            lineText(inTour && coach.status == .ready ? TourSample.line
                  : coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, and upload your keys file." : "Getting your line ready...")
-                 : coach.suggestion.say)
+                 : coach.suggestion.say, emphasized: !inTour && !lineIsSoft && coach.suggestion.rowTag == nil)
                 .font(lineFont)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -916,6 +916,13 @@ struct CoachView: View {
         coach.suggestion.nudge ? Font.system(size: 22, weight: .medium) : Font.system(size: 26, weight: .semibold)
     }
 
+    /// The line, with its one question full strength and the rest a bit lighter (only when clear-cut).
+    /// Exact script rows, nudges and the walkthrough stay plain.
+    private func lineText(_ say: String, emphasized: Bool) -> Text {
+        guard emphasized, let e = LineLook.emphasis(say) else { return Text(say) }
+        return Text(e.before).foregroundColor(.secondary) + Text(e.key) + Text(e.after).foregroundColor(.secondary)
+    }
+
     private var lineIsSoft: Bool { coach.suggestion.say.isEmpty || coach.suggestion.nudge }
 
     private func tagChip(_ text: String) -> some View {
@@ -938,7 +945,7 @@ struct CoachView: View {
         case .opener: return "WHEN THEY PICK UP"
         case .screener: return "A ROBOT ANSWERED · SAY THIS"
         case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
-        case .reply: return "SAY THIS"
+        case .reply: return LineLook.label(move: coach.suggestion.move, exact: coach.suggestion.rowTag != nil)
         }
     }
 

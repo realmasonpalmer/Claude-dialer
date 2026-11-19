@@ -1015,7 +1015,7 @@ extension CoachModel {
             if testLineCounted { callLinesShown += 1 }
         }
         if status == .live {
-            CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "move": s.move, "kind": "\(kind)",
+            CallTrace.event("suggestion.shown", ["line": s.say, "cue": s.cue, "stage": s.stage, "move": s.move, "label": LineLook.label(move: s.move, exact: s.rowTag != nil), "key_part": LineLook.emphasis(s.say)?.key ?? "", "kind": "\(kind)",
                                                  "replaced": suggestion.say, "replaced_delivered": lineDelivered], sug: id)
         }
         pending = nil
