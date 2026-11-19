@@ -48,6 +48,9 @@ enum CalledToday {
         var comeBackLater = 0
         var takenOff = 0
         var planDone = 0
+        var noMobile = 0      // Mobile numbers only is on, and they have no Mobile
+        var noNumber = 0      // no phone number in Salesforce
+        var otherTimeZone = 0 // waiting in another time zone
     }
 
     static func breakdown(_ listIDs: [String]) -> Breakdown {
@@ -59,6 +62,9 @@ enum CalledToday {
             else if RemovedList.contains(id) || DialHistory.isMaxed(id) { b.takenOff += 1 }
             else if Cadence.pickedUp(id) || Cadence.isFinished(id) { b.planDone += 1 }
             else if !Cadence.isDue(id) { b.comeBackLater += 1 }
+            else if MobileOnly.excluded(id) { b.noMobile += 1 }
+            else if CallHistory.noNumber(id) { b.noNumber += 1 }
+            else if !TimeZoneFilter.allows(id) { b.otherTimeZone += 1 }
         }
         return b
     }

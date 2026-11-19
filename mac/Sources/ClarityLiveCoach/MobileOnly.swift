@@ -9,6 +9,8 @@ enum MobileOnly {
     static func key(_ id: UUID) -> String { "mobileOnly-" + id.uuidString }
     static func isOn(for id: UUID) -> Bool { UserDefaults.standard.bool(forKey: key(id)) }
     static var on: Bool { campaignID.map(isOn(for:)) ?? false }
+    /// Turns it on or off for the call list in use now.
+    static func setOn(_ value: Bool) { if let id = campaignID { UserDefaults.standard.set(value, forKey: key(id)) } }
 
     /// People we looked up who have no Mobile.
     private static var noMobile: Set<String> {

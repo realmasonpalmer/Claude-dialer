@@ -1261,6 +1261,12 @@ struct CoachView: View {
                     .font(.callout.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 Button(showWhy ? "Hide why" : "Why?") { showWhy.toggle() }.buttonStyle(.link).font(.caption)
+                if why.noMobile > 0, why.noMobile * 2 >= why.total {
+                    // Most of the list is blocked by one setting: say so up front, with the fix.
+                    Text("\(why.noMobile) of \(why.total) people have no Mobile number, and Mobile numbers only is on.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("Call their other numbers too") { MobileOnly.setOn(false) }
+                }
                 if showWhy {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(why.total) people on this list:")
@@ -1268,6 +1274,9 @@ struct CoachView: View {
                     if why.comeBackLater > 0 { Text("• \(why.comeBackLater) come back on another day") }
                     if why.takenOff > 0 { Text("• \(why.takenOff) taken off (no answer, bad number, or not interested)") }
                     if why.planDone > 0 { Text("• \(why.planDone) finished the plan, or picked up") }
+                    if why.noMobile > 0 { Text("• \(why.noMobile) have no Mobile number (Mobile numbers only is on)") }
+                    if why.noNumber > 0 { Text("• \(why.noNumber) have no phone number in Salesforce") }
+                    if why.otherTimeZone > 0 { Text("• \(why.otherTimeZone) are in another time zone") }
                 }
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
