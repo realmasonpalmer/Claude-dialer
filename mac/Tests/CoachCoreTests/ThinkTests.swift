@@ -18,13 +18,15 @@ final class ThinkTests: XCTestCase {
     }
 
     func testFullLineOnRequestAndScriptRowsInFull() {
-        XCTAssertEqual(Think.primary(think: "Ask about notes.", say: say, exact: false, enabled: true, showFull: true), say)
+        XCTAssertEqual(Think.primary(think: "Who would be the best person to speak with?", say: say, exact: false, enabled: true, showFull: true), say)
+        XCTAssertTrue(Think.promptLine(enabled: true).contains("your team"))
         XCTAssertEqual(Think.primary(think: "Pitch it.", say: "We set up an AI notetaker...", exact: true, enabled: true, showFull: false),
                        "We set up an AI notetaker...")
     }
 
     func testBadThoughtFallsBackToSay() {
-        for bad in ["", "Ask", "<the rep's next move>", "SAY: hello there friend",
+        for bad in ["Explore whether Gong handles CRM updates.", "Who's the right person? Ask for a name.",
+                    "Ask what they'd want in it.", "", "Ask", "<the rep's next move>", "SAY: hello there friend",
                     "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen"] {
             XCTAssertEqual(Think.primary(think: bad, say: say, exact: false, enabled: true, showFull: false), say, bad)
         }
