@@ -108,9 +108,9 @@ struct SettingsPane: View {
             }
 
             section("Coach") {
-                Picker("How fast lines show up", selection: $speed) {
-                    ForEach(CoachSpeed.allCases) { Text($0.label).tag($0.rawValue) }
-                }
+                // No model picker while Haiku and Sonnet are being compared: calls alternate on their own.
+                Text("Live lines alternate Haiku and Sonnet call by call, to find the better one. See the Model test in Next debug.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
 
             section("Tools") {

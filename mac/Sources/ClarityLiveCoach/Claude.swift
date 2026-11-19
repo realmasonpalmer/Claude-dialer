@@ -142,7 +142,7 @@ enum CoachSpeed: String, CaseIterable, Identifiable {
     }
 
     static var current: CoachSpeed {
-        CoachSpeed(rawValue: UserDefaults.standard.string(forKey: PrefKey.coachSpeed) ?? "") ?? .balanced
+        .fastest // fixed while the model test runs: openers stay quick (Haiku), and no setting skews the test
     }
 
     func client(apiKey: String) -> ClaudeClient {
