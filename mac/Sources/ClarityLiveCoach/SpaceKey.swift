@@ -50,10 +50,32 @@ enum SpaceKey {
         guard callLive,
               event.getIntegerValueField(.keyboardEventKeycode) == 49, // space
               event.flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskShift]).isEmpty,
-              NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.hasPrefix("com.google.Chrome") == true,
-              !chromeEditable else { return event }
+              let app = NSWorkspace.shared.frontmostApplication,
+              app.bundleIdentifier?.hasPrefix("com.google.Chrome") == true,
+              !chromeEditable,
+              !typingNow(in: app.processIdentifier) else { return event }
         DispatchQueue.main.async { onFresh?() }
         return nil
+    }
+
+    /// Live check at the moment of the key press: is Chrome's focused thing a text box?
+    /// Catches the address bar and a box you clicked a split second ago. Unsure = let the space through.
+    private static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+    private static func typingNow(in pid: pid_t) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.05)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let el = focused, CFGetTypeID(el) == AXUIElementGetTypeID() else { return true }
+        let element = el as! AXUIElement
+        var role: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success,
+              let r = role as? String else { return true }
+        if textRoles.contains(r) { return true }
+        var editable: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, "AXEditable" as CFString, &editable) == .success,
+           (editable as? Bool) == true { return true }
+        return false
     }
 
     static func reenable() { if let tap { CGEvent.tapEnable(tap: tap, enable: true) } }
