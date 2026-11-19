@@ -182,6 +182,7 @@ extension CoachModel {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        SpaceKey.callLive = false
         // A possible opt-out still waiting when the call ends is an opt-out: write it now, for this lead (Fix 1b).
         if let p = pendingAmbiguousOptOut, !doNotCall {
             pendingAmbiguousOptOut = nil
@@ -673,7 +674,10 @@ extension CoachModel {
         closedOnSecondNo = false
         followsThisStretch = 0
         frozenShownID = -1
-        installSpaceKey() // a summary left from the last call never blocks this one (round 2 #2)
+        installSpaceKey()
+        SpaceKey.onFresh = { [weak self] in self?.freshLine() }
+        SpaceKey.install()
+        SpaceKey.callLive = true // Space in Chrome = fresh line, during this call only // a summary left from the last call never blocks this one (round 2 #2)
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
         doNotCall = false
         timeline = SpeechTimeline()
@@ -778,6 +782,7 @@ extension CoachModel {
 
     /// Clears everything about this prospect and gets the next opener ready.
     func nextCall() {
+        SpaceKey.callLive = false // Space is normal again everywhere
         // The call is over: the next person starts clean, before their opener is prepared below (round 3).
         doNotCall = false
         pendingAmbiguousOptOut = nil
