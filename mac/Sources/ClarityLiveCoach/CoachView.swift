@@ -877,7 +877,7 @@ struct CoachView: View {
                             .buttonStyle(.link).font(.caption2)
                             .help("Show the new line now. It shows by itself when you stop talking.")
                     }
-                    Button("Fresh line (Space)") { coach.newLine() }
+                    Button("For a fresh line (press space bar)") { coach.newLine() }
                         .buttonStyle(.link).font(.caption2)
                         .help("Don't like this line? Get a new one right now.")
                 }
