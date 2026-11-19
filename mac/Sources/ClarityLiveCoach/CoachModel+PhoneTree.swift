@@ -69,7 +69,7 @@ extension CoachModel {
             self.thinking = true
             var text = ""
             do {
-                try await CoachSpeed.best.client(apiKey: apiKey).stream(system: system, user: user) { text = $0 }
+                try await CoachSpeed.balanced.client(apiKey: apiKey).stream(system: system, user: user) { text = $0 }
             } catch {
                 if !Task.isCancelled { ActivityLog.problem("Phone tree advice failed: \(error.localizedDescription)") }
                 if self.seq == id { self.thinking = false }

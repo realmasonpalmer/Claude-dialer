@@ -3,7 +3,19 @@ import Foundation
 
 /// The live line: Haiku, fast and short, checked in code before it shows.
 enum LiveCoach {
-    static func client(_ key: String, model: String = "claude-haiku-5-5") -> ClaudeClient {
+    /// This call's live-line model: calls alternate Haiku and Sonnet, to compare them on real calls.
+    static var callModel = "claude-haiku-5-5"
+    static let testModels = ["claude-haiku-5-5", "claude-sonnet-5-5"]
+
+    /// The next call's model (alternates, and remembers across app restarts).
+    static func pickModelForNextCall() -> String {
+        let n = UserDefaults.standard.integer(forKey: "abCallCount")
+        UserDefaults.standard.set(n + 1, forKey: "abCallCount")
+        return testModels[n % testModels.count]
+    }
+
+    static func client(_ key: String, model: String? = nil) -> ClaudeClient {
+        let model = model ?? callModel
         var c = ClaudeClient(apiKey: key)
         c.model = model
         c.effort = "low"

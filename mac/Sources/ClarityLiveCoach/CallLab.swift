@@ -40,6 +40,7 @@ struct CallRecord: Codable, Identifiable {
     var goal: Bool
     var score: Int
     var summary: CallSummary?
+    var liveModel: String? = nil // which model wrote the live lines (Haiku vs Sonnet test)
 
     var good: Bool { score >= 50 }
 }
@@ -104,6 +105,19 @@ final class CallLab: ObservableObject {
         records = (try? JSONDecoder().decode([CallRecord].self, from: Data(contentsOf: recordsFile))) ?? []
         suggestions = (try? JSONDecoder().decode([ScriptSuggestion].self, from: Data(contentsOf: suggestionsFile))) ?? []
         prune()
+    }
+
+    /// Haiku vs Sonnet so far, answered calls only: calls, average score, reached the ask, meetings.
+    func modelComparison() -> String {
+        let parts = LiveCoach.testModels.map { m -> String in
+            let r = records.filter { $0.liveModel == m }
+            guard !r.isEmpty else { return "\(ClaudeClient.displayName(m)): no calls yet" }
+            let avg = r.map(\.score).reduce(0, +) / r.count
+            let ask = r.filter { $0.stages.contains("Closing") || $0.stages.contains("Goal reached") }.count
+            let met = r.filter(\.goal).count
+            return "\(ClaudeClient.displayName(m)): \(r.count) calls, score \(avg), reached ask \(ask * 100 / r.count)%, meetings \(met)"
+        }
+        return "Model test: " + parts.joined(separator: " | ")
     }
 
     func records(for campaign: Campaign) -> [CallRecord] {

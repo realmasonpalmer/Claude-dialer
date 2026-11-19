@@ -674,10 +674,13 @@ extension CoachModel {
         timeline = SpeechTimeline()
         CoachPrompt.blockerHints = BlockerBook.hints(campaign.id)
         ActivityLog.add("Call started: \(calling ?? "?") (try \(currentAttempts))")
+        // Haiku vs Sonnet test: each call alternates; the redial of the same person keeps the same model.
+        if currentAttempts <= 1 { LiveCoach.callModel = LiveCoach.pickModelForNextCall() }
+        CallTrace.event("ab.model", ["live_model": LiveCoach.callModel, "why": "calls alternate Haiku and Sonnet to compare them"])
         ActivityLog.add("Models this call: live lines \(ClaudeClient.displayName(LiveCoach.client("").model)), "
             + "opener \(ClaudeClient.displayName(CoachSpeed.current.client(apiKey: "").model)) (speed: \(CoachSpeed.current.label)), "
             + "voicemail \(ClaudeClient.displayName(CoachSpeed.fastest.client(apiKey: "").model)), "
-            + "fixes in code, then one Haiku 5.5 retry")
+            + "fixes in code, then one retry on the live model")
         if let key = currentAttemptKey { DialHistory.logDial(key) }
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
@@ -834,10 +837,11 @@ extension CoachModel {
         let record = CallRecord(
             campaignID: campaign.id, campaignVersion: campaign.version, openerID: usedOpener?.id,
             talkSeconds: talk, prospectTurns: prospectTurns, stages: Array(stagesSeen).sorted(),
-            goal: goalHit, score: score
+            goal: goalHit, score: score, liveModel: LiveCoach.callModel
         )
         let transcript = turns.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         lab.add(record, campaign: campaign, transcript: transcript, person: calling)
+        ActivityLog.add(lab.modelComparison())
     }
 
     func togglePause() {

@@ -4,7 +4,7 @@ import Foundation
 /// Streams one coaching answer from the Claude API. Raw HTTPS: there is no official Swift SDK.
 struct ClaudeClient {
     let apiKey: String
-    var model = "claude-opus-5-5"
+    var model = "claude-sonnet-5-5" // Opus is off for now
     var effort = "low" // fastest setting that keeps Opus-level quality
     /// Room for the answer (and thinking). Long scripts need much more than a live line.
     var maxTokens = 1500
@@ -130,13 +130,12 @@ extension ClaudeClient {
 
 /// How the live coach trades polish for speed. Pick in the gear menu.
 enum CoachSpeed: String, CaseIterable, Identifiable {
-    case best, balanced, fastest
+    case balanced, fastest // "best" (Opus) is off for now; a saved "best" falls back to balanced
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .best: return "Best lines (a bit slower)"
         case .balanced: return "Fast (best for most people)"
         case .fastest: return "Fastest"
         }
@@ -152,8 +151,6 @@ enum CoachSpeed: String, CaseIterable, Identifiable {
         c.idleTimeout = 10 // a live line that stalls is useless; the rep keeps the last one
         c.totalTimeout = 30
         switch self {
-        case .best:
-            c.model = "claude-opus-5-5" // always thinks; low effort keeps it short
         case .balanced:
             c.model = "claude-sonnet-5-5"
             c.thinking = ["type": "between_tools"] // Sonnet 5.5's way to turn thinking off

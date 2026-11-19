@@ -600,7 +600,7 @@ extension CoachModel {
                 return s
             }
         }
-        for model in ["claude-haiku-5-5"] { // one Haiku retry at most; no Sonnet on a live call (H4)
+        for model in [LiveCoach.callModel] { // one retry at most, on this call's model (H4)
             var text = ""
             let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
             CallTrace.event("claude.retry.request", ["model": model, "user_message": retry], req: id)
