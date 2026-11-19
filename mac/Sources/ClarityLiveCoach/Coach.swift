@@ -242,6 +242,11 @@ final class CoachModel: ObservableObject {
     var attempts: [String: Int] = [:]
     @Published var currentAttemptKey: String?
     @Published var lastCallAnswered = true
+    /// This call's record: dial, who answered, how it ended. Decided by rules, never the model.
+    var attempt: CallAttempt?
+    /// When the call really ended (top of endCall), for the 45 s conversation timer.
+    var callEndedAt: Date?
+    var attemptsReconciled = false
     var currentAttempts: Int { currentAttemptKey.flatMap { attempts[$0] } ?? 0 }
 
     /// After a first try nobody answered (or voicemail), offer to call right back.

@@ -166,6 +166,7 @@ extension CoachModel {
         }
         screenerRetries = 0
         screenerActive = true
+        attempt?.screenerStarted()
         coachTask?.cancel()
         thinking = false
         holdTask?.cancel()
@@ -361,6 +362,7 @@ extension CoachModel {
             if Screener.detects(said) { return } // still the screener talking
             // A real person picked up after the screener: back to the opener.
             screenerActive = false
+            attempt?.screenerEnded(personSaid: said)
             latestProspect = said
             if let opener = openerBeforeScreener {
                 // Not on the mutual "Hello?": wait for 0.8 s of quiet, so the rep isn't reading over the greeting.
@@ -1065,7 +1067,10 @@ extension CoachModel {
             // They often agree first ("Tuesday works") and the closing line follows: check their last words too.
             if let last = turns.last(where: { $0.speaker == .prospect }) { confirmGoalIfAgreed(last.text, checkingEarlierTurn: true) }
         }
-        if s.stage == "Voicemail" { sawVoicemail = true }
+        // The model's stage is a hint only: it never decides voicemail or pickups (rules do),
+        // so swapping Haiku and Sonnet can't change the numbers.
+        if !s.stage.isEmpty { attempt?.modelStage(s.stage) }
+        if s.stage == "Voicemail", !sawVoicemail { CallTrace.event("voicemail.model_hint", ["why": "the model said Voicemail; rules decide"]) }
     }
 
     func scheduleStillWithMe() {

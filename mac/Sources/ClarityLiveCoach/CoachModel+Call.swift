@@ -41,6 +41,13 @@ extension CoachModel {
 
     func tick() {
         guard active else { return }
+        if !attemptsReconciled {
+            attemptsReconciled = true
+            for a in CallAttemptStore.shared.orphans() {
+                ActivityLog.add("Call record recovered after the app quit: \(a.outcome?.rawValue ?? "?") (\(a.classificationSource))")
+                applyOutcome(a, live: false)
+            }
+        }
         checkBlock()
         // Midnight: yesterday's "called today" clears, so people due today come back on the list.
         let day = Calendar.current.component(.day, from: Date())
@@ -104,7 +111,11 @@ extension CoachModel {
         case .ready:
             waitingForNewCall = false // Chrome let go, so the next time it grabs the mic is a new call
         case .live:
-            if onCall { heardCallAudio = true }
+            if onCall {
+                heardCallAudio = true
+                // Chrome's Aircall: call audio means the call was placed. (The in-app phone holds its mic open, so not there.)
+                if !AircallPhone.isOn { markPlaced("call audio") }
+            }
             // Safety net: nobody has said a word for 90 s = the call is over (no real call is that quiet).
             let silentFor = Date().timeIntervalSince(lastWordsAt ?? callStartedAt)
             if silentFor > 90, !startedByHand {
@@ -182,6 +193,7 @@ extension CoachModel {
     /// The rep clicked End call (or Aircall/Chrome says it's over): reset for the next call.
     func endCall() {
         guard status != .ready else { return }
+        callEndedAt = Date() // the real hang-up time (not when the app finishes resetting)
         SpaceKey.callLive = false
         // A possible opt-out still waiting when the call ends is an opt-out: write it now, for this lead (Fix 1b).
         if let p = pendingAmbiguousOptOut, !doNotCall {
@@ -214,6 +226,7 @@ extension CoachModel {
             let words = turns.map { "\($0.speaker == .rep ? "Rep" : "Them"): \($0.text)" }.joined(separator: " | ")
             ActivityLog.add("Transcript: \(words.prefix(6000))")
         }
+        if quickFail { attempt?.badNumberDetected() }
         if quickFail, let key = currentAttemptKey {
             outcomeSaved.insert(String(key.prefix(15))) // nothing to rate
             let fails = DialHistory.logFailedConnect(key)
@@ -545,7 +558,7 @@ extension CoachModel {
             guard let self else { return }
             self.aircallCheck = nil
             guard self.status == .live, let onCall else { return }
-            if onCall { self.aircallSawCall = true }
+            if onCall { self.aircallSawCall = true; self.markPlaced("Aircall shows the call") }
             // Trust Aircall's "no call" once it has listed this call, or after 20 s if it never
             // lists it (some setups don't). But never while people are still talking.
             let age = Date().timeIntervalSince(self.callStartedAt)
@@ -636,7 +649,11 @@ extension CoachModel {
             currentAttemptKey = key
             attempts[key, default: 0] += 1
         }
-        touchpoints.log(.dial)
+        // The dial is counted when the call ends, and only if the phone confirmed it was placed.
+        attempt = CallAttempt(leadID: currentAttemptKey, campaign: touchpoints.currentCampaign)
+        callEndedAt = nil
+        if AudioProcess.aircallAppOnCall(in: AudioProcess.others()) || !Aircall.isSetUp { markPlaced(Aircall.isSetUp ? "Aircall app on a call" : "no Aircall check available") }
+        if let a = attempt { CallAttemptStore.shared.upsert(a) }
         callMessage = nil
         pendingDialSince = nil // this dial is now the live call
         BeepDetector.shared.reset()
@@ -690,7 +707,7 @@ extension CoachModel {
             + "opener \(ClaudeClient.displayName(CoachSpeed.current.client(apiKey: "").model)) (speed: \(CoachSpeed.current.label)), "
             + "voicemail \(ClaudeClient.displayName(CoachSpeed.fastest.client(apiKey: "").model)), "
             + "fixes in code, then one retry on the live model")
-        if let key = currentAttemptKey { DialHistory.logDial(key) }
+        attempt?.liveModel = LiveCoach.callModel
         // Calling someone new: the last person's follow-up card goes away.
         if let f = followUp, f.key != nil, f.key != currentAttemptKey { followUp = nil }
         status = .live
@@ -737,47 +754,58 @@ extension CoachModel {
     /// Stages that only happen with the actual prospect, not a front desk or assistant.
     static let prospectStages: Set<String> = ["Discovery", "Value", "Objection", "Closing", "Goal reached"]
 
-    /// Counts the call that just ended. Picked up = a real person talked (not voicemail, not
-    /// only a screener). Conversation = they kept talking: 3+ turns, or 45+ seconds after pickup.
-    func logTouchpoints(answered: Bool) {
-        if sawVoicemail { touchpoints.log(.voicemail) }
-        guard answered else { return }
-        touchpoints.log(.pickup)
-        NSSound(named: "Tink")?.play() // a soft sound: someone picked up
-        let prospectTurns = turns.filter { $0.speaker == .prospect }.count
-        let talked = firstProspectAt.map { Date().timeIntervalSince($0) } ?? 0
-        let conversation = prospectTurns >= 3 || talked >= 45
-        if conversation { touchpoints.log(.conversation) }
-        if goalHit { touchpoints.log(.meeting) }
-        // Only a front desk or assistant talked: not the prospect. Keep them on the plan, no checkbox.
-        let gatekeeperOnly = stagesSeen.contains("Gatekeeper") && stagesSeen.isDisjoint(with: Self.prospectStages)
-        guard let key = currentAttemptKey, !gatekeeperOnly else {
-            if gatekeeperOnly { ActivityLog.add("Front desk only for \(calling ?? "?"): stays on the plan, Picked Up Cold Call not checked") }
+    /// The phone confirmed the call was placed: it counts as a dial.
+    func markPlaced(_ why: String) {
+        guard var a = attempt, a.placedAt == nil, !a.finalized else { return }
+        a.placed()
+        attempt = a
+        CallAttemptStore.shared.upsert(a)
+        CallTrace.event("call.placed", ["why": why])
+    }
+
+    /// Decides how the call ended (once), saves it, and counts it. Returns: a real person answered.
+    @discardableResult
+    func finalizeAttempt() -> Bool {
+        guard var a = attempt else { return false }
+        attempt = nil
+        // finalize() only works once: a second call (any path) counts nothing again.
+        guard a.finalize(endedAt: callEndedAt ?? Date()) else { return a.outcome?.humanAnswered ?? false }
+        callEndedAt = nil
+        CallAttemptStore.shared.upsert(a)
+        CallTrace.event("call.outcome", ["outcome": a.outcome?.rawValue ?? "?", "why": a.classificationSource,
+                                         "placed": a.placedAt != nil, "conversation": a.conversation,
+                                         "model_stages": a.modelStages, "live_model": a.liveModel ?? ""])
+        ActivityLog.add("Call outcome for \(calling ?? a.leadID ?? "?"): \(a.outcome?.rawValue ?? "?") (\(a.classificationSource))")
+        applyOutcome(a, live: true)
+        return a.outcome?.humanAnswered ?? false
+    }
+
+    /// Counts one finished call everywhere from its record: My numbers, the call plan, Salesforce.
+    func applyOutcome(_ a: CallAttempt, live: Bool) {
+        PickedUpSync.flush() // anything still waiting from an earlier call
+        guard let o = a.outcome, a.placedAt != nil else { return } // never placed: not a dial
+        touchpoints.log(.dial, at: a.startedAt, campaign: a.campaign, lead: a.leadID)
+        if let key = a.leadID { DialHistory.logDial(key) }
+        if o == .voicemail, !(a.leadID.map { CallAttemptStore.shared.voicemailCountedToday(lead: $0, except: a.attemptID) } ?? false) {
+            touchpoints.log(.voicemail, at: a.startedAt, campaign: a.campaign, lead: a.leadID)
+        }
+        guard o.humanAnswered else { return }
+        touchpoints.log(.pickup, at: a.startedAt, campaign: a.campaign, lead: a.leadID)
+        if live { NSSound(named: "Tink")?.play() } // a soft sound: someone picked up
+        if a.conversation { touchpoints.log(.conversation, at: a.startedAt, campaign: a.campaign, lead: a.leadID) }
+        if live, goalHit { touchpoints.log(.meeting) }
+        // A gatekeeper (or wrong number) answered: they stay on the plan, no checkbox.
+        guard o.prospectReached, let key = a.leadID else {
+            if o == .humanGatekeeper { ActivityLog.add("Gatekeeper only for \(a.leadID ?? "?") (\(a.classificationSource)): stays on the plan") }
             return
         }
         DialHistory.logPickup(key) // the prospect picked up: the call plan stops for them
-        // A real conversation with the prospect: check "Picked Up Cold Call" in Salesforce.
-        guard conversation else {
-            ActivityLog.add("Short pickup for \(calling ?? key) (\(prospectTurns) turns, \(Int(talked)) s): Picked Up Cold Call not checked")
+        // A real conversation with the prospect: check "Picked Up Cold Call" in Salesforce (same rule as before).
+        guard a.conversation else {
+            ActivityLog.add("Short pickup for \(key): Picked Up Cold Call not checked")
             return
         }
-        guard Salesforce.objectFor(id: key) != nil else {
-            ActivityLog.problem("Couldn't check Picked Up Cold Call for \(calling ?? key): no Salesforce record on screen")
-            return
-        }
-        guard Salesforce.isConnected else {
-            ActivityLog.problem("Couldn't check Picked Up Cold Call: Salesforce isn't connected")
-            return
-        }
-        let who = calling ?? key
-        Task {
-            do {
-                try await Salesforce.markPickedUp(key)
-                ActivityLog.add("Picked Up Cold Call checked for \(who)")
-            } catch {
-                ActivityLog.problem("Couldn't check Picked Up Cold Call for \(who): \(error.localizedDescription)")
-            }
-        }
+        PickedUpSync.mark(key)
     }
 
     /// Clears everything about this prospect and gets the next opener ready.
@@ -793,9 +821,7 @@ extension CoachModel {
         pendingOptOutTask?.cancel()
         if status != .ready {
             // Reached a person = they spoke, and it wasn't a voicemail or only a screener.
-            let theySpoke = turns.contains { $0.speaker == .prospect }
-            lastCallAnswered = theySpoke && !sawVoicemail && !screenerActive
-            logTouchpoints(answered: lastCallAnswered)
+            lastCallAnswered = finalizeAttempt()
         }
         history = []
         historyIndex = nil

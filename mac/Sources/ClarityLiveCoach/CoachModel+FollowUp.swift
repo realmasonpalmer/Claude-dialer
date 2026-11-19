@@ -101,6 +101,7 @@ extension CoachModel {
         if !sawVoicemail { UserDefaults.standard.set(UserDefaults.standard.integer(forKey: PrefKey.voicemailsSeen) + 1, forKey: PrefKey.voicemailsSeen) }
         voicemailActive = true
         sawVoicemail = true
+        attempt?.voicemailDetected() // a voicemail rule (or the rep's Voicemail button) fired
         screenerActive = false
         coachTask?.cancel()
         thinking = false

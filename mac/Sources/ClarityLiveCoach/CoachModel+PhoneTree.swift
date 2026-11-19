@@ -12,6 +12,7 @@ extension CoachModel {
     func markPhoneTree() {
         badNumberThisCall = true
         phoneTreeThisCall = true
+        attempt?.phoneTreeDetected()
         coachTask?.cancel()
         thinking = false
         voicemailActive = false
@@ -109,6 +110,7 @@ extension CoachModel {
     /// by name with the first letters of their last name as keypad digits.
     func showPhoneTreeTips() {
         phoneTreeThisCall = true
+        attempt?.phoneTreeDetected()
         coachTask?.cancel()
         thinking = false
         let full = Screener.fullName(calling)
@@ -128,6 +130,7 @@ extension CoachModel {
 
     func markBadNumber() {
         badNumberThisCall = true
+        attempt?.badNumberDetected()
         coachTask?.cancel()
         thinking = false
         voicemailActive = false

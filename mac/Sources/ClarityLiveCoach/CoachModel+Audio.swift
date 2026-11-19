@@ -350,6 +350,16 @@ extension CoachModel {
             ActivityLog.add("Objection \(o.kind): \(c.from?.rawValue ?? "new") -> \(o.status.rawValue)")
         }
         CoachPrompt.objectionFacts = objectionTracker.promptText
+        // The call record hears it too (tagged by rules: a phone menu is not a person).
+        if var a = attempt {
+            if speaker == .prospect {
+                a.prospect(text, tag: PhoneTree.detects(text) ? .menu : .speech) // rules only (the model's HUMAN guess isn't used)
+            } else {
+                a.rep(text)
+            }
+            attempt = a
+            if a.heard.count + a.repSaid.count <= 3 || speaker == .prospect { CallAttemptStore.shared.upsert(a) } // saved, in case the app quits
+        }
         if let last = turns.last, last.speaker == speaker {
             turns[turns.count - 1].text += " " + text
         } else {
