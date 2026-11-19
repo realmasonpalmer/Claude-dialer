@@ -101,7 +101,12 @@ enum DialHistory {
     private static func save() {
         saveWork = nil
         guard let cache, let data = try? JSONEncoder().encode(cache) else { return }
-        saveQueue.async { try? data.write(to: file, options: .atomic) }
+        saveQueue.async {
+            do { try data.write(to: file, options: .atomic) } catch {
+                let why = error.localizedDescription
+                DispatchQueue.main.async { ActivityLog.problem("Call history: couldn't save (\(why))") }
+            }
+        }
     }
 
     private static func key(_ id: String) -> String { String(id.prefix(15)) }
