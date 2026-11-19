@@ -27,4 +27,4 @@ jobs:
         working-directory: mac
         run: |
           set -o pipefail
-          swift test --filter CoachCoreTests 2>&1 | tee test.log | tail -40; status=${PIPESTATUS[0]}; (grep -E "error:|failed \(" test.log | head -20) || true; exit $status
+          swift test --filter CoachCoreTests 2>&1 | tee test.log | tail -40; status=${PIPESTATUS[0]}; (grep -iE -B1 -A3 "error|fail|issue" test.log | grep -v " passed" | head -60) || true; exit $status
