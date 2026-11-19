@@ -281,7 +281,9 @@ final class CallLab: ObservableObject {
         var client = ClaudeClient(apiKey: key)
         if let model { client.model = model; client.maxTokens = 16000 }
         client.effort = effort
-        client.totalTimeout = 180
+        // It thinks quietly before writing (no words arrive meanwhile): allow a long silence, not the live 20 s.
+        client.idleTimeout = 150
+        client.totalTimeout = 300
         return try await client.json(system: system, user: user)
     }
 
