@@ -558,7 +558,7 @@ struct CoachView: View {
                 }
             }
         } label: {
-            Label("Calling: " + Self.short(name, max: 36), systemImage: "list.bullet.rectangle")
+            Label("Salesforce List: " + Self.short(name, max: 32), systemImage: "list.bullet.rectangle")
                 .labelStyle(.titleAndIcon)
                 .font(.callout.weight(.semibold)).lineLimit(1)
         }
