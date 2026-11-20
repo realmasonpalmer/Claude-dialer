@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// One screen for all campaigns. Each row: segment name, list size, Active or Paused.
-/// Up to 3 can be active. Click an active campaign and Start calling to work its list.
+/// One is active at a time. Click an active campaign and Start calling to work its list.
 struct CampaignSelectorView: View {
     @EnvironmentObject var store: CampaignStore
     @Environment(\.openWindow) private var openWindow
@@ -22,7 +22,7 @@ struct CampaignSelectorView: View {
                 Spacer()
                 Button("Show me how") { tourStep = 1 }.buttonStyle(.link)
             }
-            Text("A call list is people to call, plus what to say to them. You can have \(CampaignStore.maxActive) turned on at a time.")
+            Text("A call list is people to call, plus what to say to them. One call list is on at a time: turning one on turns the others off.")
                 .font(.callout).foregroundStyle(.secondary)
 
             List(selection: $selection) {
@@ -339,7 +339,7 @@ struct NewCampaignView: View {
             }
         }
         if let v = view { c.listObject = v.object; c.listViewID = v.id; c.listName = v.label }
-        c.active = store.activeCampaigns.count < CampaignStore.maxActive
+        c.active = store.activeCampaigns.isEmpty
         store.save(c)
         dismiss()
     }

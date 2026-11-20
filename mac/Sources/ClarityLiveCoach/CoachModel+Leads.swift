@@ -375,7 +375,12 @@ extension CoachModel {
     func setEastCoastFirst(_ on: Bool) {
         guard on != TimeZoneFilter.eastCoastFirst else { return }
         TimeZoneFilter.eastCoastFirst = on
-        ActivityLog.add("East Coast first: \(on ? "on" : "off")")
+        applyEastCoastFirst()
+    }
+
+    /// The East-first setting changed (here or in the call list editor): reorder the list.
+    func applyEastCoastFirst() {
+        ActivityLog.add("East Coast first: \(TimeZoneFilter.eastCoastFirst ? "on" : "off")")
         cancelAutoNext()
         leads.reorder()
         callList.refreshUpNext()

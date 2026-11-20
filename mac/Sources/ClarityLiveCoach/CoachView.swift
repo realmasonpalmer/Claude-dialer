@@ -255,14 +255,14 @@ struct CoachView: View {
             VStack(alignment: .leading, spacing: gap) {
             // The Chrome list is the default. This header only shows if a Salesforce list was picked in Settings and tools.
             if Salesforce.isConnected && coach.leads.selected != nil { leadHeader }
-            if showAll, coach.status != .ready {
+            if coach.status != .ready {
                 StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: true)
             }
             scriptCard.tourScrollSpot(.line)
-            if showAll { ScriptOutlineCard(coach: coach).tourScrollSpot(.script) }
+            ScriptOutlineCard(coach: coach).tourScrollSpot(.script)
             belowCard
             // Essential view: only between calls (during a call it's just the line).
-            if coach.statusRecordID != nil, showAll || coach.status == .ready {
+            if coach.statusRecordID != nil, coach.status == .ready {
                 RelationshipCard(coach: coach)
                     .id(coach.statusRecordID) // a fresh card per person: nothing picked carries over
                     .tourScrollSpot(.status)
@@ -288,8 +288,9 @@ struct CoachView: View {
                 .tourScrollSpot(.followUp)
             }
             if showAll, coach.status == .ready {
-                DailyGoalCard(touchpoints: coach.touchpoints, activeCampaigns: campaigns.activeCampaigns)
+                DailyGoalCard(touchpoints: coach.touchpoints, coach: coach, activeCampaigns: campaigns.activeCampaigns)
                     .tourScrollSpot(.goal)
+                DialingSwitches()
             }
             if showAll, showTouchpoints && coach.status == .ready {
                 TouchpointsCard(touchpoints: coach.touchpoints).tourScrollSpot(.numbers)
@@ -328,6 +329,7 @@ struct CoachView: View {
             }
         }
         .onDisappear { coach.activate(false) }
+        .onReceive(NotificationCenter.default.publisher(for: .eastCoastFirstChanged)) { _ in coach.applyEastCoastFirst() }
         // Also check whenever the rep switches back to the app.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await updater.check() }
@@ -460,20 +462,10 @@ struct CoachView: View {
                 Button(showMore ? "Show less" : "Show more") { showMore.toggle() }
                     .buttonStyle(.link).font(.caption)
                     .help(showMore ? "Back to just the person, the line and the buttons"
-                                   : "Also show your script, your numbers, the hour rings and the transcript")
+                                   : "Also show this hour, your numbers, Auto dial and Call twice")
             }
             HStack(spacing: 10) {
                 if coach.streak >= 3 { Text("🔥 \(coach.streak) in a row").font(.caption2.weight(.semibold)) }
-                if let start = coach.blockStartedAt, coach.breakUntil == nil {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        let left = max(0, Int(CoachModel.blockLength - context.date.timeIntervalSince(start)))
-                        Text(String(format: "Block: %d:%02d left", left / 60, left % 60)).font(.caption2.monospacedDigit())
-                    }
-                    Button("Stop") { coach.stopBlock() }.buttonStyle(.link).font(.caption2)
-                } else if coach.breakUntil == nil, coach.status == .ready {
-                    Button("Start a 50 min block") { coach.startBlock() }.buttonStyle(.bordered).controlSize(.small)
-                        .help("50 minutes of calling, then a 10 minute break")
-                }
                 if coach.streak > 0 {
                     Button("Reset streak") { coach.streak = 0; coach.lastDialAt = .distantPast }
                         .buttonStyle(.link).font(.caption2)
@@ -595,14 +587,6 @@ struct CoachView: View {
             } label: {
                 if picked == nil { Label("All time zones", systemImage: "checkmark") } else { Text("All time zones") }
             }
-            // Only matters with all time zones: east to west, so nobody gets called before 9 there.
-            Button {
-                coach.setEastCoastFirst(!TimeZoneFilter.eastCoastFirst)
-            } label: {
-                if TimeZoneFilter.eastCoastFirst { Label("Start in the East, go West", systemImage: "checkmark") }
-                else { Text("Start in the East, go West") }
-            }
-            .disabled(picked != nil)
             Divider()
             ForEach(CallZone.allCases) { zone in
                 Button {
@@ -613,7 +597,7 @@ struct CoachView: View {
                 }
             }
         } label: {
-            Label(picked.map { "\($0.label) time" } ?? (TimeZoneFilter.eastCoastFirst ? "East first" : "All time zones"),
+            Label(picked.map { "\($0.label) time" } ?? "All time zones",
                   systemImage: "globe.americas.fill")
                 .labelStyle(.titleAndIcon)
                 .font(.caption.weight(.semibold)).lineLimit(1)
@@ -621,7 +605,7 @@ struct CoachView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help(picked == nil
-              ? "Where to call: pick one time zone, or start in the East and go West"
+              ? "Where to call: pick one time zone, or all of them (East first is in Edit call list)"
               : "Only calling people in \(picked?.label ?? "") time. People with no state or US number in Salesforce stay on the list.")
     }
 
@@ -655,16 +639,8 @@ struct CoachView: View {
                 Divider()
             }
             Group {
-            Button("All call lists...") {
-                openWindow(id: "campaign-selector")
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            }
-            Divider()
-            // Only the active campaigns (up to 3): pick one to call its list.
-            if campaigns.activeCampaigns.isEmpty {
-                Text("No call lists are turned on. Click All call lists... to turn one on.")
-            }
-            ForEach(campaigns.activeCampaigns) { campaign in
+            // One list at a time: picking one turns the others off.
+            ForEach(campaigns.campaigns) { campaign in
                 Button {
                     switchTo(campaign)
                 } label: {
@@ -677,6 +653,10 @@ struct CoachView: View {
             }
             Divider()
             Button("Edit this call list...") { edit(campaigns.selected) }
+            Button("New call list...") {
+                openWindow(id: "campaign-selector")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
             }
             .disabled(coach.status != .ready) // switching scripts mid-call would change what the coach says
         } label: {
@@ -696,16 +676,16 @@ struct CoachView: View {
             if listViewCache.isEmpty { listViewCache = (try? await Salesforce.listViews()) ?? [] }
             let openID = listViewCache.first { $0.id.prefix(15) == key.prefix(15) || $0.developerName == key }?.id ?? key
             guard coach.status == .ready,
-                  let match = campaigns.campaigns.first(where: { $0.active && !$0.listViewID.isEmpty && $0.listViewID.prefix(15) == openID.prefix(15) }),
+                  let match = campaigns.campaigns.first(where: { !$0.listViewID.isEmpty && $0.listViewID.prefix(15) == openID.prefix(15) }),
                   match.id != campaigns.selectedID else { return }
             ActivityLog.add("Campaign: the open list matches \(match.name), switching script")
-            campaigns.selectedID = match.id
+            campaigns.selectOnly(match.id)
         }
     }
 
     /// Switches campaign (its script) and opens its Salesforce list in Chrome, so the app works that list.
     private func switchTo(_ campaign: Campaign) {
-        campaigns.selectedID = campaign.id // its list opens via onChange below
+        campaigns.selectOnly(campaign.id) // its list opens via onChange below
         coach.listDone = false
     }
 
@@ -851,12 +831,10 @@ struct CoachView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
                 // Which script row (or which opener) this line is, so the rep learns what works.
-                if showAll {
-                    if let tag = coach.suggestion.rowTag {
-                        tagChip(tag)
-                    } else if coach.kind == .opener, let name = coach.openerName {
-                        tagChip(name)
-                    }
+                if let tag = coach.suggestion.rowTag {
+                    tagChip(tag)
+                } else if coach.kind == .opener, let name = coach.openerName {
+                    tagChip(name)
                 }
                 Spacer()
                 if coach.thinking && coach.status == .live {
@@ -980,7 +958,7 @@ struct CoachView: View {
                         .buttonStyle(.link).font(.caption)
                 }
             }
-            if showAll { TranscriptSection(transcript: coach.transcript, open: $showTranscript) }
+            TranscriptSection(transcript: coach.transcript, open: $showTranscript)
         }
     }
 
@@ -1126,7 +1104,7 @@ struct CoachView: View {
                         "phone.fill", leadMode ? canCall : !coach.dialing,
                         { leadMode ? coach.dial() : coach.callOpenLead() })
             }
-            return (nextName.map { "Next: \($0)" } ?? "No one left", "phone.arrow.right",
+            return (nextName != nil ? "START CALLING" : "No one left", "phone.arrow.right",
                     leadMode ? (nextName != nil && !coach.dialing) : (nextEnabled && !coach.dialing),
                     { coach.nextLead() })
         }()
@@ -1143,7 +1121,7 @@ struct CoachView: View {
                 .disabled(leadMode ? !coach.leads.canGoBack : !backEnabled)
                 .help("Go back to the person before")
 
-                bigButton(go.title, icon: go.icon, action: go.action)
+                bigButton(go.title, icon: go.icon, green: go.title == "START CALLING", action: go.action)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!go.enabled)
 
@@ -1164,7 +1142,7 @@ struct CoachView: View {
         }
     }
 
-    private func bigButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func bigButton(_ title: String, icon: String, green: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
@@ -1174,7 +1152,7 @@ struct CoachView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 2)
         }
-        .buttonStyle(BrandPrimaryButton())
+        .buttonStyle(BrandPrimaryButton(color: green ? .green : Brand.blue))
     }
 
     private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -1369,7 +1347,7 @@ struct CoachView: View {
             return coach.nextStepName.map { "\($0) question" } ?? "New line"
         }
         switch coach.callList.state {
-        case .ready(let name, _, _): return nextDials ? "Call \(name)" : "Next: \(name)"
+        case .ready: return "START CALLING"
         case .needsList, .needsChromeSetting, .endOfList: return "Next"
         }
     }

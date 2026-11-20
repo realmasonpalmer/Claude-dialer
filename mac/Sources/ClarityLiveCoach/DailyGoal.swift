@@ -5,6 +5,7 @@ import SwiftUI
 /// Below: today's total and how many people are due on each active campaign.
 struct DailyGoalCard: View {
     @ObservedObject var touchpoints: Touchpoints
+    @ObservedObject var coach: CoachModel
     let activeCampaigns: [Campaign]
     @State private var due: [UUID: (people: Int, touches: Int)] = [:]
     /// Folded: the hour's count, time left and the bar. Open: today's total and what's due.
@@ -64,6 +65,7 @@ struct DailyGoalCard: View {
                         Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
+                blockRow(now: now)
                 if open {
                 Text(hit ? "Goal hit for this hour" : "\(Self.perHour - done) to go")
                     .font(.caption.weight(.semibold))
@@ -85,6 +87,29 @@ struct DailyGoalCard: View {
                 await refresh()
                 try? await Task.sleep(for: .seconds(600))
             }
+        }
+    }
+
+    /// The 50 minute block lives here with the hour's goal: one button to start it, then its time left.
+    @ViewBuilder private func blockRow(now: Date) -> some View {
+        if let until = coach.breakUntil {
+            let left = max(0, Int(until.timeIntervalSince(now)))
+            HStack(spacing: 8) {
+                Text(String(format: "Break: %d:%02d left", left / 60, left % 60)).font(.caption.monospacedDigit())
+                Button("Skip break") { coach.endBreak() }.buttonStyle(.link).font(.caption)
+                Spacer(minLength: 0)
+            }
+        } else if let start = coach.blockStartedAt {
+            let left = max(0, Int(CoachModel.blockLength - now.timeIntervalSince(start)))
+            HStack(spacing: 8) {
+                Text(String(format: "50 min block: %d:%02d left", left / 60, left % 60)).font(.caption.monospacedDigit())
+                Button("Stop") { coach.stopBlock() }.buttonStyle(.link).font(.caption)
+                Spacer(minLength: 0)
+            }
+        } else {
+            Button("Start a 50 min block") { coach.startBlock() }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help("50 minutes of calling, then a 10 minute break. Counts toward this hour's goal.")
         }
     }
 

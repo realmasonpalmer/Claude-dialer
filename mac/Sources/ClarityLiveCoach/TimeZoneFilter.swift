@@ -330,6 +330,11 @@ enum CallZone: String, CaseIterable, Identifiable {
 /// A person whose Salesforce record says where they are (state, or a US phone number) is left
 /// out when they're in another time zone. A record that says nothing stays on the list: there's
 /// nothing to filter on. Time zones are remembered, so the filter works the moment the app opens.
+extension Notification.Name {
+    /// The East-first setting was changed in the call list editor.
+    static let eastCoastFirstChanged = Notification.Name("eastCoastFirstChanged")
+}
+
 enum TimeZoneFilter {
     private static var d: UserDefaults { .standard }
 

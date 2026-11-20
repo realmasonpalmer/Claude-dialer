@@ -142,6 +142,8 @@ final class CampaignStore: ObservableObject {
         // First run with active campaigns: the one in use starts out active.
         if !campaigns.contains(where: \.active), let id = selectedID { setActive(id, true) }
         ensureSelectedActive()
+        // Older installs could have up to 3 on: keep only the one in use.
+        if activeCampaigns.count > 1, let id = selectedID { selectOnly(id) }
     }
 
     /// The campaign in use must be an active one. If it's paused, move to the first active campaign.
@@ -152,15 +154,24 @@ final class CampaignStore: ObservableObject {
 
     var selected: Campaign { campaigns.first { $0.id == selectedID } ?? campaigns.first ?? .clarityDiscovery }
 
-    /// Up to 3 campaigns are active at a time.
-    static let maxActive = 3
+    /// One campaign is active at a time.
+    static let maxActive = 1
     var activeCampaigns: [Campaign] { campaigns.filter(\.active) }
 
-    /// Turns a campaign on or off. Returns false if 3 are already active.
+    /// Makes this the one list in use: it turns on and every other list turns off.
+    func selectOnly(_ id: UUID) {
+        for other in campaigns where other.active && other.id != id {
+            var c = other; c.active = false; save(c)
+        }
+        if let c = campaigns.first(where: { $0.id == id }), !c.active { var c = c; c.active = true; save(c) }
+        selectedID = id
+    }
+
+    /// Turns a campaign on or off. Turning one on turns the others off.
     @discardableResult
     func setActive(_ id: UUID, _ on: Bool) -> Bool {
         guard var c = campaigns.first(where: { $0.id == id }) else { return false }
-        if on, !c.active, activeCampaigns.count >= Self.maxActive { return false }
+        if on { selectOnly(id); return true }
         c.active = on
         save(c)
         // Paused the campaign in use: switch to one that's still active, so its script doesn't linger.

@@ -51,12 +51,14 @@ extension View {
 /// The one strong action on screen (Call, Redial). Always blue, even when the window isn't in
 /// front (the Mac's own blue buttons turn gray then, and the coach floats over Salesforce).
 struct BrandPrimaryButton: ButtonStyle {
+    var color: Color = Brand.blue
     func makeBody(configuration: Configuration) -> some View {
-        Look(configuration: configuration)
+        Look(configuration: configuration, color: color)
     }
 
     private struct Look: View {
         let configuration: Configuration
+        let color: Color
         @Environment(\.isEnabled) private var enabled
 
         var body: some View {
@@ -64,7 +66,7 @@ struct BrandPrimaryButton: ButtonStyle {
                 .foregroundStyle(Color.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Brand.blue.opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.35),
+                .background(color.opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.35),
                             in: RoundedRectangle(cornerRadius: 8))
                 .opacity(enabled ? 1 : 0.7)
                 .contentShape(RoundedRectangle(cornerRadius: 8))
