@@ -59,8 +59,8 @@ enum Tour {
         TourStep(spot: .segment, part: "Pick who and what", title: "Script: what to say",
                  text: "Pick a script. No script yet? Open this menu and click Write a new script with Claude. It reads who's on your list and writes everything in 1 to 3 minutes. Edit Script changes it any time.",
                  corner: 10, pad: 6),
-        TourStep(spot: .phone, part: "Pick who and what", title: "Your number and Options",
-                 text: "Calls go out from this Aircall number. Options holds Auto Dial (it calls the next person by itself), Call Twice, Mobile Numbers Only, the number texts go out from, and time zones (East Coast first, or one zone only).",
+        TourStep(spot: .phone, part: "Pick who and what", title: "Your numbers and calling options",
+                 text: "Pick the Aircall number calls go out from, and the one texts go out from. Auto dial calls the next person by itself. Call twice tries again if they don't pick up. Mobile only skips office lines. On the right: East Coast first, or one time zone only.",
                  corner: 10, pad: 6),
         // 3. Make calls
         TourStep(spot: .call, part: "Make calls", title: "START CALLING",
