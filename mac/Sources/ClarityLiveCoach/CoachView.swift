@@ -554,11 +554,6 @@ struct CoachView: View {
                     Spacer(minLength: 0)
                     settingsMenu.tourSpot(.gear)
                 }
-                Divider().overlay(Brand.edge)
-                HStack(alignment: .center, spacing: 8) {
-                    headerField("ACTIVE SCRIPT") { campaignMenu }.tourSpot(.segment)
-                    Spacer(minLength: 0)
-                }
             }
             .padding(16)
             .background(Brand.card, in: RoundedRectangle(cornerRadius: 16))
@@ -746,7 +741,7 @@ struct CoachView: View {
             Button("Edit this script...") { edit(campaigns.selected) }
             Button("Write a new script with Claude...") { showScriptMaker = true }
             Divider()
-            Text("Switch script")
+            Text("Switch script (using \(campaigns.selected.name))")
             ForEach(campaigns.campaigns) { c in
                 Button {
                     switchTo(c)
@@ -767,7 +762,8 @@ struct CoachView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(coach.status != .ready)
-        .help("Edit this script, type it by hand, switch scripts, or write a new one")
+        .help("Using: \(campaigns.selected.name). Edit it, type it by hand, switch scripts, or write a new one")
+        .tourSpot(.segment)
     }
 
     /// What to say: pick a script, edit it, or have Claude write a new one. Who to call is the

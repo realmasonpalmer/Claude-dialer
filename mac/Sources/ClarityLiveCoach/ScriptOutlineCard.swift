@@ -85,7 +85,8 @@ struct ScriptOutlineCard: View {
     private static let firstParts = 4
 
     var body: some View {
-        let all = parts
+        // The opener already shows big on the coach card, so the fold-out skips it (the full view keeps it).
+        let all = fullOnly ? parts : parts.filter { $0.id != "opening" }
         let shown = (fullOnly || showAll) ? all : Array(all.prefix(Self.firstParts))
         VStack(alignment: .leading, spacing: 12) {
             if !fullOnly {
