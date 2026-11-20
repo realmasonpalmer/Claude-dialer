@@ -9,6 +9,8 @@ struct SetupView: View {
     @EnvironmentObject var coach: CoachModel
     var onAudioCheck: () -> Void
     var onKeys: () -> Void
+    /// Shown inside Settings (a fold-out section): no Done button, shorter.
+    var embedded = false
 
     @AppStorage(PrefKey.repName) private var repName = ""
     @AppStorage(PrefKey.audioCheckPassed) private var audioCheckPassed = false
@@ -271,7 +273,7 @@ struct SetupView: View {
         let done = list.filter(\.done).count
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Set up").font(.title2.weight(.semibold))
+                if !embedded { Text("Set up").font(.title2.weight(.semibold)) }
                 Text(done == list.count ? "All set. Come back here any time to change something."
                                         : "\(done) of \(list.count) done. Do these once.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -289,14 +291,16 @@ struct SetupView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                HStack {
-                    Spacer()
-                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                if !embedded {
+                    HStack {
+                        Spacer()
+                        Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                    }
                 }
             }
-            .padding(20)
+            .padding(embedded ? 4 : 20)
         }
-        .frame(width: 380, height: 640)
+        .frame(width: embedded ? nil : 380, height: embedded ? 440 : 640)
         .sheet(isPresented: $showDrop, onDismiss: { refresh += 1 }) { VoicemailDropSetupView() }
         .sheet(item: $teamKeys, onDismiss: { refresh += 1 }) { mode in
             TeamKeysView(mode: mode).environmentObject(coach)

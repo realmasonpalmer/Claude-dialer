@@ -388,7 +388,7 @@ struct CoachView: View {
         .sheet(isPresented: $showSetup) {
             SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
         }
-        .sheet(isPresented: $showSettings) { SettingsPane(updater: updater).environmentObject(coach) }
+        .sheet(isPresented: $showSettings) { SettingsPane(updater: updater, onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach) }
         .sheet(isPresented: $showAircall) { AircallSetupView() }
         .sheet(isPresented: $showDropSetup) { VoicemailDropSetupView() }
         .animation(.easeInOut(duration: 0.2), value: coach.status)
@@ -741,8 +741,6 @@ struct CoachView: View {
                     .disabled(coach.status != .ready)
                 Divider()
             }
-            Button(setupLabel) { showSetup = true }
-            Button(Prefs.voicemailDropOn ? "Voicemail drop (on)..." : "Voicemail drop...") { showDropSetup = true }
             Button("Settings...") { showSettings = true }
             Button("Show me around") { tourStep = 0 }
                 .disabled(coach.status != .ready)

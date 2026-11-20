@@ -6,6 +6,8 @@ import SwiftUI
 struct VoicemailDropSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(PrefKey.voicemailDropOn) private var on = false
+    /// Shown inside Settings (a fold-out section): no title or Done button, shorter.
+    var embedded = false
     @State private var kind = 0
     @State private var copied = false
     @State private var checking = false
@@ -24,7 +26,7 @@ struct VoicemailDropSetupView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Voicemail drop").font(.title2.weight(.semibold))
+                if !embedded { Text("Voicemail drop").font(.title2.weight(.semibold)) }
                 Text("Record one message once. On a voicemail day, the app drops it for you after the beep. You skip about 20 seconds of talking on every voicemail.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
@@ -89,14 +91,16 @@ struct VoicemailDropSetupView: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack {
-                    Spacer()
-                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                if !embedded {
+                    HStack {
+                        Spacer()
+                        Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                    }
                 }
             }
-            .padding(20)
+            .padding(embedded ? 4 : 20)
         }
-        .frame(width: 400, height: 640)
+        .frame(width: embedded ? nil : 400, height: embedded ? 440 : 640)
     }
 
     private func step<Content: View>(_ number: Int, _ title: String, @ViewBuilder content: () -> Content) -> some View {
