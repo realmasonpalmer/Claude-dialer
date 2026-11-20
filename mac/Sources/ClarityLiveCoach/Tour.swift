@@ -70,7 +70,7 @@ enum Tour {
                  text: "The card shows a short thought to say, from your script. Command-Shift-L shows the full line. The space bar gets a fresh line. The arrow by the title folds the card.",
                  corner: 14, pad: 4),
         TourStep(spot: .script, part: "Make calls", title: "Your whole script",
-                 text: "View Full Script shows everything your script says, section by section. To change it, use Edit Script at the top.",
+                 text: "Open My script with the arrow to read your whole script, section by section. The part the call is on is highlighted. To change it, use Edit Script at the top.",
                  corner: 10, pad: 4),
         TourStep(spot: .followUp, part: "Make calls", title: "After the call",
                  text: "Voicemails get a text and a LinkedIn request, sent by themselves. Pick how the call went here so Salesforce stays up to date.",

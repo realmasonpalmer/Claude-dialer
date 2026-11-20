@@ -269,6 +269,7 @@ struct CoachView: View {
             // Show less (between calls): no line card or script, just the call block and your numbers.
             // During a call the line always shows: it's what to say.
             if showAll || coach.status != .ready { scriptCard.tourScrollSpot(.line) }
+            if showAll { ScriptOutlineCard(coach: coach).tourScrollSpot(.script) }
             belowCard
             // Essential view: only between calls (during a call it's just the line).
             if coach.statusRecordID != nil, coach.status == .ready {
@@ -1003,12 +1004,6 @@ struct CoachView: View {
                     .foregroundStyle(Color.green)
                     .transition(.opacity)
             }
-            Divider().overlay(Brand.edge)
-            HStack {
-                Spacer(minLength: 0)
-                Button("View Full Script") { showFullScript = true }.buttonStyle(.brandLink).font(.caption)
-            }
-            .tourSpot(.script)
             }
         }
         .padding(16)
