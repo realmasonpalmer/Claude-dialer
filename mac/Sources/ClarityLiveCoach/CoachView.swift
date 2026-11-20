@@ -1459,8 +1459,12 @@ struct CoachView: View {
             let name = Salesforce.isPlaceholderName(d.name) ? (d.company ?? d.name) : d.name
             return (name, d.title, d.company, coach.leads.index + 1, coach.leads.rows.count)
         }
-        guard coach.calling != nil, currentName != "them" else { return nil }
         let records = coach.callList.records
+        guard coach.calling != nil, currentName != "them" else {
+            // No record open yet (app just opened, or Chrome is on the list page): the next person on the list.
+            guard coach.status == .ready, let next = coach.callList.upNextInfo else { return nil }
+            return (next.name, nil, nil, next.position, records.count)
+        }
         return (currentName, coach.recordTitle, coach.recordCompany, coach.callList.currentIndex().map { $0 + 1 }, records.count)
     }
 

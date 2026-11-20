@@ -87,6 +87,16 @@ extension CoachModel {
                 }
             }
         }
+        // Any other spelling of their name ("[Prospect first name]", "{Contact's name}"): their first name, or
+        // "there" before anyone is open. Never a bracket on the card. The rep's and company slots are left alone.
+        if let re = try? NSRegularExpression(pattern: #"[\[{]([^\]}]*\bname\b[^\]}]*)[\]}]"#, options: .caseInsensitive) {
+            for m in re.matches(in: t, range: NSRange(t.startIndex..., in: t)).reversed() {
+                guard let whole = Range(m.range, in: t), let inner = Range(m.range(at: 1), in: t) else { continue }
+                let label = t[inner].lowercased()
+                if ["your", "rep", "my ", "sdr", "caller", "company", "firm", "account"].contains(where: { label.contains($0) }) { continue }
+                t.replaceSubrange(whole, with: first)
+            }
+        }
         return t
     }
 
