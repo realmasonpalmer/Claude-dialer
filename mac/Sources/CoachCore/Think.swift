@@ -24,7 +24,8 @@ public enum Think {
           - When a question is the wrong move, a short instruction instead: they asked what the call is about
             -> "Explain the free AI health check." They said no again -> "Thank them and end the call." They are
             ending the call -> "Thank them. Don't push." Never both a question and an instruction in one THINK.
-          - Answer their direct question first. Respect a no: no discovery question after they decline.
+          - Answer their direct question first. An objection ("we use Gong", "no time") can get one relevant question.
+            A clear no ("not interested", "not a fit") gets no sales question: acknowledge, at most offer an easy exit.
           - Never repeat a question they already answered, declined or deflected. Skip what the call already established.
           - Never vague coaching words: no "explore", "probe", "find the gap", "handle the objection", "qualify".
           - Everyday words: "your team", "call notes", "follow-ups". Never "your reps".
@@ -63,13 +64,16 @@ public enum Think {
         guard valid(t) != nil else { return ["THINK isn't usable: one clear move, 2 to 16 simple words, no jargon, no question plus instruction"] }
         var out: [String] = []
         let isQuestion = t.hasSuffix("?")
-        let redirects: Set<String> = ["wrong person", "call later"] // a question is the right move for these
         // They're done: no question to ask.
         if isQuestion, [.ending, .optOut].contains(intent) {
             out.append("THINK asks a question but they're ending the call: thank them, don't push")
         }
-        if isQuestion, intent == .rejection, !redirects.contains(objectionKind ?? "") {
-            out.append("THINK asks a question after they declined: acknowledge it, don't keep discovering")
+        // A clear no: no sales question. The only question allowed is the exit itself (move close: "Can I send one email?").
+        if isQuestion, intent == .rejection, move != "close" {
+            out.append("THINK asks a question after a clear no: acknowledge it, at most offer an easy exit")
+        }
+        if intent == .rejection, ["discover", "clarify", "objection"].contains(move) {
+            out.append("MOVE \(move) after a clear no: acknowledge or close instead")
         }
         // A direct question from them comes first: THINK must answer it, not discover.
         if intent == .question, move == "discover" {

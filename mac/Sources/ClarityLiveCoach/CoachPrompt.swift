@@ -34,7 +34,9 @@ enum CoachPrompt {
 
         What decides the next move, in this order (the first one that applies wins):
         1. An opt-out or a request not to be called: end it, no more questions.
-        2. They're ending the call, or they've said no: acknowledge, don't push. A second no ends the call.
+        2. They're ending the call, or a clear refusal ("not interested", "no thanks", "not a fit"): acknowledge it,
+           no sales question. At most offer an easy exit ("Can I send one short email and leave it there?").
+           A second no ends the call.
         3. A direct question from them: answer it plainly.
         4. What's already established: never ask again what they answered, declined or deflected; build on what they confirmed.
         5. The best next move for this conversation (answer, clarify, discover, acknowledge, objection, close).
@@ -88,12 +90,14 @@ enum CoachPrompt {
         - Value (STAGE: Value): one sentence tying the problem they named to what the campaign offers, then a question.
         - Discovery: one question at a time. Follow up on their answer before moving on. Get the cost of the problem in their words: time, money, risk.
         - Keep them talking: repeat their last few words as a question, or name what they seem to feel ("Sounds like that rollout was frustrating").
-        - Early objections are usually reflexes, not decisions. Lower the pressure and ask one question. If they repeat it firmly, respect it.
+        - An objection or a reflex brush-off ("we use another tool", "no time", "send me info", "we're all set") is not a
+          refusal: acknowledge it in a few words, then one relevant question. If they push back again, respect it.
+          A clear refusal ("not interested", "no thanks", "not a fit") is different: no sales question (see the order above).
         - Ask for the objective as soon as there is real interest. Don't over-discover. Make it easy: specific, short, low commitment.
         - Use their first name at most once or twice. Silence is fine; don't fill it.
         - Never suggest "Did I catch you at a bad time?" It tests as the worst opener.
         - Never pitch features on a cold call. Earn the next step.
-        - "We're all good", "all taken care of", "we're set", "we already have someone": don't accept it and don't exit.
+        - "We're all good", "all taken care of", "we're set", "we already have someone" (a brush-off, not a refusal): don't accept it and don't exit.
           Acknowledge it warmly, then go straight for a meeting anyway, framed as a free health check or audit of
           their systems: a second set of eyes, no cost, they keep whatever they learn. Use the script's length for
           it if it gives one. For example: "Love that. Most teams who say that still find a few gaps. Worth a free
@@ -229,7 +233,8 @@ enum CoachPrompt {
         let priority: String = {
             switch intent {
             case .question: return "PRIORITY NOW: they asked a direct question. MOVE answer: answer it plainly in the first sentence. No discovery question in this line.\n"
-            case .rejection: return "PRIORITY NOW: they declined or pushed back. MOVE acknowledge or close. No discovery question. After a second no, thank them and end.\n"
+            case .rejection: return "PRIORITY NOW: they clearly said no. MOVE acknowledge or close. No sales question; at most offer an easy exit. After a second no, thank them and end.\n"
+            case .objection: return "PRIORITY NOW: they raised an objection, not a refusal. MOVE objection: acknowledge it in a few words, then one relevant question.\n"
             case .ending, .optOut: return "PRIORITY NOW: they're ending the call. MOVE close: thank them briefly. No more questions.\n"
             case .other: return ""
             }
@@ -260,7 +265,7 @@ enum CoachPrompt {
 
         \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
         \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked by simple rules from the transcript):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked by simple rules from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
-        \(priority)\(shown)\(prospectNos == 1 ? "They have said no once. One short respectful question, then accept their answer.\n" : "")
+        \(priority)\(shown)\(prospectNos == 1 ? "They have clearly said no once. No more sales questions: acknowledge it, at most offer an easy exit.\n" : "")
         The tracked questions and objections above come from simple rules on the transcript. If the transcript
         shows something different, the transcript is the truth.
         The rep's actual words are the truth; the script is the guide. If the rep already covered something in
@@ -271,7 +276,8 @@ enum CoachPrompt {
         claim the prospect's role, title or decisions ("I'm the one who decides"). If unsure who decides, ask.
         A pain is theirs only if they said it. Never state a problem as theirs or as what "usually" bothers teams when
         they haven't said it. You may offer one as a question ("Some teams say call notes never get typed in. True for you?").
-        Two no's and a go: after one no, one short respectful question, then accept. After two no's, thank them and end.
+        A clear no: acknowledge it, no sales question, at most offer an easy exit. A second no: thank them and end.
+        An objection is not a no: acknowledge it, then one relevant question.
         What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most. End with one
         question when the move is to learn something (discover, clarify, objection); an answer, acknowledgment or
         close can end plainly. Use the script's wording when a row truly fits; otherwise write what this

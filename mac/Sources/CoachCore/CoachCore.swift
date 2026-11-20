@@ -463,10 +463,20 @@ public struct ScriptAnswers: Sendable {
         case .optOut, .ending: return (nil, "they're ending the call: higher-priority rule")
         case .question: return (nil, "they asked a direct question: answer it first, not a script row")
         case .rejection:
-            // Only an objection row for this same objection may answer a no.
+            // A clear no gets no sales question: only a row that just acknowledges (or offers one email) may answer it.
             let kind = ObjectionTracker.detect(said)
             guard kind != nil, ObjectionTracker.detect(phrase) == kind else {
                 return (nil, "they declined; the matched row (\(entry.id)) isn't about that")
+            }
+            let low = entry.say.lowercased()
+            if entry.say.contains("?"), !low.contains("email") {
+                return (nil, "they clearly declined; row \(entry.id) asks another sales question")
+            }
+        case .objection:
+            // An objection may get the row written for that same objection.
+            let kind = ObjectionTracker.detect(said)
+            guard kind != nil, ObjectionTracker.detect(phrase) == kind else {
+                return (nil, "they raised an objection; the matched row (\(entry.id)) isn't about it")
             }
         case .other: break
         }
@@ -1207,7 +1217,10 @@ public enum ModelTest {
 /// What the prospect's turn is doing, decided in code before any line is picked. Higher-priority
 /// situations (opt-out, ending, a direct question, a no) outrank the script's stage.
 public enum ConversationIntent: String, Sendable {
-    case optOut, ending, question, rejection, other
+    /// rejection = a clear refusal ("not interested", "no thanks", "not a fit"): no more sales questions.
+    /// objection = a concern or reflex brush-off ("we use Gong", "no time", "send me info", "we're good"):
+    /// one relevant follow-up is fine.
+    case optOut, ending, question, rejection, objection, other
 
     static let questionStarts: Set<String> = ["what", "who", "why", "how", "where", "when", "which", "is", "are", "do",
                                              "does", "can", "could", "would", "will", "did"]
@@ -1218,12 +1231,12 @@ public enum ConversationIntent: String, Sendable {
         let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
         if OptOut.matches(said) { return .optOut }
         if ObjectionTracker.detect(said) == "ending the call" || Rejection.isSignOff(said) { return .ending }
-        if Rejection.isNo(said) || ["not interested", "wrong person", "no time", "call later", "happy as is"]
-            .contains(ObjectionTracker.detect(said) ?? "") { return .rejection }
+        if Rejection.isNo(said) { return .rejection }
         // "Hello?" is a greeting, not a question.
         if words.count <= 3, words.allSatisfy(greetings.contains) { return .other }
         if t.contains("?") || AnswerEvidence.kind(said) == .deflection { return .question }
         if let first = words.first, questionStarts.contains(first), words.count >= 3 { return .question }
+        if ObjectionTracker.detect(said) != nil { return .objection }
         return .other
     }
 }

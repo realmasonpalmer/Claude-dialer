@@ -624,8 +624,8 @@ extension CoachModel {
         if s.move == "discover", intent == .question {
             p.append("they asked a direct question: answer it plainly first (MOVE answer), no discovery question")
         }
-        if s.move == "discover", intent == .rejection {
-            p.append("they declined: acknowledge it, no more discovery (MOVE acknowledge or close)")
+        if ["discover", "clarify", "objection"].contains(s.move), intent == .rejection {
+            p.append("they declined: a clear no gets no sales question (MOVE acknowledge or close)")
         }
         // THINK is the coaching: a normal live line needs a useful one, checked against this conversation.
         if Think.enabled, s.rowTag == nil, !s.nudge, !s.skip {
@@ -636,6 +636,13 @@ extension CoachModel {
         }
         // A script row copied word for word ("S2 open" is 26 words) isn't sent back for being long.
         return s.rowTag == nil ? p : p.filter { !$0.contains("words (max") }
+    }
+
+    /// A problem that trimming can't fix: the move or the coaching is wrong for this moment.
+    /// A missing or badly formatted THINK is not serious on its own (the card shows SAY, labeled).
+    static func isSerious(_ problem: String) -> Bool {
+        if problem.hasPrefix("THINK is missing") || problem.hasPrefix("THINK isn't usable") { return false }
+        return ["the rep claims", "they asked a direct", "they declined", "THINK ", "MOVE "].contains { problem.hasPrefix($0) }
     }
 
     /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
@@ -675,8 +682,9 @@ extension CoachModel {
             }
             if !s.say.isEmpty { problems = Self.lineProblems(s) }
         }
-        // A wrong move or a role mix-up can't be trimmed into a right one: show nothing new instead.
-        if Self.lineProblems(bad).contains(where: { $0.hasPrefix("the rep claims") || $0.hasPrefix("they asked a direct") || $0.hasPrefix("they declined") }) {
+        // Final check. Formatting (length, an abbreviation, the question mark) can be trimmed safely. A wrong move,
+        // a role mix-up, or a THINK that doesn't fit the conversation can't: show nothing new instead.
+        if Self.lineProblems(bad).contains(where: Self.isSerious) {
             var quiet = bad
             quiet.skip = true
             quiet.move = "silent"

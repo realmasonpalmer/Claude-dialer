@@ -50,8 +50,8 @@ final class Nov20ReplayTests: XCTestCase {
         let answers = ScriptAnswers(script: script)
         // A plain answer to the rep's question, in context: the row still fires instantly.
         XCTAssertEqual(answers.matchInContext("Not much, honestly").entry?.id, "Pain nothing")
-        // The same objection the row is written for.
-        XCTAssertEqual(answers.matchInContext("Honestly I'm not interested").entry?.id, "O1")
+        // A clear no: the O1 row asks another sales question, so it doesn't fire (the coach acknowledges instead).
+        XCTAssertNil(answers.matchInContext("Honestly I'm not interested").entry)
     }
 
     func testThinkNudgesFromTheSpec() {
