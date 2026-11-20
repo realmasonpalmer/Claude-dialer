@@ -51,6 +51,7 @@ struct CampaignEditorView: View {
         message = nil
         showSections = !draft.opening.isEmpty || !draft.objections.isEmpty
         if isNew, !draft.listViewID.isEmpty { Task { await fillFromSalesforce(auto: true) } }
+        if listViews.isEmpty { Task { await loadLists() } } // the writer reads a sample of the list
         keepWindowsOnTop()
     }
 

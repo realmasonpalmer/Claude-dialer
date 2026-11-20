@@ -203,6 +203,7 @@ struct CoachView: View {
     @State private var showDropSetup = false
     @AppStorage(PrefKey.dropNudgeDismissed) private var dropNudgeDismissed = false
     @State private var showWhy = false
+    @State private var showScriptMaker = false
     /// The first-run tour: 0 = welcome card, 1...n = steps, nil = hidden.
     @State private var tourStep: Int?
     @AppStorage(PrefKey.tourSeen) private var tourSeen = false
@@ -353,6 +354,9 @@ struct CoachView: View {
         }
         .onChange(of: campaigns.campaigns) { _, _ in campaigns.ensureSelectedActive(); syncScriptToList() }
         .sheet(isPresented: $showHelp) { HelpView() }
+        .sheet(isPresented: $showScriptMaker) {
+            ScriptMakerView(onEdit: { edit($0) }).environmentObject(campaigns)
+        }
         .sheet(isPresented: $showSetup) {
             SetupView(onAudioCheck: onAudioCheck, onKeys: onKeys).environmentObject(coach)
         }
@@ -677,14 +681,7 @@ struct CoachView: View {
             }
             Divider()
             Button("Edit this script...") { edit(campaigns.selected) }
-            Button("Write a new script with Claude...") {
-                // Starts from the Salesforce list in use, so Claude can read who the people are.
-                var fresh = Campaign()
-                let current = campaigns.selected
-                fresh.name = ""
-                fresh.listViewID = current.listViewID; fresh.listObject = current.listObject; fresh.listName = current.listName
-                edit(fresh)
-            }
+            Button("Write my script (one click)...") { showScriptMaker = true }
             }
             .disabled(coach.status != .ready) // switching scripts mid-call would change what the coach says
         } label: {
