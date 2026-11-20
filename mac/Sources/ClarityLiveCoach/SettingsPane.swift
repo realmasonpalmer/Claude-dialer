@@ -28,54 +28,24 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Settings").font(.title2.weight(.semibold))
 
-            section("Automated outbound") {
-                Toggle("Send texts by itself", isOn: $autoText)
-                Text("On: the text goes out in the background while the next person loads.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Toggle("Drop my recorded voicemail by itself", isOn: $dropOn)
-                Text("Set it up first: gear, then Voicemail drop.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Toggle("Send LinkedIn connection requests by itself", isOn: $autoLinkedInRequest)
-                Text("On: the app sends it in Chrome in the background while you keep calling. Off: it opens their profile and types the note, you click Send.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
             section("Coach card") {
                 Toggle("Short thoughts on the card (THINK)", isOn: $thinkOn)
                 Text("On: during a call the card shows one short thought from your script's backbone, in words you can say. Command-Shift-L shows the full line. Lines word for word from the script always show in full.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            section("Tools") {
-                // Script Lab holds the call results, script suggestions and the opener scoreboard.
-                Button(coach.lab.hasNewSuggestions ? "What's working (new ideas)" : "What's working") {
-                    openWindow(id: "script-lab")
-                    NSApplication.shared.activate(ignoringOtherApps: true)
-                }
-                HStack {
-                    Menu("Get help") {
-                        Button("Reload the Aircall phone") {
-                            AircallPhone.shared.reload()
-                            note = "Reloaded the Aircall phone on the right. Sign in again if it asks."
-                        }
-                        Button("Send a problem report") {
-                            Task { note = await BugReporter.manual() }
-                        }
-                        Button("Copy info for support") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(coach.callList.debugReport() + "\n\n" + ActivityLog.recent(), forType: .string)
-                            note = "Copied. Paste it to whoever is helping you."
-                        }
+            section("Help") {
+                Menu("Get help") {
+                    Button("Reload the Aircall phone") {
+                        AircallPhone.shared.reload()
+                        note = "Reloaded the Aircall phone on the right. Sign in again if it asks."
                     }
-                    .fixedSize()
-                    Menu("Start over") {
-                        Button("Let me call today's people again") {
-                            coach.callList.clearCalledToday()
-                            coach.leads.clearCalledToday()
-                            note = "Everyone on your list can be called again today."
-                        }
-                        Button("Erase everyone's call counts...") { confirmReset = true }
+                    Button("Copy info for support") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(coach.callList.debugReport() + "\n\n" + ActivityLog.recent(), forType: .string)
+                        note = "Copied. Paste it to whoever is helping you."
                     }
-                    .fixedSize()
                 }
+                .fixedSize()
                 if let note {
                     Text(note).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -89,14 +59,6 @@ struct SettingsPane: View {
         }
         .padding(20)
         .frame(width: 380)
-        .confirmationDialog("Erase everyone's call counts?", isPresented: $confirmReset) {
-            Button("Erase", role: .destructive) {
-                DialHistory.resetAll()
-                note = "Call counts erased. Everyone is back on the list."
-            }
-        } message: {
-            Text("People who were taken off for too many calls or bad numbers come back on your list. You can't undo this.")
-        }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
