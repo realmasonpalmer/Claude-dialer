@@ -522,25 +522,7 @@ struct AircallPhonePanel: View {
     var body: some View {
         // Outbound Setup: the numbers, calling options and follow-up automation, between calls.
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Image(systemName: "phone.fill").font(.title3).foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Brand.blue, in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Outbound Setup").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
-                    Text("Choose your channels and calling preferences").font(.callout).foregroundStyle(Brand.subtext)
-                }
-                Spacer(minLength: 0)
-                Button(action: onSettings) {
-                    Image(systemName: "gearshape").font(.title3).foregroundStyle(Brand.text)
-                        .frame(width: 44, height: 44)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Settings")
-            }
-            Divider().overlay(Brand.edge)
+            Text("Outbound Setup").font(.headline.weight(.bold)).foregroundStyle(Brand.text)
             // Side by side when there's room, stacked on a narrow window: never wider than the window.
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 12) { callsField; textsField }
@@ -549,21 +531,6 @@ struct AircallPhonePanel: View {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 12) { callingBox; followUpBox }
                 VStack(alignment: .leading, spacing: 12) { callingBox; followUpBox }
-            }
-            Divider().overlay(Brand.edge)
-            HStack(spacing: 10) {
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.up.arrow.down").font(.title3).foregroundStyle(Brand.blue)
-                Text("East Coast First").font(.body.weight(.medium)).foregroundStyle(Brand.text).lineLimit(1)
-                if let zone = TimeZoneFilter.selected {
-                    Text("(\(zone.label) only)").font(.caption).foregroundStyle(Brand.muted).lineLimit(1)
-                }
-                Toggle("", isOn: Binding(
-                    get: { TimeZoneFilter.selected == nil && TimeZoneFilter.eastCoastFirst },
-                    set: { on in coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(on) }
-                ))
-                .toggleStyle(.switch).labelsHidden().tint(Brand.blue)
-                .help("On: start in the East and go West, so nobody gets called before 9 there.")
             }
         }
         .task {
@@ -593,6 +560,12 @@ struct AircallPhonePanel: View {
                         Toggle("Mobile Only", isOn: Binding(get: { MobileOnly.on }, set: { MobileOnly.setOn($0); tick.toggle() }))
                             .toggleStyle(BlueCheck()).id(tick)
                             .help("Skip anyone with no Mobile in Salesforce. Better pick up rates, and every text can go out.")
+                        Toggle("East Coast First", isOn: Binding(
+                            get: { TimeZoneFilter.selected == nil && TimeZoneFilter.eastCoastFirst },
+                            set: { on in coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(on); tick.toggle() }
+                        ))
+                        .toggleStyle(BlueCheck()).id("east\(tick)")
+                        .help("Start in the East and go West, so nobody gets called before 9 there.")
                     }
                 }
                 .tourSpot(.options)
@@ -625,8 +598,9 @@ struct AircallPhonePanel: View {
             }
             content()
         }
+        .fixedSize(horizontal: false, vertical: true) // the box always grows to fit what's in it
         .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
     }
 
@@ -656,19 +630,25 @@ struct AircallPhonePanel: View {
                     }
                 }
             } label: {
-                HStack {
-                    Text(name).font(.body.weight(.medium)).foregroundStyle(Brand.text).lineLimit(1).truncationMode(.tail)
-                    Spacer(minLength: 6)
-                    Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.controlEdge, lineWidth: 1))
-                .contentShape(Rectangle())
+                Text(name).font(.body.weight(.medium)).foregroundStyle(Brand.text).lineLimit(1).truncationMode(.tail)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .disabled(numbers.isEmpty)
+            // A clear dropdown: a filled box with an edge and the up/down arrows on the right.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 12).padding(.trailing, 34).padding(.vertical, 9)
+            .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.controlEdge, lineWidth: 1))
+            .overlay(alignment: .trailing) {
+                Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.bold))
+                    .foregroundStyle(Brand.text)
+                    .frame(width: 22, height: 22)
+                    .background(Brand.blue, in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.trailing, 7)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
