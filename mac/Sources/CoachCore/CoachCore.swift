@@ -590,8 +590,8 @@ public struct QuestionTracker: Sendable {
         // Answered is judged by simple rules (the next reply looked like an answer), so it comes in two strengths.
         let confirmed = repAnswered.filter { Self.isConfirmed($0) }
         let probable = repAnswered.filter { !Self.isConfirmed($0) }
-        if !confirmed.isEmpty { lines.append("Asked AND answered, their words show it (don't ask again): " + confirmed.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
-        if !probable.isEmpty { lines.append("Probably answered (a short or indirect reply; don't repeat it, but don't treat it as settled either): " + probable.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
+        if !confirmed.isEmpty { lines.append("Asked AND answered, their words show it (never ask again): " + confirmed.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
+        if !probable.isEmpty { lines.append("Probably answered (a short or indirect reply; never ask again, but don't treat their answer as settled): " + probable.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
         return lines.joined(separator: "\n")
     }
 }
