@@ -26,21 +26,61 @@ struct CampaignEditorView: View {
 
     private var isNew: Bool { !store.campaigns.contains { $0.id == draft.id } }
 
+    @State private var listCount: Int?
+    @State private var showPreview = false
+
+    /// Four things: name, goal, who (from Salesforce), anything else. Then Generate, Preview, Save & Use.
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    basics
-                    script
-                    // No "Sections" boxes and no "Tidy up" button: the My script card on the coach
-                    // already shows the script as one page, by section.
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Text(isNew ? "New Sales Script" : "Edit Sales Script").font(.title.weight(.bold))
+                        Spacer()
+                        Button { dismissWindow(id: "campaign-editor") } label: {
+                            Image(systemName: "xmark").font(.title3).foregroundStyle(Brand.subtext)
+                        }
+                        .buttonStyle(.plain).keyboardShortcut(.cancelAction)
+                    }
+                    labeled("Script Name") { input($draft.name, "e.g. Tax firm owners") }
+                    labeled("What's the goal?") { input($draft.objective, "Book a free AI health check with Oliver.") }
+                    whoCard
+                    labeled("Anything else the AI should know?", optional: true) {
+                        input($guidance, "Example: Keep it casual. Ask for 30 seconds. Mention our free health check.")
+                    }
+                    generateButton
+                    HStack {
+                        if writing {
+                            Text(ScriptWriter.lastThought(thought)).font(.callout).foregroundStyle(Brand.subtext).lineLimit(1)
+                        } else if !draft.pastedScript.trimmed.isEmpty {
+                            Label("Script ready", systemImage: "checkmark.circle").font(.callout)
+                                .foregroundStyle(Brand.subtext).labelStyle(GreenIconLabel())
+                        } else if let message {
+                            Text(message).font(.callout).foregroundStyle(Brand.subtext)
+                        }
+                        Spacer()
+                        Button { showPreview = true } label: {
+                            HStack(spacing: 6) {
+                                Text("Preview Script").font(.title3.weight(.medium))
+                                Image(systemName: "chevron.right").font(.callout)
+                            }
+                            .foregroundStyle(Brand.blue)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(draft.pastedScript.trimmed.isEmpty)
+                    }
+                    if let message, !draft.pastedScript.trimmed.isEmpty, !writing {
+                        Text(message).font(.caption).foregroundStyle(Brand.muted)
+                    }
                 }
-                .padding(24)
+                .padding(28)
             }
-            Divider()
+            Divider().overlay(Brand.edge)
             footer
         }
         .frame(minWidth: 560, minHeight: 640)
+        .sheet(isPresented: $showPreview) { preview }
+        .task(id: draft.listViewID) { await countList() }
         .onAppear(perform: load)
         .onDisappear { writeTask?.cancel() } // closing the window stops the writing
         .onChange(of: store.editing?.id) { load() }
@@ -198,26 +238,144 @@ struct CampaignEditorView: View {
     // MARK: Footer
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 16) {
             if !isNew && store.campaigns.count > 1 {
-                Button("Delete", role: .destructive) {
+                Button("Delete") {
                     store.delete(draft)
                     dismissWindow(id: "campaign-editor")
                 }
+                .buttonStyle(.plain).foregroundStyle(Brand.stop)
             }
             Spacer()
             Button("Cancel") { dismissWindow(id: "campaign-editor") }
-                .keyboardShortcut(.cancelAction)
-            Button("Save and use") {
+                .buttonStyle(.plain).font(.title3).foregroundStyle(Brand.text)
+            Button {
                 if draft.name.trimmed.isEmpty { draft.name = "Untitled script" }
                 store.save(draft)
                 store.selectOnly(draft.id)
                 dismissWindow(id: "campaign-editor")
+            } label: {
+                Text("Save & Use").font(.title3.weight(.bold)).padding(.horizontal, 8)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BrandPrimaryButton())
             .keyboardShortcut(.defaultAction)
+            .disabled(writing)
         }
-        .padding(16)
+        .padding(.horizontal, 28).padding(.vertical, 18)
+    }
+
+    // MARK: The four things
+
+    private func labeled<C: View>(_ title: String, optional: Bool = false, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(title).font(.title3.weight(.medium)).foregroundStyle(Brand.text)
+                if optional { Text("(Optional)").font(.callout).foregroundStyle(Brand.muted) }
+            }
+            content()
+        }
+    }
+
+    private func input(_ text: Binding<String>, _ placeholder: String) -> some View {
+        TextField("", text: text, prompt: Text(placeholder).foregroundStyle(Brand.muted))
+            .textFieldStyle(.plain)
+            .font(.title3)
+            .foregroundStyle(Brand.text)
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
+            .disabled(writing)
+    }
+
+    /// Who's on the Salesforce list, read from Salesforce: how many, and who they mostly are.
+    private var whoCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Who are you calling?").font(.title3.weight(.medium)).foregroundStyle(Brand.text)
+                Spacer()
+                Button { Task { await fillFromSalesforce() } } label: {
+                    HStack(spacing: 6) {
+                        Text("From Salesforce")
+                        Image(systemName: filling ? "arrow.triangle.2.circlepath" : "checkmark.circle")
+                    }
+                    .font(.callout).foregroundStyle(Brand.blue)
+                }
+                .buttonStyle(.plain)
+                .disabled(draft.listViewID.isEmpty || filling || writing)
+                .help("Read the people on this Salesforce list again: titles, levels, industries, sizes and states")
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                if draft.listViewID.isEmpty {
+                    Text("Pick a Salesforce list at the top of the coach first.").font(.title3).foregroundStyle(Brand.text)
+                } else {
+                    Text(listCount.map { "\($0) people on \(draft.listName)" } ?? draft.listName)
+                        .font(.title3).foregroundStyle(Brand.text)
+                    Text(filling ? "Reading who they are..." : whoLine)
+                        .font(.body).foregroundStyle(Brand.subtext).lineLimit(2)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    /// The first line of what Salesforce says about them.
+    private var whoLine: String {
+        let first = draft.persona.trimmed.split(whereSeparator: { $0 == "\n" }).first.map(String.init) ?? ""
+        return first.isEmpty ? "Click From Salesforce to read who they are." : first
+    }
+
+    private var generateButton: some View {
+        HStack(spacing: 10) {
+            Button {
+                writeTask = Task { await write() }
+            } label: {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Label(writing ? ScriptWriter.progress(draft.pastedScript, since: writeStart, now: context.date)
+                                  : (draft.pastedScript.trimmed.isEmpty ? "Generate Script" : "Generate Again"),
+                          systemImage: "sparkles")
+                        .font(.title3.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+            }
+            .buttonStyle(BrandPrimaryButton())
+            .disabled(writing || (draft.listViewID.isEmpty && draft.persona.trimmed.isEmpty))
+            .help("Claude writes the whole script for these people. Takes 1 to 3 minutes.")
+            if writing {
+                Button("Stop") { writeTask?.cancel() }.buttonStyle(BrandQuietButton())
+            }
+        }
+    }
+
+    /// Preview Script: read it; Edit lets you change or paste your own.
+    @State private var editingText = false
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Preview: \(draft.name)").font(.title2.weight(.semibold))
+                Spacer()
+                Button(editingText ? "Done editing" : "Edit text") { editingText.toggle() }
+                Button("Close") { showPreview = false; editingText = false }.keyboardShortcut(.defaultAction)
+            }
+            if editingText {
+                box($draft.pastedScript, height: 480, placeholder: "Paste your script here...")
+            } else {
+                ScrollView {
+                    Text(draft.pastedScript).font(.body).foregroundStyle(Brand.text).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 640, height: 600)
+        .brandWindow()
+    }
+
+    private func countList() async {
+        guard !draft.listViewID.isEmpty, !draft.listObject.isEmpty else { listCount = nil; return }
+        listCount = (try? await Salesforce.fullList(object: draft.listObject, key: draft.listViewID))?.count
     }
 
     // MARK: Claude writes the script
@@ -247,6 +405,7 @@ struct CampaignEditorView: View {
     }
 
     private func write() async {
+        if draft.persona.trimmed.isEmpty, !draft.listViewID.isEmpty { await fillFromSalesforce() } // who they are first
         writing = true
         writeStart = Date()
         thought = ""
@@ -363,6 +522,16 @@ func keepWindowsOnTop() {
             window.titlebarAppearsTransparent = true
             window.backgroundColor = Brand.navyNS
             window.collectionBehavior.insert(.canJoinAllSpaces)
+        }
+    }
+}
+
+/// A label whose icon is green (the "Script ready" check).
+struct GreenIconLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon.foregroundStyle(.green)
+            configuration.title
         }
     }
 }
