@@ -113,6 +113,13 @@ struct DailyGoalCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
                 .background(tone.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+            HStack {
+                stat(String(format: "%.1f / min", Double(done) / max(elapsed / 60, 0.5)), "Current pace")
+                Divider().frame(height: 30)
+                stat(String(format: "%.1f / min", Double(target) / (total / 60)), "Target pace")
+                Divider().frame(height: 30)
+                stat(Self.clock(total - elapsed), "Time left")
+            }
         }
     }
 
