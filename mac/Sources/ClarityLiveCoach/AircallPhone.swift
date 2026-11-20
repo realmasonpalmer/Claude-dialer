@@ -583,13 +583,18 @@ struct AircallPhonePanel: View {
         Toggle("Mobile Only", isOn: Binding(get: { MobileOnly.on }, set: { MobileOnly.setOn($0); tick.toggle() }))
             .toggleStyle(BlueCheck()).id(tick)
             .help("Skip anyone with no Mobile in Salesforce. Better pick up rates, and every text can go out.")
+        // The checkbox turns the time zone order on or off; the dropdown next to it picks which.
         HStack(spacing: 10) {
-            Toggle("East Coast First", isOn: Binding(
-                get: { TimeZoneFilter.selected == nil && TimeZoneFilter.eastCoastFirst },
-                set: { on in coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(on); tick.toggle() }
+            Toggle("", isOn: Binding(
+                get: { TimeZoneFilter.selected != nil || TimeZoneFilter.eastCoastFirst },
+                set: { on in
+                    if on { coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(true) }
+                    else { coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(false) }
+                    tick.toggle()
+                }
             ))
             .toggleStyle(BlueCheck()).id("east\(tick)")
-            .help("Start in the East and go West, so nobody gets called before 9 there.")
+            .help("On: call in time zone order (or one zone only). Off: list order, all zones.")
             zoneMenu
         }
     }
@@ -599,9 +604,9 @@ struct AircallPhonePanel: View {
         let picked = TimeZoneFilter.selected
         return Menu {
             Button {
-                coach.setTimeZoneFilter(nil); tick.toggle()
+                coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(true); tick.toggle()
             } label: {
-                if picked == nil { Label("All time zones", systemImage: "checkmark") } else { Text("All time zones") }
+                if picked == nil && TimeZoneFilter.eastCoastFirst { Label("East Coast First, then West", systemImage: "checkmark") } else { Text("East Coast First, then West") }
             }
             Divider()
             ForEach(CallZone.allCases) { zone in
@@ -613,7 +618,7 @@ struct AircallPhonePanel: View {
                 }
             }
         } label: {
-            Text(picked.map { "\($0.label) only" } ?? "All zones").font(.callout).foregroundStyle(Brand.text).lineLimit(1)
+            Text(picked.map { "\($0.label) Only" } ?? "East Coast First").font(.body).foregroundStyle(Brand.text).lineLimit(1)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

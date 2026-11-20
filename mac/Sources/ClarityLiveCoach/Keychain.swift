@@ -18,6 +18,21 @@ enum Keychain {
 
     private static var cache: [String: String]?
     private static let lock = NSLock()
+    /// macOS wants the rep's OK before giving this copy of the app its saved keys (after an update
+    /// changed the app's signature). Reads never wait for that prompt: the app opens without the keys
+    /// and shows an "Allow" button, which asks with the window on screen.
+    private(set) static var needsUnlock = false
+
+    /// Asks macOS for the saved keys, showing its password prompt. True when the keys came back.
+    @discardableResult
+    static func unlock() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let (data, _) = readItem(bundleAccount, allowUI: true)
+        guard let data, let all = try? JSONDecoder().decode([String: String].self, from: data) else { return false }
+        cache = all
+        needsUnlock = false
+        return true
+    }
 
     static func read(_ key: Key) -> String? {
         lock.lock(); defer { lock.unlock() }
@@ -27,6 +42,8 @@ enum Keychain {
     @discardableResult
     static func save(_ value: String, for key: Key) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        if needsUnlock { lock.unlock(); unlock(); lock.lock() } // never overwrite keys we couldn't read
+        if needsUnlock { return false }
         var all = loadAll()
         all[key.rawValue] = value
         return store(all)
@@ -34,6 +51,7 @@ enum Keychain {
 
     static func delete(_ key: Key) {
         lock.lock(); defer { lock.unlock() }
+        if needsUnlock { return }
         var all = loadAll()
         all[key.rawValue] = nil
         store(all)
@@ -45,14 +63,20 @@ enum Keychain {
     /// keys saved one-by-one by older versions into the single item.
     private static func loadAll() -> [String: String] {
         if let cache { return cache }
-        if let data = readItem(bundleAccount),
-           let all = try? JSONDecoder().decode([String: String].self, from: data) {
+        let (data, denied) = readItem(bundleAccount, allowUI: false)
+        if denied {
+            // Saved keys exist, but macOS wants permission first. Don't wait on its hidden prompt.
+            needsUnlock = true
+            cache = [:]
+            return [:]
+        }
+        if let data, let all = try? JSONDecoder().decode([String: String].self, from: data) {
             cache = all
             return all
         }
         var migrated: [String: String] = [:]
         for key in Key.allCases {
-            if let data = readItem(key.rawValue), let value = String(data: data, encoding: .utf8) {
+            if let data = readItem(key.rawValue, allowUI: false).0, let value = String(data: data, encoding: .utf8) {
                 migrated[key.rawValue] = value
             }
         }
@@ -80,16 +104,20 @@ enum Keychain {
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
-    private static func readItem(_ account: String) -> Data? {
-        let query: [String: Any] = [
+    /// The item's data, and whether macOS refused because it wanted to ask first.
+    private static func readItem(_ account: String, allowUI: Bool) -> (Data?, denied: Bool) {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        if !allowUI { query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip }
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
-        return item as? Data
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecInteractionNotAllowed || status == errSecAuthFailed { return (nil, true) }
+        guard status == errSecSuccess else { return (nil, false) }
+        return (item as? Data, false)
     }
 }

@@ -535,6 +535,7 @@ struct CoachView: View {
         VStack(alignment: .leading, spacing: 8) {
             // One row for the three menus when they fit. If the window is narrow they wrap to two rows,
             // so nothing is ever pushed off the edge.
+            if Keychain.needsUnlock { keysBanner }
             // Three controls: who to call, what to say, settings. Nothing else up here.
             if coach.status != .ready {
                 // Calling mode: just what's being called and with which script. No settings mid-call.
@@ -607,6 +608,30 @@ struct CoachView: View {
         .task {
             if listViewCache.isEmpty, Salesforce.isConnected { listViewCache = (try? await Salesforce.listViews()) ?? [] }
         }
+    }
+
+    /// After an update, macOS wants the rep's OK before this copy reads the saved keys. The app opens
+    /// anyway; this asks, with the window on screen, then restarts the app so everything loads.
+    private var keysBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "key.fill").foregroundStyle(warning)
+            Text("Your Mac needs your OK to use your saved keys (this happens after an update). Click Allow, type your Mac password, then Always Allow.")
+                .font(.callout).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Allow") {
+                if Keychain.unlock() {
+                    let path = Bundle.main.bundlePath
+                    let p = Process()
+                    p.executableURL = URL(fileURLWithPath: "/bin/sh")
+                    p.arguments = ["-c", "sleep 1; open \"\(path)\""]
+                    try? p.run()
+                    NSApp.terminate(nil)
+                }
+            }
+            .buttonStyle(BrandPrimaryButton())
+        }
+        .padding(12)
+        .background(warning.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// A small gray label over a control: "CALL LIST", "SCRIPT".
