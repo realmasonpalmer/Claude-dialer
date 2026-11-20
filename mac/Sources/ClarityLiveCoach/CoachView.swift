@@ -991,7 +991,8 @@ struct CoachView: View {
                 Button { liveCardOpen.toggle() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: liveCardOpen ? "chevron.down" : "chevron.right").font(.caption2)
-                        Text(cardLabel.isEmpty ? "LIVE COACH" : cardLabel)
+                        // Always "Live Coach"; a voicemail or robot adds what to do.
+                        Text(coach.kind == .voicemail || coach.kind == .screener ? "Live Coach · " + cardLabel.capitalized : "Live Coach")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.text)
                     }
