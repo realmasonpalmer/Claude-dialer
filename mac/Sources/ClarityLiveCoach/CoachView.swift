@@ -337,8 +337,7 @@ struct CoachView: View {
             openListAtLaunch()
         }
         .task {
-            // Look for a new version now and every 15 seconds, so the Update button shows up almost right away.
-            // GitHub answers "no change" (304) for free, so this doesn't use up its hourly limit.
+            // Look for a new version now and every 15 seconds (the public commit feed, no hourly limit).
             while !Task.isCancelled {
                 await updater.check()
                 try? await Task.sleep(for: .seconds(15))

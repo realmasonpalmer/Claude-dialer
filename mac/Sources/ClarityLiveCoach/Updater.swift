@@ -19,35 +19,24 @@ final class Updater: ObservableObject {
     /// Asks GitHub for the newest version (at launch, then every 15 seconds).
     /// - Parameter byHand: the rep clicked "Check for updates", so always say what happened.
     func check(byHand: Bool = false) async {
-        guard let url = URL(string: "https://api.github.com/repos/\(Self.repo)/commits/\(Self.branch)") else { return }
+        // The branch's public commit feed: not counted against GitHub's 60-an-hour limit for apps
+        // that don't sign in (the API was, and checking often ran it out, so no update ever showed).
+        guard let url = URL(string: "https://github.com/\(Self.repo)/commits/\(Self.branch).atom") else { return }
         var request = URLRequest(url: url)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 10
-        // "Anything new since last time?" GitHub answers 304 (no change) for free, so checking
-        // often doesn't use up its hourly limit.
-        if let etag, latestSHA != nil { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
         guard let (data, response) = try? await URLSession.shared.data(for: request) else {
             if byHand { message = "Couldn't reach GitHub. Check your internet and try again." }
             return
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 304, let latestSHA {
-            updateAvailable = latestSHA != installedSHA
-            if byHand { message = updateAvailable ? "An update is ready. Click Update at the top." : "You have the newest version." }
+        let text = String(decoding: data, as: UTF8.self)
+        // The newest commit is the first "Commit/<sha>" in the feed.
+        guard code == 200, let r = text.range(of: #"Commit/[0-9a-f]{40}"#, options: .regularExpression) else {
+            if byHand { message = "Couldn't check for updates (GitHub error \(code))." }
             return
         }
-        if let tag = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "ETag") { etag = tag }
-        guard code == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sha = json["sha"] as? String else {
-            if byHand {
-                message = code == 403 || code == 429
-                    ? "GitHub says too many checks. Try again in an hour."
-                    : "Couldn't check for updates (GitHub error \(code))."
-            }
-            return
-        }
+        let sha = String(text[r].dropFirst("Commit/".count))
         latestSHA = sha
         updateAvailable = sha != installedSHA
         if byHand { message = updateAvailable ? "An update is ready. Click Update at the top." : "You have the newest version." }

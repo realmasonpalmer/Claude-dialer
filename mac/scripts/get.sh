@@ -30,7 +30,7 @@ cd "$(find . -maxdepth 2 -type d -name mac | head -1)"
 bash scripts/install.sh
 
 # 4. Tell the in-app updater which version this is, so it doesn't offer the same one again.
-SHA="$(curl -fsSL "https://api.github.com/repos/$REPO/commits/$BRANCH" | sed -n 's/^  "sha": "\(.*\)",$/\1/p' | head -1)"
+SHA="$(curl -fsSL "https://github.com/$REPO/commits/$BRANCH.atom" | grep -oE 'Commit/[0-9a-f]{40}' | head -1 | cut -d/ -f2)"
 [ -n "$SHA" ] && defaults write io.clarityconsulting.livecoach installedSHA "$SHA"
 
 echo ""
