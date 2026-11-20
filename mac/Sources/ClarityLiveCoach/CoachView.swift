@@ -296,7 +296,7 @@ struct CoachView: View {
                 )
                 .tourScrollSpot(.followUp)
             }
-            if coach.status == .ready {
+            if coach.status == .ready || coach.blockStartedAt != nil {
                 DailyGoalCard(touchpoints: coach.touchpoints, coach: coach, activeCampaigns: campaigns.activeCampaigns)
                     .tourScrollSpot(.goal)
             }
@@ -314,9 +314,15 @@ struct CoachView: View {
             }
             }
             Spacer(minLength: 0)
-            if appPhone { AircallPhonePanel().tourSpot(.phone) }
-            bottomBanner
-            navigation.tourSpot(.call)
+            // The sticky calling bar: caller number + Options (between calls only), then the big buttons.
+            VStack(alignment: .leading, spacing: 10) {
+                if appPhone, coach.status == .ready { AircallPhonePanel().tourSpot(.phone) }
+                bottomBanner
+                navigation.tourSpot(.call)
+            }
+            .padding(12)
+            .background(Brand.card, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
         }
         .padding(.horizontal, margin)
         .padding(.vertical, gap)
@@ -394,14 +400,14 @@ struct CoachView: View {
         switch coach.phase {
         case .live:
             switch coach.kind {
-            case .voicemail: return (coach.voicemailDropStarted ? "Voicemail. Your recorded message drops after the beep." : "Voicemail. Read after the beep.", warning)
-            case .screener: return ("A robot answered. Say the line below.", warning)
-            default: return ("On a call. Read the big line out loud.", listening)
+            case .voicemail: return (coach.voicemailDropStarted ? "Connected · Voicemail. Your message drops after the beep." : "Connected · Voicemail. Read after the beep.", warning)
+            case .screener: return ("Connected · A robot answered. Say the line below.", warning)
+            default: return ("Connected", listening)
             }
         case .paused: return ("Paused. The app is not listening.", warning)
-        case .dialing: return ("Calling. Get ready to talk.", Brand.blue)
+        case .dialing: return (coach.dialing ? "Ringing" : "Connecting", Brand.blue)
         case .countdown: return ("Next call soon. Space to pause.", Brand.blue)
-        case .gettingReady: return ("Getting the next person ready.", Brand.blue)
+        case .gettingReady: return ("Connecting · getting the next person ready", Brand.blue)
         case .waitingForText: return ("Send the text to move on.", Brand.blue)
         case .idle: break
         }
@@ -412,7 +418,7 @@ struct CoachView: View {
                 ? ("Start here: click the gear, then Set up.", warning)
                 : ("Open your list in Salesforce, in Chrome.", warning)
         }
-        if coach.shouldOfferRedial { return ("No answer. Click Redial to try one more time.", Brand.blue) }
+        if coach.shouldOfferRedial { return ("Ended · No answer. Call them again or go to the next person.", Brand.blue) }
         return ("", listening) // ready: no words needed, the green button says it
     }
 
@@ -530,6 +536,18 @@ struct CoachView: View {
             // One row for the three menus when they fit. If the window is narrow they wrap to two rows,
             // so nothing is ever pushed off the edge.
             // Three controls: who to call, what to say, settings. Nothing else up here.
+            if coach.status != .ready {
+                // Calling mode: just what's being called and with which script. No settings mid-call.
+                HStack(spacing: 6) {
+                    Image(systemName: "list.bullet.rectangle").foregroundStyle(Brand.subtext)
+                    Text(campaigns.selected.listName.isEmpty ? "Salesforce list" : campaigns.selected.listName)
+                        .font(.caption.weight(.semibold)).lineLimit(1)
+                    Text("·").foregroundStyle(Brand.muted)
+                    Image(systemName: "text.quote").foregroundStyle(Brand.subtext)
+                    Text(campaigns.selected.name).font(.caption.weight(.semibold)).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            } else {
             HStack(alignment: .bottom, spacing: 8) {
                 headerField("CALL LIST") { salesforceListMenu }.tourSpot(.list)
                 Spacer(minLength: 0)
@@ -546,6 +564,7 @@ struct CoachView: View {
                 .disabled(coach.status != .ready)
                 .help("Change what the coach says, or have Claude rewrite it")
                 Spacer(minLength: 0)
+            }
             }
             // Updates live in Settings; only a running update shows a line here.
             if updater.updating { updateBar }
