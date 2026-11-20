@@ -13,24 +13,42 @@ struct Opener: Identifiable, Equatable {
 
     /// The rep's best openers, best first. New callers start at the top and go down the list;
     /// after a few tries each, the ones that work best on your calls come up more often.
-    /// The openers as the rep last saved them (Edit openers), else as shipped.
+    /// The openers that take turns: the built-in ones that are switched on (with the rep's wording), then the
+    /// rep's own openers that are on. Never empty: with everything off, the first built-in one is used.
     static var all: [Opener] {
-        let edits = (UserDefaults.standard.dictionary(forKey: editsKey) as? [String: String]) ?? [:]
-        return builtIn.map { o in
-            guard let t = edits[o.id], !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return o }
-            return Opener(id: o.id, name: o.name, template: t, followUp: o.followUp, evidence: o.evidence)
+        let list = library().filter(\.on).map(\.opener)
+        return list.isEmpty ? [builtIn[0]] : list
+    }
+
+    /// One row of the Edit openers list.
+    struct Entry: Codable, Identifiable, Equatable {
+        var id: String
+        var name: String
+        var template: String
+        var on = true
+        var custom = false
+        var opener: Opener {
+            let base = Opener.builtIn.first { $0.id == id }
+            return Opener(id: id, name: name, template: template,
+                          followUp: base?.followUp ?? "Follow their reply with one short question before anything about the offer.",
+                          evidence: base?.evidence ?? "Your own opener.")
         }
     }
-    static let editsKey = "openerTemplateEdits"
 
-    /// Saves the rep's wording for each opener (an empty or unchanged one goes back to the original).
-    static func save(_ templates: [String: String]) {
-        var edits: [String: String] = [:]
-        for o in builtIn {
-            let t = (templates[o.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty, t != o.template { edits[o.id] = t }
+    static let libraryKey = "openerLibrary"
+
+    /// Built-in openers first (always there; can be switched off and reworded), then the rep's own.
+    static func library() -> [Entry] {
+        let saved = (UserDefaults.standard.data(forKey: libraryKey)).flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } ?? []
+        let builtIns = builtIn.map { o in
+            saved.first { $0.id == o.id && !$0.custom }.map { Entry(id: o.id, name: o.name, template: $0.template.isEmpty ? o.template : $0.template, on: $0.on) }
+                ?? Entry(id: o.id, name: o.name, template: o.template)
         }
-        UserDefaults.standard.set(edits, forKey: editsKey)
+        return builtIns + saved.filter(\.custom)
+    }
+
+    static func saveLibrary(_ entries: [Entry]) {
+        if let data = try? JSONEncoder().encode(entries) { UserDefaults.standard.set(data, forKey: libraryKey) }
     }
 
     static let builtIn: [Opener] = [
@@ -96,7 +114,7 @@ final class OpenerBook: ObservableObject {
     private let defaults = UserDefaults.standard
 
     init() {
-        index = defaults.integer(forKey: PrefKey.openerIndex) % Opener.all.count
+        index = defaults.integer(forKey: PrefKey.openerIndex) % max(Opener.all.count, 1)
         rotate = defaults.object(forKey: PrefKey.rotateOpeners) as? Bool ?? true
         if let data = defaults.data(forKey: PrefKey.openerScores),
            let saved = try? JSONDecoder().decode([String: OpenerScore].self, from: data) {
@@ -104,7 +122,7 @@ final class OpenerBook: ObservableObject {
         }
     }
 
-    var current: Opener { Opener.all[index] }
+    var current: Opener { let all = Opener.all; return all[index % all.count] }
 
     /// Scores the call for the current opener, then picks the next one.
     func record(score: Int, kept: Bool, goal: Bool) {
@@ -126,6 +144,7 @@ final class OpenerBook: ObservableObject {
 
     private func chooseNext() {
         let all = Opener.all
+        index = index % all.count
         func calls(_ i: Int) -> Int { scores[all[i].id]?.calls ?? 0 }
         // Warm-up: the least-tried opener goes next, starting after the current one.
         let order = (1...all.count).map { (index + $0) % all.count }
@@ -185,42 +204,35 @@ enum Random {
 /// [first name] = their first name, [rep] = your name, [industry] = their industry, [company] = Clarity.
 struct OpenersEditorView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var texts: [String: String] = Dictionary(uniqueKeysWithValues: Opener.all.map { ($0.id, $0.template) })
+    @State private var entries: [Opener.Entry] = Opener.library()
     var onSave: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Edit openers").font(.title2.weight(.semibold))
-            Text("These openers take turns on your calls; the ones that work best come up more often. Brackets fill in by themselves: [first name], [rep], [industry], [company].")
+            Text("The openers that are on take turns on your calls; the ones that work best come up more often. Brackets fill in by themselves: [first name], [rep], [industry], [company].")
                 .font(.callout).foregroundStyle(Brand.subtext).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(Opener.builtIn) { o in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(o.name).font(.headline)
-                                Spacer()
-                                if (texts[o.id] ?? "") != o.template {
-                                    Button("Back to original") { texts[o.id] = o.template }.buttonStyle(.brandLink).font(.caption)
-                                }
-                            }
-                            TextEditor(text: Binding(get: { texts[o.id] ?? "" }, set: { texts[o.id] = $0 }))
-                                .font(.body)
-                                .scrollContentBackground(.hidden)
-                                .padding(8)
-                                .frame(minHeight: 80)
-                                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.controlEdge, lineWidth: 1))
-                        }
+                    ForEach($entries) { $e in row($e) }
+                    Button {
+                        entries.append(Opener.Entry(id: "custom-" + UUID().uuidString, name: "My opener \(entries.filter(\.custom).count + 1)",
+                                                    template: "Hi [first name], this is [rep] at Clarity Consulting. ", on: true, custom: true))
+                    } label: {
+                        Label("Add an opener", systemImage: "plus.circle")
                     }
+                    .buttonStyle(.brandLink)
                 }
+            }
+            if !entries.contains(where: \.on) {
+                Text("Turn at least one on. With all off, Peer name drop is used.").font(.caption).foregroundStyle(.orange)
             }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    Opener.save(texts)
-                    ActivityLog.add("Openers edited by the rep")
+                    Opener.saveLibrary(entries.filter { !$0.custom || !$0.template.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                    ActivityLog.add("Openers edited by the rep (\(entries.filter(\.on).count) on)")
                     onSave()
                     dismiss()
                 }
@@ -229,7 +241,37 @@ struct OpenersEditorView: View {
             }
         }
         .padding(20)
-        .frame(width: 560, height: 620)
+        .frame(width: 580, height: 660)
         .brandWindow()
+    }
+
+    @ViewBuilder private func row(_ e: Binding<Opener.Entry>) -> some View {
+        let original = Opener.builtIn.first { $0.id == e.wrappedValue.id }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Toggle("", isOn: e.on).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                if e.wrappedValue.custom {
+                    TextField("Name", text: e.name).textFieldStyle(.plain).font(.headline)
+                } else {
+                    Text(e.wrappedValue.name).font(.headline)
+                }
+                Spacer()
+                if let original, e.wrappedValue.template != original.template {
+                    Button("Back to original") { e.wrappedValue.template = original.template }.buttonStyle(.brandLink).font(.caption)
+                }
+                if e.wrappedValue.custom {
+                    Button(role: .destructive) { entries.removeAll { $0.id == e.wrappedValue.id } } label: { Image(systemName: "trash") }
+                        .buttonStyle(.plain).foregroundStyle(Brand.stop).help("Delete this opener")
+                }
+            }
+            TextEditor(text: e.template)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .frame(minHeight: 70)
+                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.controlEdge, lineWidth: 1))
+                .opacity(e.wrappedValue.on ? 1 : 0.5)
+        }
     }
 }
