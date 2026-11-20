@@ -50,6 +50,7 @@ struct CampaignEditorView: View {
         draft = store.editing ?? Campaign()
         message = nil
         showSections = !draft.opening.isEmpty || !draft.objections.isEmpty
+        if isNew, !draft.listViewID.isEmpty { Task { await fillFromSalesforce(auto: true) } }
         keepWindowsOnTop()
     }
 
@@ -57,11 +58,18 @@ struct CampaignEditorView: View {
 
     private var basics: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(isNew ? "New call list" : "Edit call list").font(.title2.weight(.semibold))
-            field("Name", text: $draft.name, placeholder: "e.g. Tax firm owners")
+            Text(isNew ? "New script" : "Edit script").font(.title2.weight(.semibold))
+            Text(isNew
+                 ? "Claude reads who's on your Salesforce list, then writes what to say: the opener, questions, answers to pushback and how to ask for the meeting. The coach shows it line by line on every call. Who you call doesn't change."
+                 : "What the coach says on every call. Change it here, or have Claude rewrite it. Who you call doesn't change.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            field("Script name", text: $draft.name, placeholder: "e.g. Tax firm owners")
             field("Goal of these calls", text: $draft.objective,
                   placeholder: "e.g. Book a 30 minute meeting, or transfer to Mason")
-            listPicker
+            if !draft.listName.isEmpty {
+                Text("Written for the people on \(draft.listName) (your Salesforce list).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -200,9 +208,9 @@ struct CampaignEditorView: View {
             Button("Cancel") { dismissWindow(id: "campaign-editor") }
                 .keyboardShortcut(.cancelAction)
             Button("Save and use") {
-                if draft.name.trimmed.isEmpty { draft.name = "Untitled call list" }
+                if draft.name.trimmed.isEmpty { draft.name = "Untitled script" }
                 store.save(draft)
-                store.selectedID = draft.id
+                store.selectOnly(draft.id)
                 dismissWindow(id: "campaign-editor")
             }
             .buttonStyle(.borderedProminent)

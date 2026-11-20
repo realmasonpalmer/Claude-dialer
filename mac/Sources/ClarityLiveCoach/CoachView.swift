@@ -532,6 +532,8 @@ struct CoachView: View {
         let openName = listViewCache.first { !openKey.isEmpty && ($0.id.prefix(15) == openKey.prefix(15) || $0.developerName == openKey) }?.label
         let name = selected.listName.isEmpty ? (openName ?? "Pick a Salesforce list") : selected.listName
         return Menu {
+            Text("Who to call: pick a Salesforce list view (Leads or Contacts). It opens in Chrome and the app calls down it.")
+            Divider()
             if !Salesforce.isConnected {
                 Text("Sign in to Salesforce first: gear, then Set up.")
             } else if listViewCache.isEmpty {
@@ -548,7 +550,7 @@ struct CoachView: View {
                 }
             }
         } label: {
-            Label(Self.short(name, max: 40), systemImage: "list.bullet.rectangle")
+            Label("Calling: " + Self.short(name, max: 36), systemImage: "list.bullet.rectangle")
                 .labelStyle(.titleAndIcon)
                 .font(.callout.weight(.semibold)).lineLimit(1)
         }
@@ -651,15 +653,17 @@ struct CoachView: View {
         .fixedSize()
     }
 
-    /// Pick a campaign, or create and edit one. Locked during a call.
+    /// What to say: pick a script, edit it, or have Claude write a new one. Who to call is the
+    /// Salesforce list above, and switching scripts never changes it. Locked during a call.
     private var campaignMenu: some View {
         Menu {
             if coach.status != .ready {
-                Text("You're on a call. Finish it to switch call lists.")
+                Text("You're on a call. Finish it to switch scripts.")
                 Divider()
             }
+            Text("What to say: the script the coach follows on every call. Switching it doesn't change who you call.")
+            Divider()
             Group {
-            // One list at a time: picking one turns the others off.
             ForEach(campaigns.campaigns) { campaign in
                 Button {
                     switchTo(campaign)
@@ -672,25 +676,30 @@ struct CoachView: View {
                 }
             }
             Divider()
-            Button("Edit this call list...") { edit(campaigns.selected) }
-            Button("New call list...") {
-                openWindow(id: "campaign-selector")
-                NSApplication.shared.activate(ignoringOtherApps: true)
+            Button("Edit this script...") { edit(campaigns.selected) }
+            Button("Write a new script with Claude...") {
+                // Starts from the Salesforce list in use, so Claude can read who the people are.
+                var fresh = Campaign()
+                let current = campaigns.selected
+                fresh.name = ""
+                fresh.listViewID = current.listViewID; fresh.listObject = current.listObject; fresh.listName = current.listName
+                edit(fresh)
             }
             }
             .disabled(coach.status != .ready) // switching scripts mid-call would change what the coach says
         } label: {
-            Label(Self.short(campaigns.selected.name), systemImage: "person.2.fill")
+            Label("Script: " + Self.short(campaigns.selected.name), systemImage: "text.quote")
                 .labelStyle(.titleAndIcon)
                 .font(.caption.weight(.semibold)).lineLimit(1).truncationMode(.tail)
         }
         .menuStyle(.borderlessButton)
-        .help(coach.status == .ready ? "Who to call: pick a call list (people to call, plus what to say)" : "Finish the call to switch call lists")
+        .help(coach.status == .ready ? "What to say: pick a script, edit it, or have Claude write a new one" : "Finish the call to switch scripts")
     }
 
     /// Picks the active campaign whose Salesforce list is the one open in Chrome (between calls only).
     /// Chrome's address can hold the list's Id or its API name, so both are matched.
     private func syncScriptToList() {
+        return // the script is picked on its own now; the Salesforce list never switches it
         guard coach.status == .ready, let key = coach.callList.listKey?.view, !key.isEmpty else { return }
         Task {
             if listViewCache.isEmpty { listViewCache = (try? await Salesforce.listViews()) ?? [] }
@@ -705,7 +714,14 @@ struct CoachView: View {
 
     /// Switches campaign (its script) and opens its Salesforce list in Chrome, so the app works that list.
     private func switchTo(_ campaign: Campaign) {
-        campaigns.selectOnly(campaign.id) // its list opens via onChange below
+        // The script changes; who to call (the Salesforce list in use) stays.
+        let current = campaigns.selected
+        if campaign.id != current.id, !current.listViewID.isEmpty, campaign.listViewID != current.listViewID {
+            var c = campaign
+            c.listViewID = current.listViewID; c.listObject = current.listObject; c.listName = current.listName
+            campaigns.save(c)
+        }
+        campaigns.selectOnly(campaign.id)
         coach.listDone = false
     }
 
@@ -1289,7 +1305,7 @@ struct CoachView: View {
                     Button("Start next list: \(next.name)") { stopNextListCountdown(); switchTo(next) }
                         .buttonStyle(.borderedProminent)
                 } else {
-                    Text("Pick another call list at the top.")
+                    Text("Pick another Salesforce list at the top.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1409,7 +1425,7 @@ struct HelpView: View {
                     "Open your list in Salesforce, in Chrome. The app reads it by itself.",
                 ])
                 section("2. Pick who to call", [
-                    "At the top, click the call list name. A call list is people to call, plus what to say.",
+                    "At the top, pick your Salesforce list. Under it, pick the script: what to say.",
                     "Next to it, pick a time zone. Or pick \"Start in the East, go West\".",
                 ])
                 section("3. Make a call", [

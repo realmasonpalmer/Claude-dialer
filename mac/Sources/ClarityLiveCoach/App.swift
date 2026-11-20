@@ -50,7 +50,7 @@ struct ClarityLiveCoachApp: App {
         }
         .defaultSize(width: 620, height: 480)
 
-        Window("Call List", id: "campaign-editor") {
+        Window("Script", id: "campaign-editor") {
             CampaignEditorView()
                 .brandWindow()
                 .environmentObject(campaigns)
