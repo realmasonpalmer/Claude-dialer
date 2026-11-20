@@ -259,8 +259,10 @@ struct CoachView: View {
             if coach.status != .ready {
                 StageBar(steps: CoachModel.journey, current: coach.journeyStep, active: true)
             }
-            scriptCard.tourScrollSpot(.line)
-            ScriptOutlineCard(coach: coach).tourScrollSpot(.script)
+            // Show less (between calls): no line card or script, just the call block and your numbers.
+            // During a call the line always shows: it's what to say.
+            if showAll || coach.status != .ready { scriptCard.tourScrollSpot(.line) }
+            if showAll { ScriptOutlineCard(coach: coach).tourScrollSpot(.script) }
             belowCard
             // Essential view: only between calls (during a call it's just the line).
             if coach.statusRecordID != nil, coach.status == .ready {
@@ -288,11 +290,11 @@ struct CoachView: View {
                 )
                 .tourScrollSpot(.followUp)
             }
-            if showAll, coach.status == .ready {
+            if coach.status == .ready {
                 DailyGoalCard(touchpoints: coach.touchpoints, coach: coach, activeCampaigns: campaigns.activeCampaigns)
                     .tourScrollSpot(.goal)
             }
-            if showAll, showTouchpoints && coach.status == .ready {
+            if showTouchpoints && coach.status == .ready {
                 TouchpointsCard(touchpoints: coach.touchpoints, toCall: coach.leads.isActive ? coach.leads.summary : coach.callList.summary).tourScrollSpot(.numbers)
             }
             warnings
@@ -467,7 +469,7 @@ struct CoachView: View {
                 Button(showMore ? "Show less" : "Show more") { showMore.toggle() }
                     .buttonStyle(.link).font(.caption)
                     .help(showMore ? "Back to just the person, the line and the buttons"
-                                   : "Also show this block and your numbers")
+                                   : "Also show the opening line and your script")
             }
             HStack(spacing: 10) {
                 if coach.streak >= 3 { Text("🔥 \(coach.streak) in a row").font(.caption2.weight(.semibold)) }
