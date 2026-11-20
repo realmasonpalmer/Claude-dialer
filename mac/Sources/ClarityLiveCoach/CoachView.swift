@@ -549,22 +549,29 @@ struct CoachView: View {
                     Spacer(minLength: 0)
                 }
             } else {
-            HStack(alignment: .bottom, spacing: 8) {
-                headerField("CALL LIST") { salesforceListMenu }.tourSpot(.list)
-                Spacer(minLength: 0)
-                settingsMenu.tourSpot(.gear)
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                headerField("SCRIPT") { campaignMenu }.tourSpot(.segment)
-                Button {
-                    edit(campaigns.selected)
-                } label: {
-                    Label("Edit Script", systemImage: "square.and.pencil").font(.callout)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 8) {
+                    headerField("CALL LIST") { salesforceListMenu }.tourSpot(.list)
+                    Spacer(minLength: 0)
+                    settingsMenu.tourSpot(.gear)
                 }
-                .buttonStyle(BrandQuietButton())
-                .disabled(coach.status != .ready)
-                .help("Change what the coach says, or have Claude rewrite it")
-                Spacer(minLength: 0)
+                Divider().overlay(Brand.edge)
+                HStack(alignment: .center, spacing: 8) {
+                    headerField("SCRIPT") { campaignMenu }.tourSpot(.segment)
+                    Spacer(minLength: 0)
+                    Button {
+                        edit(campaigns.selected)
+                    } label: {
+                        Label("Edit Script", systemImage: "pencil")
+                            .font(.callout).foregroundStyle(Brand.text)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .overlay(Capsule().stroke(Brand.controlEdge, lineWidth: 1))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(coach.status != .ready)
+                    .help("Change what the coach says, or have Claude rewrite it")
+                }
             }
             }
             // Updates live in Settings; only a running update shows a line here.
@@ -606,7 +613,7 @@ struct CoachView: View {
                 }
             }
         } label: {
-            dropdownLabel(Self.short(name, max: 34), icon: "list.bullet.rectangle")
+            dropdownLabel(Self.short(name, max: 34))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -621,21 +628,20 @@ struct CoachView: View {
     /// A small gray label over a control: "CALL LIST", "SCRIPT".
     private func headerField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.caption2.weight(.semibold)).tracking(0.6).foregroundStyle(Brand.muted)
+            Text(title).font(.caption.weight(.medium)).tracking(0.6).foregroundStyle(Brand.subtext)
             content()
         }
     }
 
     /// What a dropdown looks like: the value in white, one down arrow, a visible box.
-    private func dropdownLabel(_ text: String, icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).foregroundStyle(Brand.subtext)
-            Text(text).font(.callout.weight(.semibold)).foregroundStyle(Brand.text).lineLimit(1).truncationMode(.tail)
-            Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(Brand.subtext)
+    private func dropdownLabel(_ text: String, chevron: Bool = true) -> some View {
+        HStack(spacing: 8) {
+            Text(text).font(.title3.weight(.medium)).foregroundStyle(Brand.text).lineLimit(1).truncationMode(.tail)
+            if chevron {
+                Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+            }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.controlEdge, lineWidth: 1))
+        .contentShape(Rectangle())
     }
 
     /// A long call list name shortened with "..." so the menu is never wider than the bar.
@@ -728,16 +734,15 @@ struct CoachView: View {
             Button("Show me around") { tourStep = 0 }
                 .disabled(coach.status != .ready)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "gearshape").foregroundStyle(Brand.subtext)
-                Text("Settings").font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
-                if updater.updateAvailable || tourShowsUpdate {
-                    Circle().fill(Brand.go).frame(width: 8, height: 8).help("A new version is ready: open Settings")
+            Image(systemName: "gearshape").font(.title3).foregroundStyle(Brand.text)
+                .frame(width: 40, height: 40)
+                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(alignment: .topTrailing) {
+                    if updater.updateAvailable || tourShowsUpdate {
+                        Circle().fill(Brand.go).frame(width: 9, height: 9).offset(x: -5, y: 5)
+                    }
                 }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.controlEdge, lineWidth: 1))
+                .help(updater.updateAvailable ? "Settings · a new version is ready" : "Settings")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -771,7 +776,7 @@ struct CoachView: View {
             }
             .disabled(coach.status != .ready) // switching scripts mid-call would change what the coach says
         } label: {
-            dropdownLabel(Self.short(campaigns.selected.name, max: 30), icon: "text.quote")
+            dropdownLabel(Self.short(campaigns.selected.name, max: 30), chevron: false)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
