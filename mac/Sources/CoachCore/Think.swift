@@ -11,26 +11,21 @@ public enum Think {
     public static func promptLine(enabled: Bool) -> String {
         guard enabled else { return "" }
         return """
-        THINK: <one quick coaching nudge for the rep, usually 5 to 12 simple words>
-          THINK rules (a skilled coach whispering the next move, not a script):
-          - Pick the MOVE first, then write THINK for that move. THINK and SAY must be the same move and the same question.
-          - Before you write it, decide the ONE most valuable thing still unknown: a concrete example of something
-            broad, the cause of a problem they confirmed, how they do it today, what it costs them, who decides, or
-            (when interest and fit are real) a meeting. Not a fixed order. Pick what this conversation needs.
-          - Ask about their actual tools, process and words. Never assume a problem because it is common in their industry.
-          - Usually ONE short question the rep can say aloud. Example ladder, they said "our team won't use Salesforce":
-            weak "What's your biggest challenge?" / better "What's stopping your team from using Salesforce?" /
-            best when you need the root cause "What happens when your team tries to use it?" (it asks for a real example).
-          - When a question is the wrong move, a short instruction instead: they asked what the call is about
-            -> "Explain the free AI health check." They said no again -> "Thank them and end the call." They are
-            ending the call -> "Thank them. Don't push." Never both a question and an instruction in one THINK.
-          - Answer their direct question first. An objection ("we use Gong", "no time") can get one relevant question.
-            A clear no ("not interested", "not a fit") gets no sales question: acknowledge, at most offer an easy exit.
-          - Never repeat a question they already answered, declined or deflected. Skip what the call already established.
-          - Never vague coaching words: no "explore", "probe", "find the gap", "handle the objection", "qualify".
-          - Everyday words: "your team", "call notes", "follow-ups". Never "your reps".
-          - Good: "Does Gong handle your follow-ups too?"  Bad: "Who's the right person? Ask for a name."
-          - Good: "Who handles sales tools there?"  Bad: "Explore whether Gong handles CRM updates."
+        THINK: <one short focus tip for the rep: what to find out or do next, usually 4 to 10 plain words>
+          THINK rules (a coach whispering the next move, not a line to read):
+          - Pick the MOVE first, then write THINK for that move. SAY is the full wording of the same move.
+          - THINK tells the rep what to focus on, not the exact words. Usually start with a verb:
+            "Find out how much time CRM updates take." / "Ask what still slips after calls." /
+            "Explain the free AI health check." / "Acknowledge it. Don't push." / "Thank them and end the call."
+            A short question is fine when it's the simplest way to say the move ("Who handles sales tools there?").
+          - Bad (a script to read): "Have you considered how your team might save time by using AI to update your CRM?"
+          - Decide the ONE most valuable thing still unknown: a real example, the cause of a problem they named, how
+            they do it today, what it costs, who decides, or (when interest is real) a meeting. Pick what this call needs.
+          - Build it from what they just said. Never repeat what the rep already knows or what they answered or declined.
+          - Never assume their tools: say "your CRM" or "customer records" unless they named the tool themselves.
+          - Answer their direct question first. An objection gets one relevant tip. A clear no gets no selling:
+            acknowledge, at most offer an easy exit. If talk is going well and nothing is needed, MOVE silent.
+          - Plain words, no jargon ("explore", "probe", "find the gap", "qualify"), never "your reps".
 
         """
     }
@@ -87,9 +82,6 @@ public enum Think {
             out.append("MOVE \(move) when they have no time: ask for a better time, don't start discovery")
         }
         // Discovery needs a question; a pure statement or instruction for MOVE discover is the wrong coaching.
-        if move == "discover", !isQuestion {
-            out.append("MOVE is discover but THINK isn't a question: write the one question to ask")
-        }
         if isQuestion {
             // Already answered: same meaning as a question the rep asked and got an answer to.
             if let again = answeredQuestions.first(where: { Repeats.same($0, t) }) {
@@ -157,8 +149,6 @@ public enum Think {
                 return Double(mine.intersection(theirs).count) / Double(mine.count) >= 0.5
             }
         }
-        // An instruction describes the move; SAY carries it out. Discovery needs a question, so no.
-        if move == "discover" { return false }
         // Stop-type instructions ("Thank them and end the call", "Don't push"): SAY must not go on asking.
         let low = t.lowercased()
         let stop = ["thank them", "end the call", "don't push", "do not push", "acknowledge", "let them go", "wrap up"]

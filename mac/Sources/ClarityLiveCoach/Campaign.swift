@@ -96,7 +96,7 @@ struct Campaign: Codable, Identifiable, Equatable {
         objective: "Book a 30 minute discovery meeting with the right person.",
         company: "Clarity Consulting helps businesses adopt Claude and fix workflows with AI. Salesforce partner and Anthropic Claude partner. Never quote prices, results or client names on a cold call.",
         offer: "An AI notetaker plus Claude updating CRM fields after every call, so reps stop doing data entry. Also Claude and AI health checks, and Salesforce implementation, cleanup and automation.",
-        idealCustomer: "Companies with a sales team, often on Salesforce.",
+        idealCustomer: "Companies with a sales team that keeps customer records in a CRM.",
         persona: "Sales, RevOps and operations leaders. Pains: reps lose hours to notes and CRM updates, messy CRM data, AI tools bought but not used, stalled AI projects.",
         opening: "\"Hi {first name}, it's {rep} with Clarity. This is a cold call. Can I take 30 seconds to tell you why I called?\" Then: \"We help sales teams stop doing CRM data entry. Claude writes the notes and updates Salesforce after every call. How are your reps handling that today?\"",
         discovery: "- How much time do reps spend on admin each week?\n- What happens to call notes today?\n- Who owns AI rollout on your team?\n- If you could fix one thing about your CRM data, what would it be?",

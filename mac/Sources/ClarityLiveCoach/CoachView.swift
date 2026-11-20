@@ -212,6 +212,7 @@ struct CoachView: View {
     @State private var browsingStep: ScriptStep?
     @State private var showFullScript = false
     @State private var editingOpener = false
+    @State private var showOpeners = false
     @State private var openerDraft = ""
     /// The first-run tour: 0 = welcome card, 1...n = steps, nil = hidden.
     @State private var tourStep: Int?
@@ -387,6 +388,9 @@ struct CoachView: View {
             .padding(20)
             .frame(width: 520, height: 600)
             .brandWindow()
+        }
+        .sheet(isPresented: $showOpeners) {
+            OpenersEditorView(onSave: { coach.refreshOpener() })
         }
         .sheet(isPresented: $showScriptMaker) {
             ScriptMakerView(onEdit: { edit($0) }).environmentObject(campaigns)
@@ -786,13 +790,7 @@ struct CoachView: View {
         Menu {
             Button("Edit this script...") { edit(campaigns.selected) }
             Button("Write a new script with Claude...") { showScriptMaker = true }
-            Button("Edit opener...") {
-                // The opener shows on the Live Coach card between calls: open it there, ready to type.
-                showMore = true
-                liveCardOpen = true
-                openerDraft = coach.scriptOpenerLine() ?? coach.suggestion.say
-                editingOpener = true
-            }
+            Button("Edit openers...") { showOpeners = true }
             Divider()
             Text("Switch script (using \(campaigns.selected.name))")
             ForEach(campaigns.campaigns) { c in

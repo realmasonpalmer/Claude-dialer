@@ -145,7 +145,7 @@ enum CoachPrompt {
             Then check it against what you know about this person. If a part of the script doesn't fit them, change
             only that part, as little as possible, in the script's voice. For example: the script says "a fellow
             Portland entrepreneur" but they're not in Portland or don't run a business; the script names an industry,
-            role or tool that isn't theirs; the script assumes something their Salesforce page contradicts. Never
+            role or tool that isn't theirs; the script assumes something their CRM record contradicts. Never
             invent facts about them. If nothing needs changing, use the script as is. Don't add a pitch or a greeting
             the script doesn't have. Only write a different opener if you're highly confident it serves the script's
             goal better for this person, and keep it as short as the script's.
@@ -155,7 +155,7 @@ enum CoachPrompt {
         return """
         \(about(calling, details))The call has not connected yet. Write the opener using this proven structure. \
         Keep its wording and shape; only fill in the brackets. [company] is the rep's company from the campaign. \
-        [industry] is their industry from the Salesforce facts (like "accounting" or "insurance"); if unknown, drop it ("a few teams"). If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
+        [industry] is their industry from the CRM facts (like "accounting" or "insurance"); if unknown, drop it ("a few teams"). If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
         Opener: \(style.template)
         Put the opener's name in the CUE: "\(style.name) opener".
         """
@@ -271,6 +271,8 @@ enum CoachPrompt {
         their own words (the reason for the call, the pitch, a question), it's done: never repeat it. Coach from
         where the rep really is toward the next goal of the script.
         If the prospect asked a question, the first sentence answers it plainly and directly.
+        Tools: never assume the prospect uses Salesforce or any tool. Say "your CRM" or "customer records" unless
+        they named the tool themselves.
         Roles: the rep is the caller from Clarity. The prospect is the person being called. Never have the rep
         claim the prospect's role, title or decisions ("I'm the one who decides"). If unsure who decides, ask.
         A pain is theirs only if they said it. Never state a problem as theirs or as what "usually" bothers teams when
@@ -325,7 +327,7 @@ enum CoachPrompt {
         a different pitch or a more formal, salesy tone in the written follow-ups.
         Voicemail: under 20 seconds, about 40 words. In this order: their first name; the rep's name and how the
         campaign introduces them; one reason tied to the campaign's angle and to something specific about them,
-        their role or their company (from the Salesforce facts, or a common pain for their title if there are none);
+        their role or their company (from the CRM facts, or a common pain for their title if there are none);
         then one closing line that fits the history above:
         - No text sent yet: "I'll send you a quick text so you have my number."
         - A text was already sent: don't promise a first text again. Mention it instead, for example
@@ -368,10 +370,10 @@ enum CoachPrompt {
             lines.append("The rep's first name is \(rep).")
         }
         if let calling {
-            lines.append("Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person.")
+            lines.append("CRM record open in the rep's browser: \(calling). Use the first name if it's a person.")
         }
         if let details {
-            lines.append("Text from their Salesforce page. It includes menus and clutter; use only facts about this person and their company, and never guess:\n\(details)")
+            lines.append("Text from their CRM record page. It includes menus and clutter; use only facts about this person and their company, and never guess:\n\(details)")
         } else if calling != nil {
             lines.append("Assume nothing else about them.")
         }

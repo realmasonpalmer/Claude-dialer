@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// A proven cold call opener. Claude fills in the brackets for the campaign and the prospect.
 struct Opener: Identifiable, Equatable {
@@ -12,7 +13,27 @@ struct Opener: Identifiable, Equatable {
 
     /// The rep's best openers, best first. New callers start at the top and go down the list;
     /// after a few tries each, the ones that work best on your calls come up more often.
-    static let all: [Opener] = [
+    /// The openers as the rep last saved them (Edit openers), else as shipped.
+    static var all: [Opener] {
+        let edits = (UserDefaults.standard.dictionary(forKey: editsKey) as? [String: String]) ?? [:]
+        return builtIn.map { o in
+            guard let t = edits[o.id], !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return o }
+            return Opener(id: o.id, name: o.name, template: t, followUp: o.followUp, evidence: o.evidence)
+        }
+    }
+    static let editsKey = "openerTemplateEdits"
+
+    /// Saves the rep's wording for each opener (an empty or unchanged one goes back to the original).
+    static func save(_ templates: [String: String]) {
+        var edits: [String: String] = [:]
+        for o in builtIn {
+            let t = (templates[o.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty, t != o.template { edits[o.id] = t }
+        }
+        UserDefaults.standard.set(edits, forKey: editsKey)
+    }
+
+    static let builtIn: [Opener] = [
         Opener(
             id: "peer-name-drop",
             name: "Peer name drop",
@@ -156,5 +177,59 @@ enum Random {
         let u1 = Double.random(in: Double.leastNonzeroMagnitude..<1)
         let u2 = Double.random(in: 0..<1)
         return (-2 * log(u1)).squareRoot() * cos(2 * .pi * u2)
+    }
+}
+
+
+/// Edit openers: every opener that cycles, one text box each. Brackets fill in on the call:
+/// [first name] = their first name, [rep] = your name, [industry] = their industry, [company] = Clarity.
+struct OpenersEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var texts: [String: String] = Dictionary(uniqueKeysWithValues: Opener.all.map { ($0.id, $0.template) })
+    var onSave: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Edit openers").font(.title2.weight(.semibold))
+            Text("These openers take turns on your calls; the ones that work best come up more often. Brackets fill in by themselves: [first name], [rep], [industry], [company].")
+                .font(.callout).foregroundStyle(Brand.subtext).fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(Opener.builtIn) { o in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(o.name).font(.headline)
+                                Spacer()
+                                if (texts[o.id] ?? "") != o.template {
+                                    Button("Back to original") { texts[o.id] = o.template }.buttonStyle(.brandLink).font(.caption)
+                                }
+                            }
+                            TextEditor(text: Binding(get: { texts[o.id] ?? "" }, set: { texts[o.id] = $0 }))
+                                .font(.body)
+                                .scrollContentBackground(.hidden)
+                                .padding(8)
+                                .frame(minHeight: 80)
+                                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.controlEdge, lineWidth: 1))
+                        }
+                    }
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    Opener.save(texts)
+                    ActivityLog.add("Openers edited by the rep")
+                    onSave()
+                    dismiss()
+                }
+                .buttonStyle(BrandPrimaryButton())
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 560, height: 620)
+        .brandWindow()
     }
 }

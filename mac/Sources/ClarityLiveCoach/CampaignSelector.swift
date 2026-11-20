@@ -464,6 +464,9 @@ enum ScriptWriter {
         seasons, what makes them look for help, who else they answer to, the tools they use, and the brush-offs
         they give every cold caller.
 
+        Never assume the prospect uses Salesforce or any named tool. Write "your CRM" or "customer records" in
+        every line the rep says, unless the segment description names their tool.
+
         The one thing that's the same for every segment: the ask is a free 45 minute AI and customer records
         health check with Oliver, our managing partner. Fill in the PLAYBOOK block at the top for this segment
         (avatar, titles, their words, problem lines, incentive) and use those values everywhere they appear.
