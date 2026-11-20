@@ -65,7 +65,8 @@ extension CoachModel {
     func fillTags(_ text: String, for calling: String?) -> String {
         var t = text
         let rep = Prefs.repName
-        let first = Screener.firstName(calling) ?? "there"
+        // Before their record opens, the next person on the list (the one the card shows).
+        let first = Screener.firstName(calling ?? (status == .ready ? callList.upNextInfo?.name : nil)) ?? "there"
         let tags: [(names: [String], value: String)] = [
             (["first name", "firstname", "first", "name", "prospect", "prospect name"], first),
             (["rep", "rep name", "your name", "my name", "rep first name", "sdr", "sdr name", "caller", "caller name"],
