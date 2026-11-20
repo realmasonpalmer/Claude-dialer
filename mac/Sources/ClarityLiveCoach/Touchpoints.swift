@@ -162,59 +162,68 @@ struct TouchpointsCard: View {
         let pickups = t.count(.pickup, in: period)
         let ps = t.pickupStats(in: period)
         let meetings = t.count(.meeting, in: period)
-        VStack(alignment: .leading, spacing: 8) {
-            // Folded: one line. Click to see everything.
-            Button {
-                open.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                    Text(open ? "My numbers" : "My numbers \(period.rawValue.lowercased()): \(dials) calls · \(meetings) meetings")
-                        .font(.callout.weight(.semibold))
-                    Spacer(minLength: 0)
-                    if let toCall {
-                        Text(CallQueue.short(toCall)).font(.caption).foregroundStyle(.secondary)
-                            .help(toCall)
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            // Always: the title, the date filter and the four numbers that matter.
+            HStack(spacing: 8) {
+                Text("My Activity").font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
+                if let toCall {
+                    Text("· " + CallQueue.short(toCall)).font(.caption).foregroundStyle(Brand.muted).help(toCall)
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if open {
-            HStack {
-                // Compare campaigns: each list + script on its own.
-                Picker("", selection: $touchpoints.showCampaign) {
-                    Text("All call lists").tag(String?.none)
-                    ForEach(touchpoints.campaignNames, id: \.self) { Text($0).tag(String?.some($0)) }
-                }
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
+                Spacer(minLength: 0)
                 Picker("", selection: $periodRaw) {
                     ForEach(Touchpoints.Period.allCases) { Text($0.rawValue).tag($0.rawValue) }
                 }
                 .labelsHidden()
                 .fixedSize()
             }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(t.total(in: period))").font(.title.weight(.semibold)).monospacedDigit()
-                Text("calls, texts and notes").font(.callout).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                tile("Dials", dials)
+                tile("Human answers", pickups)
+                tile("Conversations", t.count(.conversation, in: period))
+                tile("Meetings", meetings, highlight: meetings > 0)
+            }
+            Button {
+                open.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
+                    Text(open ? "Fewer details" : "More details").font(.caption.weight(.semibold))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Brand.subtext)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if open {
+            HStack {
+                Text("Call list").font(.caption).foregroundStyle(Brand.muted)
+                Picker("", selection: $touchpoints.showCampaign) {
+                    Text("All scripts").tag(String?.none)
+                    ForEach(touchpoints.campaignNames, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                Spacer()
             }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                GridRow { stat("Calls", dials); stat("Picked up", pickups) }
-                GridRow { stat("Conversations", t.count(.conversation, in: period)); stat("Voicemails", t.count(.voicemail, in: period)) }
-                GridRow { stat("Texts", t.count(.text, in: period)); stat("LinkedIn notes", t.count(.linkedin, in: period)) }
-                GridRow { stat("LinkedIn messages", t.count(.linkedinMessage, in: period)); stat("Meetings booked", meetings) }
+                GridRow { stat("Voicemails", t.count(.voicemail, in: period)); stat("Texts", t.count(.text, in: period)) }
+                GridRow { stat("LinkedIn notes", t.count(.linkedin, in: period)); stat("LinkedIn messages", t.count(.linkedinMessage, in: period)) }
+                GridRow { stat("All touches", t.total(in: period)); Text("dials, texts and notes").font(.caption).foregroundStyle(Brand.muted) }
             }
-            // Per dial, from the call records (decided by fixed rules when each call ends).
-            Text("Rates per dial (\(ps.placedDials) placed)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                GridRow { stat("Human answer", rate(ps.humanAnswerRate)); stat("Conversation", rate(ps.conversationRate)) }
-                GridRow { stat("Prospect reach", rate(ps.prospectReachRate)); Text("\(ps.leadsReached) of \(ps.leadsAttempted) people").font(.caption).foregroundStyle(.secondary) }
+            // Rates come from the per-call records. Only shown once there are records to divide by,
+            // so they never read as 0% next to hundreds of dials.
+            if ps.placedDials > 0 {
+                Text("Rates per dial (\(ps.placedDials) dials with a full record)").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                    GridRow { stat("Human answer", rate(ps.humanAnswerRate)); stat("Conversation", rate(ps.conversationRate)) }
+                    GridRow { stat("Prospect reach", rate(ps.prospectReachRate)); Text("\(ps.leadsReached) of \(ps.leadsAttempted) people").font(.caption).foregroundStyle(Brand.muted) }
+                }
+                .help("Human answer: a person answered (gatekeepers count). Prospect reach: people you reached ÷ people you dialed. Conversation: real talks with the prospect ÷ dials.")
+            } else {
+                Text("Rates per dial show once calls placed with this version add up.").font(.caption).foregroundStyle(Brand.muted)
             }
-            .help("Human answer: a person answered (gatekeepers count). Prospect reach: people you reached ÷ people you dialed. Conversation: real talks with the prospect ÷ dials.")
             if meetings > 0 {
-                Text("\(dials / max(meetings, 1)) calls per meeting").font(.caption).foregroundStyle(.secondary)
+                Text("\(dials / max(meetings, 1)) dials per meeting").font(.caption).foregroundStyle(Brand.muted)
             }
             Button("Set today back to zero") { confirmReset = true }
                 .buttonStyle(.brandLink).font(.caption)
@@ -224,9 +233,21 @@ struct TouchpointsCard: View {
                 }
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .brandCard(radius: 10)
+    }
+
+    /// One of the four main numbers: big value, small label.
+    private func tile(_ label: String, _ value: Int, highlight: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(value)").font(.title3.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(highlight ? Color.green : Brand.text)
+            Text(label).font(.caption).foregroundStyle(Brand.subtext).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.navy.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func stat(_ label: String, _ value: Int) -> some View { stat(label, "\(value)") }
