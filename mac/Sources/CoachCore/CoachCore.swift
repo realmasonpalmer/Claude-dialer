@@ -442,15 +442,42 @@ public struct ScriptAnswers: Sendable {
     }
 
     /// The approved answer whose "sounds like" phrase appears in what they said (longest match wins).
-    public func match(_ said: String) -> Entry? {
+    public func match(_ said: String) -> Entry? { bestMatch(said)?.entry }
+
+    func bestMatch(_ said: String) -> (entry: Entry, phrase: String)? {
         let t = said.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
-        var best: (Entry, Int)?
+        var best: (Entry, String)?
         for e in entries {
             for p in e.phrases where t.contains(p) {
-                if best == nil || p.count > best!.1 { best = (e, p.count) }
+                if best == nil || p.count > best!.1.count { best = (e, p) }
             }
         }
-        return best?.0
+        return best.map { ($0.0, $0.1) }
+    }
+
+    /// The instant answer only when it fits what they meant, not just shared words (Nov 20: "What is this
+    /// about?" got a discovery row; "I'm not the right fit" got "Pain nothing"). nil + why when it's blocked.
+    public func matchInContext(_ said: String) -> (entry: Entry?, why: String) {
+        guard let (entry, phrase) = bestMatch(said) else { return (nil, "no Sounds-like phrase in their words") }
+        switch ConversationIntent.classify(said) {
+        case .optOut, .ending: return (nil, "they're ending the call: higher-priority rule")
+        case .question: return (nil, "they asked a direct question: answer it first, not a script row")
+        case .rejection:
+            // Only an objection row for this same objection may answer a no.
+            let kind = ObjectionTracker.detect(said)
+            guard kind != nil, ObjectionTracker.detect(phrase) == kind else {
+                return (nil, "they declined; the matched row (\(entry.id)) isn't about that")
+            }
+        case .other: break
+        }
+        // A short phrase inside a long sentence is a word overlap, not their meaning ("I don't know" in
+        // "I don't know that I'm the right fit for this right now").
+        let saidWords = said.split(whereSeparator: { !$0.isLetter && $0 != "'" }).count
+        let phraseWords = phrase.split(separator: " ").count
+        if saidWords > 6, phraseWords * 3 < saidWords {
+            return (nil, "\"\(phrase)\" is only a small part of what they said")
+        }
+        return (entry, "\"\(phrase)\" matches what they meant")
     }
 }
 
@@ -580,7 +607,9 @@ public struct ObjectionTracker: Sendable {
                          "not something i can share", "confidential", "can't talk about", "not able to discuss", "not at liberty"]),
         ("ending the call", ["thank you for calling", "thanks for calling", "thanks for the call", "have a good day",
                              "have a great day", "i have to go", "i've got to go", "gotta go", "i need to go"]),
-        ("not interested", ["not interested", "no interest", "not for us", "we're good", "we are good", "i'm good", "pass on"]),
+        ("not interested", ["not interested", "no interest", "not for us", "we're good", "we are good", "i'm good", "pass on",
+                            "don't know that i'm interested", "don't think i'm interested", "not the right fit",
+                            "right fit for this", "not a good fit", "not a fit"]),
         ("no time", ["no time", "too busy", "i'm busy", "in a meeting", "bad time", "not a good time", "driving"]),
         ("send info", ["send me an email", "send me something", "send me info", "email me", "send it over", "send me some"]),
         ("already have it", ["we already have", "we already use", "we use another", "we use a ", "already working with", "we have a partner", "we have someone", "in house", "in-house"]),
@@ -1091,7 +1120,8 @@ extension CoachController {
 public enum Rejection {
     // Only clear no's. Reflex brush-offs ("we're good", "I'm good") don't count: they often open up right after.
     static let nos = ["not interested", "not relevant", "no thanks", "no thank you", "not a fit",
-                      "not for us", "not really interested", "doesn't apply", "not something we need"]
+                      "not for us", "not really interested", "doesn't apply", "not something we need",
+                      "not the right fit", "not a good fit", "right fit for this"]
     static let signOffs = ["yep thanks", "yep, thanks", "bye", "take care", "have a good one", "have a good day", "have a great day",
                            "gotta go", "got to go", "thanks anyway", "thank you anyway"]
 
@@ -1101,8 +1131,9 @@ public enum Rejection {
         if [" but ", " though", " however", " although"].contains(where: { t.contains($0) }) { return false }
         if nos.contains(where: { t.contains($0) }) { return true }
         // "I don't think this is really relevant", "this isn't relevant to us"
-        let negated = ["don't think", "not", "isn't", "doesn't"].contains { t.contains($0) }
-        return negated && (t.contains("relevant") || t.contains("interested") || t.contains("a fit"))
+        // "I don't know that I'm interested", "I don't know that I'm the right fit" (Nov 20): soft no's.
+        let negated = ["don't think", "don't know that", "don't know if", "not", "isn't", "doesn't"].contains { t.contains($0) }
+        return negated && (t.contains("relevant") || t.contains("interested") || t.contains("a fit") || t.contains("right fit"))
     }
 
     public static func isSignOff(_ text: String) -> Bool {
@@ -1152,5 +1183,45 @@ public enum ModelTest {
         if score >= 1.96 { return "\(names.0) wins (95% sure)" }
         if score <= -1.96 { return "\(names.1) wins (95% sure)" }
         return "too close to call yet"
+    }
+}
+
+
+/// What the prospect's turn is doing, decided in code before any line is picked. Higher-priority
+/// situations (opt-out, ending, a direct question, a no) outrank the script's stage.
+public enum ConversationIntent: String, Sendable {
+    case optOut, ending, question, rejection, other
+
+    static let questionStarts: Set<String> = ["what", "who", "why", "how", "where", "when", "which", "is", "are", "do",
+                                             "does", "can", "could", "would", "will", "did"]
+    static let greetings: Set<String> = ["hello", "hi", "hey", "yes", "yeah", "speaking", "this", "is", "it"]
+
+    public static func classify(_ said: String) -> ConversationIntent {
+        let t = said.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+        if OptOut.matches(said) { return .optOut }
+        if ObjectionTracker.detect(said) == "ending the call" || Rejection.isSignOff(said) { return .ending }
+        if Rejection.isNo(said) || ["not interested", "wrong person", "no time", "call later", "happy as is"]
+            .contains(ObjectionTracker.detect(said) ?? "") { return .rejection }
+        // "Hello?" is a greeting, not a question.
+        if words.count <= 3, words.allSatisfy(greetings.contains) { return .other }
+        if t.contains("?") || AnswerEvidence.kind(said) == .deflection { return .question }
+        if let first = words.first, questionStarts.contains(first), words.count >= 3 { return .question }
+        return .other
+    }
+}
+
+/// The rep is the caller. A line must never have the rep claim the prospect's role (Nov 20:
+/// "Yes, I'm the one who decides on those tools.").
+public enum RoleCheck {
+    static let claims = ["i'm the one who decides", "i am the one who decides", "i'm the one that decides",
+                         "i'm the decision maker", "i am the decision maker", "i'm the decision-maker",
+                         "i make the decisions", "i make those decisions", "i decide on", "i'm the one who handles",
+                         "i'm in charge of", "i am in charge of", "i'm the right person", "i am the right person",
+                         "i'm the one in charge", "i own that", "i handle those", "i handle that"]
+
+    public static func speaksAsProspect(_ line: String) -> Bool {
+        let t = line.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        return claims.contains { t.contains($0) }
     }
 }

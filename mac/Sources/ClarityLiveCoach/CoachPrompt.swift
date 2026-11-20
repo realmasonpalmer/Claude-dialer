@@ -185,6 +185,8 @@ enum CoachPrompt {
     static var objectionFacts = ""
     /// How many times the prospect has said no this call (two no's and a go).
     static var prospectNos = 0
+    /// The prospect's words the latest reply was written for (the line check reads it).
+    static var latestProspect = ""
     /// Lines already shown to the rep this call, and which of them the rep actually said.
     static var shownLines: [String] = []
     static var saidLines: [String] = []
@@ -206,6 +208,16 @@ enum CoachPrompt {
         var history = recent.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
         if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }
         let repLast = turns.last { $0.speaker == .rep }?.text ?? ""
+        latestProspect = (repLed || assumeYes) ? "" : latest
+        let intent = (repLed || assumeYes) ? ConversationIntent.other : ConversationIntent.classify(latest)
+        let priority: String = {
+            switch intent {
+            case .question: return "PRIORITY NOW: they asked a direct question. MOVE answer: answer it plainly in the first sentence. No discovery question in this line.\n"
+            case .rejection: return "PRIORITY NOW: they declined or pushed back. MOVE acknowledge or close. No discovery question. After a second no, thank them and end.\n"
+            case .ending, .optOut: return "PRIORITY NOW: they're ending the call. MOVE close: thank them briefly. No more questions.\n"
+            case .other: return ""
+            }
+        }()
         lastContext = ["mode": recent.count < turns.count ? "summary + last 10 turns" : "full transcript",
                        "turns_total": turns.count, "turns_verbatim_from": turns.count - recent.count + 1, "turns_verbatim_to": turns.count,
                        "speculative_latest": speculative, "rep_led": repLed, "shown_lines_included": min(shownLines.count, 5)]
@@ -232,11 +244,16 @@ enum CoachPrompt {
 
         \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
         \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
-        \(shown)\(prospectNos == 1 ? "They have said no once. One short respectful question, then accept their answer.\n" : "")
+        \(priority)\(shown)\(prospectNos == 1 ? "They have said no once. One short respectful question, then accept their answer.\n" : "")
         The rep's actual words are the truth; the script is the guide. If the rep already covered something in
         their own words (the reason for the call, the pitch, a question), it's done: never repeat it. Coach from
         where the rep really is toward the next goal of the script.
         If the prospect asked a question, the first sentence answers it plainly and directly.
+        Roles: the rep is the caller from Clarity. The prospect is the person being called. Never have the rep
+        claim the prospect's role, title or decisions ("I'm the one who decides"). If unsure who decides, ask.
+        Decide in this order: opt-out, they're ending the call, answer their direct question, respect a no or
+        objection, skip what they already answered, then move the script forward. The stage guides; it never
+        overrides what they just said.
         A pain is theirs only if they said it. Never state a problem as theirs or as what "usually" bothers teams when
         they haven't said it. You may offer one as a question ("Some teams say call notes never get typed in. True for you?").
         Two no's and a go: after one no, one short respectful question, then accept. After two no's, thank them and end.

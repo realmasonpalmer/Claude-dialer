@@ -190,15 +190,9 @@ extension CoachModel {
         // "Don't call me back" mid-sentence: stop selling now, don't wait for them to finish.
         if LiveCoach.isOptOut(text, isFinal: false) { handleOptOut(text); return }
         guard isMeaningful(text) else { return }
-        // Known objection mid-sentence: the approved answer is ready the moment they stop.
-        if scriptAnswers.match(text) != nil {
-            specTimer = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(250))
-                guard let self, !Task.isCancelled else { return }
-                _ = self.instantAnswer(text)
-            }
-            return
-        }
+        // A script answer waits for their full sentence ("I don't know..." can end "...that I'm the right fit"):
+        // the final words go through the same priority checks.
+        if scriptAnswers.matchInContext(text).entry != nil { return }
         // Draft early once their meaning is clear: a finished sentence (200 ms), or 6+ words that
         // stopped changing (450 ms). Each new word cancels the wait, so there's no flood of requests.
         // A yes to the rep's question, with the yes line already written: no draft needed.
@@ -619,7 +613,18 @@ extension CoachModel {
 
     /// The house rules for a live line (offered meeting times are allowed).
     static func lineProblems(_ s: Suggestion) -> [String] {
-        let p = Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil, allowTimes: true)
+        var p = Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil, allowTimes: true)
+        // The conversation outranks the stage (Nov 20).
+        if RoleCheck.speaksAsProspect(s.say) {
+            p.append("the rep claims the prospect's role: the rep is the caller, never the one who decides there")
+        }
+        let intent = ConversationIntent.classify(CoachPrompt.latestProspect)
+        if s.move == "discover", intent == .question {
+            p.append("they asked a direct question: answer it plainly first (MOVE answer), no discovery question")
+        }
+        if s.move == "discover", intent == .rejection {
+            p.append("they declined: acknowledge it, no more discovery (MOVE acknowledge or close)")
+        }
         // A script row copied word for word ("S2 open" is 26 words) isn't sent back for being long.
         return s.rowTag == nil ? p : p.filter { !$0.contains("words (max") }
     }
@@ -660,6 +665,15 @@ extension CoachModel {
                 return s
             }
             if !s.say.isEmpty { problems = Self.lineProblems(s) }
+        }
+        // A wrong move or a role mix-up can't be trimmed into a right one: show nothing new instead.
+        if Self.lineProblems(bad).contains(where: { $0.hasPrefix("the rep claims") || $0.hasPrefix("they asked a direct") || $0.hasPrefix("they declined") }) {
+            var quiet = bad
+            quiet.skip = true
+            quiet.move = "silent"
+            ActivityLog.add("Line check: dropped (wrong move for the conversation): \(bad.say)")
+            CallTrace.event("check.dropped", ["line": bad.say, "problems": Self.lineProblems(bad)], req: id)
+            return quiet
         }
         var s = bad
         s.say = LiveCoach.sanitize(bad.say)
@@ -809,12 +823,16 @@ extension CoachModel {
         let answers = scriptAnswers
         // Only when they're answering the rep's question: otherwise a phrase match is out of context.
         let repJustAsked = turns.dropLast().last { $0.speaker == .rep }?.text.contains("?") ?? false
-        guard repJustAsked, let e = answers.match(said) else {
-            CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said])
+        // Never ahead of higher-priority rules: a direct question, a no or a sign-off goes to the full coach.
+        let (hit, why) = answers.matchInContext(said)
+        guard repJustAsked, let e = hit else {
+            CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said,
+                                             "intent": ConversationIntent.classify(said).rawValue,
+                                             "why": repJustAsked ? why : "the rep hadn't just asked a question"])
             return false
         }
         CallTrace.event("script.match", ["searched": answers.entries.count, "matched": true, "row": e.id,
-                                         "phrases": e.phrases, "said": said, "answer": e.say, "why": "a Sounds-like phrase appears in their words"])
+                                         "phrases": e.phrases, "said": said, "answer": e.say, "why": why])
         if suggestion.say == e.say || pending?.suggestion.say == e.say { return true } // already up
         coachTask?.cancel() // any slower AI draft for this is stale now
         thinking = false
