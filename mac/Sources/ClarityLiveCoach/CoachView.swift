@@ -1226,7 +1226,7 @@ struct CoachView: View {
             // Walkthrough: a sample person, since no list is loaded yet.
             HStack(spacing: 8) {
                 smallButton("Next Person") {}
-                bigButton("START CALLING", icon: "phone.fill") {}
+                bigButton("START CALLING LIST", icon: "phone.fill") {}
             }
             .controlSize(.large)
             .allowsHitTesting(false)
@@ -1256,7 +1256,7 @@ struct CoachView: View {
                         "phone.fill", leadMode ? canCall : !coach.dialing,
                         { leadMode ? coach.dial() : coach.callOpenLead() })
             }
-            return (nextName != nil ? "START CALLING" : "No one left", "phone.arrow.right",
+            return (nextName != nil ? "START CALLING LIST" : "No one left", "phone.arrow.right",
                     leadMode ? (nextName != nil && !coach.dialing) : (nextEnabled && !coach.dialing),
                     { coach.nextLead() })
         }()
@@ -1283,7 +1283,7 @@ struct CoachView: View {
                     // Auto dial is working down the list: one big red button stops it.
                     bigButton("STOP CALLING", icon: "stop.fill", color: Brand.stop) { coach.stopCalling() }
                         .keyboardShortcut(.return, modifiers: .command)
-                        .help("Stop auto dialing. Nothing new starts until you press START CALLING.")
+                        .help("Stop auto dialing. Nothing new starts until you press START CALLING LIST.")
                 } else {
                     bigButton(go.title, icon: go.icon, color: Brand.go) { coach.startCalling(); go.action() }
                         .keyboardShortcut(.return, modifiers: .command)
@@ -1507,7 +1507,7 @@ struct CoachView: View {
             return coach.nextStepName.map { "\($0) question" } ?? "New line"
         }
         switch coach.callList.state {
-        case .ready: return "START CALLING"
+        case .ready: return "START CALLING LIST"
         case .needsList, .needsChromeSetting, .endOfList: return "Next"
         }
     }

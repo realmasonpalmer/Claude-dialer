@@ -63,8 +63,8 @@ enum Tour {
                  text: "Pick the Aircall number calls go out from, and the one texts go out from. Auto dial calls the next person by itself. Call twice tries again if they don't pick up. Mobile only skips office lines. On the right: East Coast first, or one time zone only.",
                  corner: 10, pad: 6),
         // 3. Make calls
-        TourStep(spot: .call, part: "Make calls", title: "START CALLING",
-                 text: "Press the green button. With Auto Dial on, the app calls, redials, hangs up and moves on by itself, and the button turns into a red STOP CALLING. Next Person skips someone. During a call, END CALL is here.",
+        TourStep(spot: .call, part: "Make calls", title: "START CALLING LIST",
+                 text: "Press START CALLING LIST. With Auto Dial on, the app calls, redials, hangs up and moves on by itself, and the button turns into a red STOP CALLING. Next Person skips someone. During a call, END CALL is here.",
                  corner: 10, pad: 6),
         TourStep(spot: .line, part: "Make calls", title: "Say what's on the card",
                  text: "The card shows a short thought to say, from your script. Command-Shift-L shows the full line. The space bar gets a fresh line. The arrow by the title folds the card.",
