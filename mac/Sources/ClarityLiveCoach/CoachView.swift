@@ -270,7 +270,11 @@ struct CoachView: View {
             // During a call the line always shows: it's what to say.
             if prospect != nil { prospectCard }
             if showAll || coach.status != .ready { scriptCard.tourScrollSpot(.line) }
-            if showAll { ScriptOutlineCard(coach: coach, editMenu: AnyView(scriptEditMenu)).tourScrollSpot(.script) }
+            if showAll { ScriptOutlineCard(coach: coach, onScriptChange: { text in
+                var c = campaigns.selected
+                c.pastedScript = text
+                campaigns.save(c) // the coach picks up the new script (onChange of the selected call list)
+            }, editMenu: AnyView(scriptEditMenu)).tourScrollSpot(.script) }
             if liveCardOpen && coach.status != .ready { belowCard }
             // Essential view: only between calls (during a call it's just the line).
             if coach.statusRecordID != nil, coach.status == .ready {

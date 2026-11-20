@@ -641,7 +641,10 @@ extension CoachModel {
     /// A problem that trimming can't fix: the move or the coaching is wrong for this moment.
     /// A missing or badly formatted THINK is not serious on its own (the card shows SAY, labeled).
     static func isSerious(_ problem: String) -> Bool {
-        if problem.hasPrefix("THINK is missing") || problem.hasPrefix("THINK isn't usable") { return false }
+        if problem.hasPrefix("THINK is missing") || problem.hasPrefix("THINK isn't usable") 
+            // Measured: these two checks wrongly reject good pairs (10 of 40 in the THINK/SAY matrix), so they
+            // fall back to SAY instead of hiding the line.
+            || problem.hasPrefix("THINK and SAY aren't the same move") || problem.hasPrefix("THINK is about something that hasn't come up") { return false }
         return ["the rep claims", "they asked a direct", "they declined", "THINK ", "MOVE "].contains { problem.hasPrefix($0) }
     }
 

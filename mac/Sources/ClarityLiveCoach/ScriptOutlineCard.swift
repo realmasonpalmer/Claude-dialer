@@ -8,11 +8,18 @@ struct ScriptOutlineCard: View {
     @AppStorage(PrefKey.scriptOutlineOpen) private var open = false
     /// The "View Full Script" sheet: every part, no fold.
     var fullOnly = false
+    /// Saves an edited script (the card can't reach the call list store itself).
+    var onScriptChange: ((String) -> Void)? = nil
+    /// The part being edited on the card, and its text.
+    @State private var editingID: String?
+    @State private var draft = ""
 
     struct Part: Identifiable {
         let id: String
         let title: String
         let text: String
+        /// The lines as written in the one-page script (before names are filled in), for editing.
+        var raw: [String] = []
     }
 
     var parts: [Part] {
@@ -37,7 +44,8 @@ struct ScriptOutlineCard: View {
                         let filled = coach.fillTags(line, for: coach.calling)
                         return filled.hasPrefix("there, ") ? "Hi " + filled : filled
                     }
-                    return Part(id: Self.stageID(for: section.title), title: section.title, text: lines.joined(separator: "\n"))
+                    return Part(id: Self.stageID(for: section.title), title: section.title, text: lines.joined(separator: "\n"),
+                                raw: section.lines)
                 }
             }
             list = list.filter { !$0.text.trimmed.isEmpty }
@@ -118,8 +126,10 @@ struct ScriptOutlineCard: View {
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .overlay(Capsule().stroke(Color.green.opacity(0.6), lineWidth: 1))
                             }
-                            Text(part.text.trimmed).font(.body.weight(.bold)).foregroundStyle(Brand.text)
-                                .fixedSize(horizontal: false, vertical: true)
+                            editable(part) {
+                                Text(part.text.trimmed).font(.body.weight(.bold)).foregroundStyle(Brand.text)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,9 +142,11 @@ struct ScriptOutlineCard: View {
                                 .foregroundStyle(here ? Brand.blue : Brand.subtext).frame(width: 24)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(part.title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(here ? Brand.text : Brand.subtext)
-                                Text(part.text.trimmed).font(.callout.weight(here ? .semibold : .regular))
-                                    .foregroundStyle(here ? Brand.text : Brand.subtext)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                editable(part) {
+                                    Text(part.text.trimmed).font(.callout.weight(here ? .semibold : .regular))
+                                        .foregroundStyle(here ? Brand.text : Brand.subtext)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                         }
                         .padding(.horizontal, 4)
@@ -162,6 +174,45 @@ struct ScriptOutlineCard: View {
         .padding(CardStyle.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .brandCard(radius: CardStyle.radius)
+    }
+
+    /// A part's text; click it to edit in place (only for a written script, between calls).
+    @ViewBuilder private func editable<V: View>(_ part: Part, @ViewBuilder text: () -> V) -> some View {
+        if editingID == part.id + part.title {
+            VStack(alignment: .leading, spacing: 6) {
+                TextEditor(text: $draft)
+                    .font(.callout)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .frame(minHeight: 70)
+                    .background(Brand.navy.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.blue, lineWidth: 1))
+                HStack(spacing: 10) {
+                    Button("Save") { save(part) }.buttonStyle(BrandPrimaryButton())
+                    Button("Cancel") { editingID = nil }.buttonStyle(.brandLink)
+                    Text("One line per row. The coach uses your wording.").font(.caption).foregroundStyle(Brand.muted)
+                }
+            }
+        } else if canEdit(part) {
+            text()
+                .contentShape(Rectangle())
+                .onTapGesture { draft = part.raw.joined(separator: "\n"); editingID = part.id + part.title }
+                .help("Click to edit these lines")
+        } else {
+            text()
+        }
+    }
+
+    private func canEdit(_ part: Part) -> Bool {
+        onScriptChange != nil && !part.raw.isEmpty && coach.status == .ready
+    }
+
+    private func save(_ part: Part) {
+        let lines = draft.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        editingID = nil
+        guard !lines.isEmpty, lines != part.raw else { return }
+        let updated = pages.edit(script: coach.campaign.pastedScript, title: part.title, oldLines: part.raw, newLines: lines)
+        onScriptChange?(updated)
     }
 
     /// An icon for each kind of script part.

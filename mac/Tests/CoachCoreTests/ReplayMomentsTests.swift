@@ -24,7 +24,10 @@ final class ReplayMomentsTests: XCTestCase {
 
     // Mirrors CoachModel.isSerious / lineProblems' conversation checks (the app target isn't testable here).
     func isSerious(_ p: String) -> Bool {
-        if p.hasPrefix("THINK is missing") || p.hasPrefix("THINK isn't usable") { return false }
+        if p.hasPrefix("THINK is missing") || p.hasPrefix("THINK isn't usable") 
+            // Measured: these two checks wrongly reject good pairs (10 of 40 in the THINK/SAY matrix), so they
+            // fall back to SAY instead of hiding the line.
+            || p.hasPrefix("THINK and SAY aren't the same move") || p.hasPrefix("THINK is about something that hasn't come up") { return false }
         return ["the rep claims", "they asked a direct", "they declined", "THINK ", "MOVE "].contains { p.hasPrefix($0) }
     }
     func conversationProblems(_ m: Moment, _ intent: ConversationIntent) -> [String] {

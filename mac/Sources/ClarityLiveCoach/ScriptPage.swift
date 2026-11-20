@@ -40,6 +40,43 @@ final class ScriptPage: ObservableObject {
         return Self.quickRead(script)
     }
 
+    /// The rep edited a section on the My Script card. Saves the page with the new lines and returns the
+    /// script with the change in it: lines found word for word are replaced in place; the rest go into a
+    /// "Rep's own wording" block at the end, so the live coach uses them too.
+    func edit(script: String, title: String, oldLines: [String], newLines: [String]) -> String {
+        let script = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        let oldKey = Self.key(script)
+        let current = cache[oldKey].map(Self.split) ?? Self.quickRead(script)
+        var updated = script
+        var unplaced: [String] = []
+        for (i, line) in newLines.enumerated() {
+            let old = i < oldLines.count ? oldLines[i] : nil
+            guard line != old else { continue }
+            if let old, !old.isEmpty, updated.contains(old) { updated = updated.replacingOccurrences(of: old, with: line) }
+            else { unplaced.append(line) }
+        }
+        let marker = "REP'S OWN WORDING (use these lines in these words)"
+        if !unplaced.isEmpty {
+            var block = unplaced.map { "\(title): \($0)" }.joined(separator: "\n")
+            if let r = updated.range(of: marker) {
+                block = String(updated[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    .components(separatedBy: "\n").filter { !$0.hasPrefix("\(title):") }.joined(separator: "\n")
+                    + "\n" + block
+                updated = String(updated[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            updated += "\n\n" + marker + "\n" + block.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // The page keeps the rep's edit, under the new script's key, so it isn't rewritten over it.
+        let page = current.map { s in "\(s.title.uppercased())\n" + (s.title == title ? newLines : s.lines).joined(separator: "\n") }
+            .joined(separator: "\n\n")
+        cache[Self.key(updated)] = page
+        cache[oldKey] = page
+        UserDefaults.standard.set(cache, forKey: Self.storeKey)
+        version += 1
+        ActivityLog.add("My script: \(title) edited by the rep")
+        return updated
+    }
+
     /// True while Claude is still writing the page for this script.
     func isWriting(_ script: String) -> Bool {
         writing.contains(Self.key(script.trimmingCharacters(in: .whitespacesAndNewlines)))
