@@ -100,4 +100,26 @@ final class ThinkCoachingTests: XCTestCase {
         XCTAssertNil(answers.matchInContext("Not much, honestly",
                                             answeredQuestions: ["Where does a rep lose the most time each week?"]).entry)
     }
+
+    func testDeflectedQuestionsAreNotRepeatedButClarificationsAre() {
+        var t = QuestionTracker()
+        _ = t.add(turn: "Does Gong handle your follow-ups too?", from: .rep)
+        _ = t.add(turn: "Why do you ask?", from: .prospect)          // deflected
+        XCTAssertEqual(t.doNotRepeat, ["Does Gong handle your follow-ups too?"])
+        var u = QuestionTracker()
+        _ = u.add(turn: "How do notes reach your CRM?", from: .rep)
+        _ = u.add(turn: "What do you mean?", from: .prospect)        // a clarification: rephrase is fine
+        XCTAssertEqual(u.doNotRepeat, [])
+    }
+
+    func testObjectionPhrasesAndPoorMoves() {
+        XCTAssertEqual(ObjectionTracker.detect("I don't have time right now."), "no time")
+        XCTAssertEqual(ObjectionTracker.detect("We're all set."), "happy as is")
+        XCTAssertEqual(ObjectionTracker.detect("Call me back next week."), "call later")
+        XCTAssertEqual(ConversationIntent.classify("We're all set."), .objection)
+        XCTAssertEqual(ConversationIntent.classify("I'm not interested."), .rejection)
+        XCTAssertFalse(problems("Offer Tuesday or Wednesday.", say: "Would Tuesday or Wednesday work?", move: "close", prospect: "We're all set.").isEmpty)
+        XCTAssertFalse(problems("Where does your team lose time?", say: "Where does your team lose time?", move: "discover", prospect: "I don't have time right now.").isEmpty)
+        XCTAssertEqual(problems("When's a better time to call?", say: "No problem. When's a better time to call?", move: "objection", prospect: "I don't have time right now."), [])
+    }
 }

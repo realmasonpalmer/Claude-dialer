@@ -79,6 +79,13 @@ public enum Think {
         if intent == .question, move == "discover" {
             out.append("they asked a direct question: THINK must answer it first (MOVE answer), not start discovery")
         }
+        // Poor moves for the objection they raised (a line can pass every other check and still be bad coaching).
+        if objectionKind == "happy as is", move == "close" {
+            out.append("MOVE close on a brush-off (\"we're all set\"): acknowledge, then one light question; offer a meeting only if they open up")
+        }
+        if ["no time", "call later"].contains(objectionKind ?? ""), ["discover", "clarify"].contains(move) {
+            out.append("MOVE \(move) when they have no time: ask for a better time, don't start discovery")
+        }
         // Discovery needs a question; a pure statement or instruction for MOVE discover is the wrong coaching.
         if move == "discover", !isQuestion {
             out.append("MOVE is discover but THINK isn't a question: write the one question to ask")
@@ -88,9 +95,10 @@ public enum Think {
             if let again = answeredQuestions.first(where: { Repeats.same($0, t) }) {
                 out.append("THINK repeats a question already answered: \"\(again)\"")
             }
-            // Unrelated topic: nothing in it comes from this conversation or the script.
+            // Unrelated topic: a discovery question with nothing from this conversation or the script. Next steps
+            // (a time, who joins, a referral, sending what they asked for) are new topics by nature, so they're fine.
             let mine = Repeats.meaning(t)
-            if !mine.isEmpty {
+            if !mine.isEmpty, ["discover", "clarify"].contains(move) {
                 let known = Repeats.meaning(recentText).union(Repeats.meaning(scriptText))
                 if mine.intersection(known).isEmpty { out.append("THINK is about something that hasn't come up: ground it in what they said") }
             }
@@ -107,10 +115,30 @@ public enum Think {
         return out
     }
 
-    /// First word class of a question: its wh-word, or "yn" for a yes/no question.
+    /// The kind of question: "qty" (how many / much / long / often), "who", "when", "where", "which",
+    /// "open" (what / why / how), or "yn". "What's blocking it?" and "Why aren't they using it?" are both open.
+    static func group(_ word: String) -> String? {
+        switch word {
+        case "what", "why", "how": return "open"
+        case "who", "when", "where", "which": return word
+        default: return nil
+        }
+    }
+
     static func questionClass(_ q: String) -> String {
-        let first = q.lowercased().split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
-        return ["what", "who", "how", "why", "when", "where", "which"].contains(first) ? first : "yn"
+        let low = q.lowercased()
+        if ["how many", "how much", "how long", "how often"].contains(where: { low.contains($0) }) { return "qty" }
+        let first = low.split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
+        return group(first) ?? "yn"
+    }
+
+    /// Every kind a question could be read as ("If this went well, what would that look like?" is open too).
+    static func questionClasses(_ q: String) -> Set<String> {
+        let low = q.lowercased()
+        var out: Set<String> = [questionClass(q)]
+        if out.contains("qty") { return out }
+        for w in low.split(whereSeparator: { !$0.isLetter }).map(String.init) { if let g = group(w) { out.insert(g) } }
+        return out
     }
 
     /// THINK and SAY must be the same move. Not "share any word": the same kind of question, and most of
@@ -123,7 +151,7 @@ public enum Think {
             guard !sayQuestions.isEmpty else { return false }
             let mine = Repeats.meaning(t)
             return sayQuestions.contains { q in
-                guard questionClass(q) == questionClass(t) else { return false }
+                guard questionClasses(q).contains(questionClass(t)) else { return false }
                 let theirs = Repeats.meaning(q)
                 guard !mine.isEmpty else { return true }
                 return Double(mine.intersection(theirs).count) / Double(mine.count) >= 0.5
@@ -131,8 +159,10 @@ public enum Think {
         }
         // An instruction describes the move; SAY carries it out. Discovery needs a question, so no.
         if move == "discover" { return false }
-        // Stop or close: SAY must not go on asking.
-        if ["acknowledge", "close"].contains(move) { return !say.contains("?") }
+        // Stop-type instructions ("Thank them and end the call", "Don't push"): SAY must not go on asking.
+        let low = t.lowercased()
+        let stop = ["thank them", "end the call", "don't push", "do not push", "acknowledge", "let them go", "wrap up"]
+        if move == "acknowledge" || (move == "close" && stop.contains(where: { low.contains($0) })) { return !say.contains("?") }
         // Answer or explain: SAY must be about the same thing.
         let mine = Repeats.meaning(t)
         return mine.isEmpty || !mine.intersection(Repeats.meaning(say)).isEmpty

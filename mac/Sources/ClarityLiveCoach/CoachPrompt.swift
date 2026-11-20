@@ -98,11 +98,10 @@ enum CoachPrompt {
         - Never suggest "Did I catch you at a bad time?" It tests as the worst opener.
         - Never pitch features on a cold call. Earn the next step.
         - "We're all good", "all taken care of", "we're set", "we already have someone" (a brush-off, not a refusal): don't accept it and don't exit.
-          Acknowledge it warmly, then go straight for a meeting anyway, framed as a free health check or audit of
-          their systems: a second set of eyes, no cost, they keep whatever they learn. Use the script's length for
-          it if it gives one. For example: "Love that. Most teams who say that still find a few gaps. Worth a free
-          health check, so you know for sure?" Then offer two specific times. Only exit if they say no to the health
-          check too. If the script has its own line for this, use the script's line.
+          Acknowledge it warmly, then one light question about their setup ("Fair. What's still a hassle, even
+          with that in place?"). Offer the free health check (a second set of eyes, no cost) only if they show an
+          opening. Don't push a meeting on the first brush-off.
+        - "No time right now" or "call me later": ask for a better time to call. Don't pitch, don't start discovery.
 
         Selling AI and automation (when the campaign is about AI):
         Buyers are skeptical and busy. Talk about outcomes in their words, like hours back, cleaner data and more selling time, not about AI itself.

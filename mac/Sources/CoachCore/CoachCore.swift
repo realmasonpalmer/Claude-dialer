@@ -579,6 +579,19 @@ public struct QuestionTracker: Sendable {
         return changes
     }
 
+    /// Rep questions not to ask again: answered, or deflected and declined. A clarification ("What do you
+    /// mean?") is not on it: a clearer rephrase is the right move there.
+    public var doNotRepeat: [String] {
+        questions.filter { $0.asker == .rep && ($0.status == .answered || ($0.status == .uncertain && !Self.isClarification($0.answer))) }
+            .map(\.text)
+    }
+
+    static func isClarification(_ reply: String) -> Bool {
+        let t = reply.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        return ["what do you mean", "sorry?", "say that again", "didn't catch", "come again", "pardon", "what was that",
+                "i don't follow", "can you repeat"].contains { t.contains($0) }
+    }
+
     /// A reply that shares meaning with the question, or says enough to be a real answer.
     static func isConfirmed(_ q: Question) -> Bool {
         let n = Delivery.words(q.answer).count
@@ -637,13 +650,16 @@ public struct ObjectionTracker: Sendable {
         ("not interested", ["not interested", "no interest", "not for us", "we're good", "we are good", "i'm good", "pass on",
                             "don't know that i'm interested", "don't think i'm interested", "not the right fit",
                             "right fit for this", "not a good fit", "not a fit"]),
-        ("no time", ["no time", "too busy", "i'm busy", "in a meeting", "bad time", "not a good time", "driving"]),
+        ("no time", ["no time", "too busy", "i'm busy", "in a meeting", "bad time", "not a good time", "driving",
+                     "don't have time", "do not have time", "can't talk", "busy right now"]),
         ("send info", ["send me an email", "send me something", "send me info", "email me", "send it over", "send me some"]),
         ("already have it", ["we already have", "we already use", "we use another", "we use a ", "already working with", "we have a partner", "we have someone", "in house", "in-house"]),
-        ("happy as is", ["happy with", "it's working", "works fine", "we're fine", "don't need", "do not need", "no need"]),
+        ("happy as is", ["happy with", "it's working", "works fine", "we're fine", "don't need", "do not need", "no need",
+                         "all set", "we're set", "we are set", "all good", "taken care of"]),
         ("price", ["too expensive", "no budget", "can't afford", "cost too much", "costs too much", "not in the budget"]),
         ("wrong person", ["not the right person", "not my area", "not my department", "talk to someone else", "i don't handle"]),
-        ("call later", ["call me later", "call back later", "call me next", "reach out next", "maybe later", "not right now"]),
+        ("call later", ["call me later", "call back later", "call me next", "reach out next", "maybe later", "not right now",
+                        "call me back", "try me later", "another time", "try me tomorrow"]),
         ("trust", ["how did you get my number", "who gave you", "is this a sales call", "is this a scam"]),
     ]
     static let stillOpenWords = ["no", "nope", "still not", "not interested", "i said", "like i said", "already told you", "not really", "i don't think so",
@@ -1263,8 +1279,19 @@ public enum Repeats {
     static let questionWords: Set<String> = ["what", "who", "why", "how", "when", "where", "which", "does", "did", "are", "can",
                                             "could", "would", "will", "should", "tell", "some", "about", "much", "many"]
 
+    /// Words that don't carry the point of a question (they pad paraphrases or are in every question).
+    static let filler: Set<String> = ["too", "also", "really", "just", "ups", "roughly", "today", "those", "these", "there",
+                                      "into", "out", "team", "people", "rep", "folk", "anyone", "everyone", "kind", "sort"]
+    /// A few same-meaning words seen in real paraphrases (THINK/SAY matrix). Small on purpose.
+    static let same: [String: String] = [
+        "crm": "salesforce", "using": "use", "used": "use", "usage": "use", "adoption": "use", "adopt": "use",
+        "stopp": "block", "stop": "block", "blocking": "block", "stall": "block", "stuck": "block", "way": "block",
+        "hour": "time", "made": "cause", "got": "cause", "get": "cause", "led": "cause", "rollout": "roll",
+        "care": "handle", "manage": "handle",
+    ]
+
     static func meaning(_ text: String) -> Set<String> {
-        Set(Delivery.words(text).filter { !questionWords.contains($0) })
+        Set(Delivery.words(text).map { same[$0] ?? $0 }.filter { !questionWords.contains($0) && !filler.contains($0) })
     }
 
     /// At least 60% of the smaller question's meaning words are in the other one (and at least two words).

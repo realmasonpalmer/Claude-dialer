@@ -80,7 +80,7 @@ final class ReplayMomentsTests: XCTestCase {
         Moment(prospect: "I'm not the right person for this.", context: "", answered: [],
                move: "objection", think: "Who handles sales tools there?", say: "Fair. Who handles sales tools on your side?", flawed: false),
         Moment(prospect: "We're all good, we're set.", context: "", answered: [],
-               move: "objection", think: "Offer the free health check anyway.", say: "Love that. Worth a free health check to be sure?", flawed: false),
+               move: "objection", think: "What's still a hassle, even with that in place?", say: "Fair. What's still a hassle, even with that in place?", flawed: false),
         // Clear refusals
         Moment(prospect: "I'm not interested.", context: "", answered: [],
                move: "acknowledge", think: "Acknowledge. Don't push.", say: "Totally fair. I appreciate you being straight with me.", flawed: false),
@@ -96,7 +96,8 @@ final class ReplayMomentsTests: XCTestCase {
         Moment(prospect: "Sorry, I didn't catch that.", context: "Rep: Free health check on how your team uses AI.", answered: [],
                move: "clarify", think: "Repeat the reason in one sentence.", say: "No worries. It's a free check on how your team uses AI and the CRM.", flawed: false),
         // Objection already answered
-        Moment(prospect: "Like I said, we already use Gong.", context: "Prospect: We use Gong. Rep: Does Gong handle your follow-ups too?", answered: [],
+        // The rep asked, they pushed back instead of answering: on the do-not-repeat list (QuestionTracker.doNotRepeat).
+        Moment(prospect: "Like I said, we already use Gong.", context: "Prospect: We use Gong. Rep: Does Gong handle your follow-ups too?", answered: ["Does Gong handle your follow-ups too?"],
                move: "discover", think: "Does Gong handle your follow-ups too?", say: "Does Gong handle your follow-ups too?", flawed: true),
         // Closing
         Moment(prospect: "Okay, that sounds interesting.", context: "Rep: Would a free health check help?", answered: [],
@@ -107,6 +108,14 @@ final class ReplayMomentsTests: XCTestCase {
                move: "close", think: "Thank them and end the call.", say: "You too. Thanks for your time.", flawed: false),
         Moment(prospect: "Thanks, have a good day.", context: "", answered: [],
                move: "close", think: "Can we book a time first?", say: "Before you go, can we book a time?", flawed: true),
+        // Poor moves that pass the old checks
+        Moment(prospect: "We're all set.", context: "", answered: [],
+               move: "close", think: "Offer Tuesday or Wednesday for the health check.", say: "Love that. Would Tuesday or Wednesday work for a free health check?", flawed: true),
+        Moment(prospect: "I don't have time right now.", context: "", answered: [],
+               move: "discover", think: "Where does your team lose the most time?", say: "Quick one: where does your team lose the most time?", flawed: true),
+        // A clearer rephrase after "What do you mean?" is allowed (the question isn't on the do-not-repeat list).
+        Moment(prospect: "What do you mean?", context: "Rep: How do notes reach your CRM?", answered: [],
+               move: "clarify", think: "How do call notes get into Salesforce?", say: "I mean, after a call, how do the notes get into Salesforce?", flawed: false),
     ] }
 
     func testReplay() {
@@ -125,6 +134,6 @@ final class ReplayMomentsTests: XCTestCase {
             print("REPLAY|moment \(i + 1)|\(m.flawed ? "flawed on purpose" : "good")|intent=\(intent.rawValue)|move=\(m.move)|Prospect: \(m.prospect)|THINK: \(m.think)|SAY: \(m.say)|problems: \(all.isEmpty ? "none" : all.joined(separator: "; "))|\(decision)")
         }
         print("REPLAY|moment-summary|moments=\(moments.count)|THINK shown=\(shown)|SAY fallback=\(fallback)|suppressed=\(suppressed)|flawed but shown=\(flawedShown)|good but suppressed=\(goodSuppressed)")
-        XCTAssertEqual(moments.count, 30)
+        XCTAssertEqual(moments.count, 33)
     }
 }
