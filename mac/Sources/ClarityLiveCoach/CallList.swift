@@ -379,9 +379,20 @@ final class CallList: ObservableObject {
     private func open(_ record: Record, at index: Int) -> Bool {
         // Click it in the list like the rep would (keeps split view); else go to its address.
         guard SalesforceChrome.click(recordID: record.id) || SalesforceChrome.open(record.url) else {
-            message = chromeBlocked
-                ? "Chrome needs one setting: View > Developer > Allow JavaScript from Apple Events."
-                : "Couldn't find your Salesforce tab in Chrome."
+            if chromeBlocked {
+                message = "Chrome needs one setting: View > Developer > Allow JavaScript from Apple Events."
+                return false
+            }
+            // No Salesforce tab: open Salesforce in Chrome. If it asks, sign in there and the app carries on.
+            if SalesforceChrome.openNewTab(record.url) {
+                message = "Opening Salesforce in Chrome. If it asks you to log in, log in there and the app picks up from here."
+                lastIndex = index
+                lastOpenedID = record.id
+                save()
+                refreshUpNext(after: index)
+                return true
+            }
+            message = "Log in to Salesforce in Chrome, then press START CALLING again."
             return false
         }
         lastIndex = index
@@ -672,6 +683,16 @@ enum SalesforceChrome {
     }
 
     /// Shows the Salesforce tab and goes to an address.
+    /// No Salesforce tab yet: opens the address in a new Chrome tab (Salesforce shows its login page if needed).
+    static func openNewTab(_ url: String) -> Bool {
+        guard url.hasPrefix("https://"), let u = URL(string: url),
+              let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else { return false }
+        NSWorkspace.shared.open([u], withApplicationAt: chrome, configuration: NSWorkspace.OpenConfiguration())
+        invalidate()
+        ActivityLog.add("No Salesforce tab in Chrome: opened one")
+        return true
+    }
+
     static func open(_ url: String) -> Bool {
         guard url.hasPrefix("https://"), !url.contains("\"") else { return false }
         defer { invalidate() }
