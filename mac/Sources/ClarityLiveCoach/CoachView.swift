@@ -665,7 +665,7 @@ struct CoachView: View {
             }
             .padding(8)
             .background(Brand.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
-        } else if (updater.updateAvailable && coach.status == .ready) || tourShowsUpdate {
+        } else if updater.updateAvailable || tourShowsUpdate {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle.fill").foregroundStyle(Brand.blue)
                 Text("A new version is ready.").font(.caption.weight(.semibold))
@@ -674,8 +674,8 @@ struct CoachView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .fixedSize()
-                    .disabled(!updater.updateAvailable)
-                    .help("Installs the new version. Takes about 2 minutes. No Terminal.")
+                    .disabled(!updater.updateAvailable || coach.status != .ready)
+                    .help(coach.status == .ready ? "Installs the new version. Takes about 2 minutes. No Terminal." : "Finish the call first: the app restarts to update.")
             }
             .padding(8)
             .background(Brand.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
