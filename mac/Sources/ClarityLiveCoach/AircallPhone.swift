@@ -518,44 +518,19 @@ struct AircallPhonePanel: View {
     @AppStorage("linkedInBotSend") private var autoLinkedIn = true
     @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
     @State private var tick = false
-    @AppStorage("outboundSetupOpen") private var setupOpen = true
 
     var body: some View {
         // Outbound Setup: the numbers, calling options and follow-up automation, between calls.
         VStack(alignment: .leading, spacing: 14) {
-            Button { setupOpen.toggle() } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: setupOpen ? "chevron.down" : "chevron.right").font(.callout.weight(.semibold))
-                    Text("Outbound Setup").font(.headline.weight(.bold))
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(Brand.text)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if setupOpen {
+            Text("Outbound Setup").font(.headline.weight(.bold)).foregroundStyle(Brand.text)
             // Side by side when there's room, stacked on a narrow window: never wider than the window.
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 12) { callsField; textsField }
                 VStack(alignment: .leading, spacing: 12) { callsField; textsField }
             }
-            // Two boxes side by side when there's room; on a narrow window, one box with both.
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    optionBox("Calling Options", icon: "phone") { callingOptions }.tourSpot(.options)
-                    optionBox("Follow-Up Automation", icon: "paperplane") { followUpOptions }
-                }
-                optionBox("Calling Options", icon: "phone") {
-                    callingOptions
-                    Divider().overlay(Brand.edge)
-                    HStack(spacing: 10) {
-                        Image(systemName: "paperplane").foregroundStyle(Brand.blue)
-                        Text("Follow-Up Automation").font(.body.weight(.semibold)).foregroundStyle(Brand.text)
-                    }
-                    followUpOptions
-                }
-                .tourSpot(.options)
-            }
+                HStack(alignment: .top, spacing: 12) { callingBox; followUpBox }
+                VStack(alignment: .leading, spacing: 12) { callingBox; followUpBox }
             }
         }
         .task {
@@ -575,67 +550,44 @@ struct AircallPhonePanel: View {
             .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
     }
 
-    @ViewBuilder private var callingOptions: some View {
-        Toggle("Auto Dial", isOn: $autoDial).toggleStyle(BlueCheck())
-            .help("The app calls the next person by itself.")
-        Toggle("Call Twice", isOn: $doubleTap).toggleStyle(BlueCheck())
-            .help("If they don't pick up, call them one more time right away.")
-        Toggle("Mobile Only", isOn: Binding(get: { MobileOnly.on }, set: { MobileOnly.setOn($0); tick.toggle() }))
-            .toggleStyle(BlueCheck()).id(tick)
-            .help("Skip anyone with no Mobile in Salesforce. Better pick up rates, and every text can go out.")
-        HStack(spacing: 10) {
-            Toggle("East Coast First", isOn: Binding(
-                get: { TimeZoneFilter.selected == nil && TimeZoneFilter.eastCoastFirst },
-                set: { on in coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(on); tick.toggle() }
-            ))
-            .toggleStyle(BlueCheck()).id("east\(tick)")
-            .help("Start in the East and go West, so nobody gets called before 9 there.")
-            zoneMenu
-        }
-    }
-
-    /// Which time zones to call: all, or one only.
-    private var zoneMenu: some View {
-        let picked = TimeZoneFilter.selected
-        return Menu {
-            Button {
-                coach.setTimeZoneFilter(nil); tick.toggle()
-            } label: {
-                if picked == nil { Label("All time zones", systemImage: "checkmark") } else { Text("All time zones") }
-            }
-            Divider()
-            ForEach(CallZone.allCases) { zone in
-                Button {
-                    coach.setTimeZoneFilter(zone); tick.toggle()
-                } label: {
-                    let title = "Only \(zone.label) · \(zone.timeNow) there now"
-                    if picked == zone { Label(title, systemImage: "checkmark") } else { Text(title) }
+    private var callingBox: some View {
+                optionBox("Calling Options", icon: "phone") {
+                    flow {
+                        Toggle("Auto Dial", isOn: $autoDial).toggleStyle(BlueCheck())
+                            .help("The app calls the next person by itself.")
+                        Toggle("Call Twice", isOn: $doubleTap).toggleStyle(BlueCheck())
+                            .help("If they don't pick up, call them one more time right away.")
+                        Toggle("Mobile Only", isOn: Binding(get: { MobileOnly.on }, set: { MobileOnly.setOn($0); tick.toggle() }))
+                            .toggleStyle(BlueCheck()).id(tick)
+                            .help("Skip anyone with no Mobile in Salesforce. Better pick up rates, and every text can go out.")
+                        Toggle("East Coast First", isOn: Binding(
+                            get: { TimeZoneFilter.selected == nil && TimeZoneFilter.eastCoastFirst },
+                            set: { on in coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(on); tick.toggle() }
+                        ))
+                        .toggleStyle(BlueCheck()).id("east\(tick)")
+                        .help("Start in the East and go West, so nobody gets called before 9 there.")
+                    }
                 }
-            }
-        } label: {
-            Text(picked.map { "\($0.label) only" } ?? "All zones").font(.callout).foregroundStyle(Brand.text).lineLimit(1)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .padding(.leading, 10).padding(.trailing, 30).padding(.vertical, 5)
-        .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.controlEdge, lineWidth: 1))
-        .overlay(alignment: .trailing) {
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Brand.text)
-                .frame(width: 18, height: 18)
-                .background(Brand.blue, in: RoundedRectangle(cornerRadius: 5))
-                .padding(.trailing, 5)
-                .allowsHitTesting(false)
-        }
-        .disabled(coach.status != .ready)
-        .help("Call all time zones, or only one")
+                .tourSpot(.options)
     }
 
-    @ViewBuilder private var followUpOptions: some View {
-        infoToggle("Auto Text", $autoText, "After a voicemail, the text goes out by itself while the next person loads.")
-        infoToggle("Auto LinkedIn Connect", $autoLinkedIn, "The app sends the LinkedIn connection request in Chrome in the background.")
-        infoToggle("Auto Voicemail Drop", $dropOn, "Drops your recorded voicemail after the beep. Record it first: Settings, then Voicemail drop.")
+    private var followUpBox: some View {
+                optionBox("Follow-Up Automation", icon: "paperplane") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        infoToggle("Auto Text", $autoText, "After a voicemail, the text goes out by itself while the next person loads.")
+                        infoToggle("Auto LinkedIn Connect", $autoLinkedIn, "The app sends the LinkedIn connection request in Chrome in the background.")
+                        infoToggle("Auto Voicemail Drop", $dropOn, "Drops your recorded voicemail after the beep. Record it first: Settings, then Voicemail drop.")
+                    }
+                }
+    }
+
+    /// Switches in a row when they fit, one per line when they don't.
+    private func flow<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        let c = content()
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { c }
+            VStack(alignment: .leading, spacing: 10) { c }
+        }
     }
 
     private func optionBox<C: View>(_ title: String, icon: String, @ViewBuilder content: () -> C) -> some View {
@@ -644,7 +596,7 @@ struct AircallPhonePanel: View {
                 Image(systemName: icon).foregroundStyle(Brand.blue)
                 Text(title).font(.body.weight(.semibold)).foregroundStyle(Brand.text)
             }
-            VStack(alignment: .leading, spacing: 10) { content() }
+            content()
         }
         .fixedSize(horizontal: false, vertical: true) // the box always grows to fit what's in it
         .padding(14)
