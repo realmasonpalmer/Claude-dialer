@@ -525,8 +525,9 @@ struct AircallPhonePanel: View {
         VStack(alignment: .leading, spacing: 14) {
             Button { setupOpen.toggle() } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: setupOpen ? "chevron.down" : "chevron.right").font(.callout.weight(.semibold))
-                    Text("Outbound Settings").font(.headline.weight(.bold))
+                    Image(systemName: setupOpen ? "chevron.down" : "chevron.right").font(CardStyle.chevron).foregroundStyle(Brand.subtext)
+                    Image(systemName: "slider.horizontal.3").font(CardStyle.icon).foregroundStyle(Brand.blue)
+                    Text("Outbound Settings").font(CardStyle.title)
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Brand.text)

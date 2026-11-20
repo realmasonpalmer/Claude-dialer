@@ -94,8 +94,9 @@ struct ScriptOutlineCard: View {
                     // Chevron + title: one click target that folds the card.
                     Button { open.toggle() } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: open ? "chevron.down" : "chevron.right").font(.callout.weight(.semibold))
-                            Text("My Script").font(.title3.weight(.semibold))
+                            Image(systemName: open ? "chevron.down" : "chevron.right").font(CardStyle.chevron).foregroundStyle(Brand.subtext)
+                            Image(systemName: "doc.text").font(CardStyle.icon).foregroundStyle(Brand.blue)
+                            Text("My Script").font(CardStyle.title)
                         }
                         .foregroundStyle(Brand.text)
                         .contentShape(Rectangle())
@@ -158,9 +159,9 @@ struct ScriptOutlineCard: View {
                 }
             }
         }
-        .padding(14)
+        .padding(CardStyle.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .brandCard(radius: 12)
+        .brandCard(radius: CardStyle.radius)
     }
 
     /// An icon for each kind of script part.

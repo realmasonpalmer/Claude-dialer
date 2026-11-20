@@ -173,9 +173,10 @@ struct TouchpointsCard: View {
             HStack(spacing: 8) {
                 Button { cardOpen.toggle() } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: cardOpen ? "chevron.down" : "chevron.right").font(.caption.weight(.semibold))
+                        Image(systemName: cardOpen ? "chevron.down" : "chevron.right").font(CardStyle.chevron)
                             .foregroundStyle(Brand.subtext)
-                        Text("My Activity").font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
+                        Image(systemName: "chart.bar").font(CardStyle.icon).foregroundStyle(Brand.blue)
+                        Text("My Activity").font(CardStyle.title).foregroundStyle(Brand.text)
                         if !cardOpen {
                             Text("· \(dials) dials · \(meetings) meetings").font(.caption).foregroundStyle(Brand.muted)
                         }
@@ -252,9 +253,9 @@ struct TouchpointsCard: View {
             }
             }
         }
-        .padding(12)
+        .padding(CardStyle.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .brandCard(radius: 10)
+        .brandCard(radius: CardStyle.radius)
     }
 
     /// One of the four main numbers: big value, small label.

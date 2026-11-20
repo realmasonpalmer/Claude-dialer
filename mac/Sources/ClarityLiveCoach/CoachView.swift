@@ -271,7 +271,7 @@ struct CoachView: View {
             if prospect != nil { prospectCard }
             if showAll || coach.status != .ready { scriptCard.tourScrollSpot(.line) }
             if showAll { ScriptOutlineCard(coach: coach, editMenu: AnyView(scriptEditMenu)).tourScrollSpot(.script) }
-            belowCard
+            if liveCardOpen && coach.status != .ready { belowCard }
             // Essential view: only between calls (during a call it's just the line).
             if coach.statusRecordID != nil, coach.status == .ready {
                 RelationshipCard(coach: coach)
@@ -990,10 +990,11 @@ struct CoachView: View {
             HStack(spacing: 6) {
                 Button { liveCardOpen.toggle() } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: liveCardOpen ? "chevron.down" : "chevron.right").font(.caption2)
+                        Image(systemName: liveCardOpen ? "chevron.down" : "chevron.right").font(CardStyle.chevron).foregroundStyle(Brand.subtext)
+                        Image(systemName: "waveform").font(CardStyle.icon).foregroundStyle(Brand.blue)
                         // Always "Live Coach"; a voicemail or robot adds what to do.
                         Text(coach.kind == .voicemail || coach.kind == .screener ? "Live Coach · " + cardLabel.capitalized : "Live Coach")
-                            .font(.caption.weight(.semibold))
+                            .font(CardStyle.title)
                             .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.text)
                     }
                     .contentShape(Rectangle())
@@ -1048,7 +1049,7 @@ struct CoachView: View {
             }
             }
         }
-        .padding(20)
+        .padding(CardStyle.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Brand.scriptCard, in: RoundedRectangle(cornerRadius: 14))
         .overlay(alignment: .leading) {
@@ -1450,9 +1451,9 @@ struct CoachView: View {
                         .background(Brand.blue.opacity(0.35), in: Circle())
                 }
             }
-            .padding(22)
+            .padding(CardStyle.padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Brand.card, in: RoundedRectangle(cornerRadius: 14))
+            .background(Brand.card, in: RoundedRectangle(cornerRadius: CardStyle.radius))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.controlEdge, lineWidth: 1))
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2).fill(Brand.teal).frame(width: 3).padding(.vertical, 14)

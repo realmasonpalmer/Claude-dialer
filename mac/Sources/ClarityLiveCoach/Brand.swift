@@ -37,6 +37,15 @@ enum Brand {
     static let stop = hex(0xEF4444)
 }
 
+/// One look for every fold-out card: same chevron, icon, title size and padding.
+enum CardStyle {
+    static let title = Font.title3.weight(.semibold)
+    static let chevron = Font.callout.weight(.semibold)
+    static let icon = Font.title3
+    static let padding: CGFloat = 16
+    static let radius: CGFloat = 14
+}
+
 extension View {
     /// A standard card: slightly lighter than the page, with a soft edge.
     func brandCard(radius: CGFloat = 10) -> some View {

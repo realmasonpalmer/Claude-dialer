@@ -20,10 +20,10 @@ struct DailyGoalCard: View {
                 HStack(spacing: 10) {
                     Button { cardOpen.toggle() } label: {
                         HStack(spacing: 10) {
-                            Image(systemName: cardOpen ? "chevron.down" : "chevron.right").font(.callout.weight(.semibold))
+                            Image(systemName: cardOpen ? "chevron.down" : "chevron.right").font(CardStyle.chevron)
                                 .foregroundStyle(Brand.subtext)
-                            Image(systemName: "bolt").font(.title3.weight(.semibold)).foregroundStyle(Brand.blue)
-                            Text("Call Sprint").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
+                            Image(systemName: "bolt").font(CardStyle.icon).foregroundStyle(Brand.blue)
+                            Text("Call Sprint").font(CardStyle.title).foregroundStyle(Brand.text)
                         }
                         .contentShape(Rectangle())
                     }
@@ -57,9 +57,9 @@ struct DailyGoalCard: View {
                     setup
                 }
             }
-            .padding(18)
+            .padding(CardStyle.padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .brandCard(radius: 14)
+            .brandCard(radius: CardStyle.radius)
         }
     }
 
