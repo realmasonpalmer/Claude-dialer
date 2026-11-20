@@ -580,12 +580,14 @@ struct CoachView: View {
         let openName = listViewCache.first { !openKey.isEmpty && ($0.id.prefix(15) == openKey.prefix(15) || $0.developerName == openKey) }?.label
         let name = selected.listName.isEmpty ? (openName ?? "Pick a Salesforce list") : selected.listName
         return Menu {
-            Text("Who to call: pick a Salesforce list view (Leads or Contacts). It opens in Chrome and the app calls down it.")
-            Divider()
-            if !Salesforce.isConnected {
-                Text("Sign in to Salesforce first: gear, then Set up.")
-            } else if listViewCache.isEmpty {
-                Text("Loading your Salesforce lists...")
+            if !Salesforce.isConnected || listViewCache.isEmpty {
+                // No lists yet: the one thing to do is log in (Set up has the Salesforce sign-in).
+                Button("Log in to Salesforce to see your lists") { showSetup = true }
+                if Salesforce.isConnected {
+                    Button("Try loading my lists again") {
+                        Task { listViewCache = (try? await Salesforce.listViews()) ?? [] }
+                    }
+                }
             }
             ForEach(listViewCache) { v in
                 Button {
