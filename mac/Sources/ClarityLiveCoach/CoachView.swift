@@ -550,7 +550,7 @@ struct CoachView: View {
             } else {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 8) {
-                    headerField("CALL LIST") { salesforceListMenu }.tourSpot(.list)
+                    headerField("CALL LIST · SALESFORCE LIST VIEW") { salesforceListMenu }.tourSpot(.list)
                     Spacer(minLength: 0)
                     settingsMenu.tourSpot(.gear)
                 }
