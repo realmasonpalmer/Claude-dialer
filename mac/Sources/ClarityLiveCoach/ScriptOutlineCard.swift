@@ -78,41 +78,100 @@ struct ScriptOutlineCard: View {
         return "opening"
     }
 
+    /// The Edit menu in the header (switch, edit or write scripts). Supplied by the coach.
+    var editMenu: AnyView? = nil
+    /// Long scripts show the first few parts until Show more.
+    @State private var showAll = false
+    private static let firstParts = 4
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let all = parts
+        let shown = (fullOnly || showAll) ? all : Array(all.prefix(Self.firstParts))
+        VStack(alignment: .leading, spacing: 12) {
             if !fullOnly {
-            Button { open.toggle() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                    Text("My script").font(.callout.weight(.semibold))
+                HStack(spacing: 8) {
+                    // Chevron + title: one click target that folds the card.
+                    Button { open.toggle() } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: open ? "chevron.down" : "chevron.right").font(.callout.weight(.semibold))
+                            Text("My Script").font(.title3.weight(.semibold))
+                        }
+                        .foregroundStyle(Brand.text)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     Spacer(minLength: 0)
+                    // Edit: its own click target, never folds the card.
+                    if let editMenu { editMenu }
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
             }
             if open || fullOnly {
-                ForEach(parts) { part in
-                    let here = part.id == currentID
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(part.title.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(here ? Brand.text : Brand.muted)
-                        Text(part.text.trimmed)
-                            .font(.callout.weight(here ? .bold : .regular))
-                            .foregroundStyle(here ? .primary : .secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                ForEach(shown) { part in
+                    if part.id == "opening" {
+                        // The opener: said word for word, so it stands out.
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text(part.title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+                                Text("EXACT").font(.caption2.weight(.bold)).foregroundStyle(Color.green)
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .overlay(Capsule().stroke(Color.green.opacity(0.6), lineWidth: 1))
+                            }
+                            Text(part.text.trimmed).font(.body.weight(.bold)).foregroundStyle(Brand.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(part.id == currentID ? Brand.blue : Color.clear, lineWidth: 1))
+                    } else {
+                        let here = part.id == currentID
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: Self.icon(for: part.id)).font(.title3)
+                                .foregroundStyle(here ? Brand.blue : Brand.subtext).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(part.title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(here ? Brand.text : Brand.subtext)
+                                Text(part.text.trimmed).font(.callout.weight(here ? .semibold : .regular))
+                                    .foregroundStyle(here ? Brand.text : Brand.subtext)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(here ? Brand.blue.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 }
-                if parts.isEmpty {
-                    Text("No script yet. Next to SCRIPT at the top, click Edit Script, or pick Write a new script with Claude.").font(.caption).foregroundStyle(.secondary)
+                if !fullOnly, all.count > Self.firstParts {
+                    Button { showAll.toggle() } label: {
+                        HStack(spacing: 6) {
+                            Text(showAll ? "Show less" : "Show more")
+                            Image(systemName: showAll ? "chevron.up" : "chevron.down").font(.caption)
+                        }
+                        .font(.callout).foregroundStyle(Brand.text)
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.controlEdge, lineWidth: 1))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if all.isEmpty {
+                    Text("No script yet. Click Edit, then Write a new script with Claude.").font(.caption).foregroundStyle(Brand.muted)
                 }
             }
         }
-        .padding(10)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .brandCard(radius: 10)
+        .brandCard(radius: 12)
+    }
+
+    /// An icon for each kind of script part.
+    private static func icon(for id: String) -> String {
+        switch id {
+        case "value": return "scope"
+        case "discovery": return "questionmark.circle"
+        case "closing": return "calendar"
+        case "objection": return "bubble.left.and.exclamationmark.bubble.right"
+        case "exit": return "hand.raised"
+        default: return "text.alignleft"
+        }
     }
 }
 

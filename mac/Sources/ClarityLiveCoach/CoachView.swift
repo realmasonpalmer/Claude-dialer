@@ -269,7 +269,7 @@ struct CoachView: View {
             // Show less (between calls): no line card or script, just the call block and your numbers.
             // During a call the line always shows: it's what to say.
             if showAll || coach.status != .ready { scriptCard.tourScrollSpot(.line) }
-            if showAll { ScriptOutlineCard(coach: coach).tourScrollSpot(.script) }
+            if showAll { ScriptOutlineCard(coach: coach, editMenu: AnyView(scriptEditMenu)).tourScrollSpot(.script) }
             belowCard
             // Essential view: only between calls (during a call it's just the line).
             if coach.statusRecordID != nil, coach.status == .ready {
@@ -559,18 +559,6 @@ struct CoachView: View {
                 HStack(alignment: .center, spacing: 8) {
                     headerField("ACTIVE SCRIPT") { campaignMenu }.tourSpot(.segment)
                     Spacer(minLength: 0)
-                    Button {
-                        edit(campaigns.selected)
-                    } label: {
-                        Label("Edit", systemImage: "pencil")
-                            .font(.title3).foregroundStyle(Brand.text)
-                            .padding(.horizontal, 16).padding(.vertical, 10)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
-                            .contentShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(coach.status != .ready)
-                    .help("Change what the coach says, or have Claude rewrite it")
                 }
             }
             .padding(16)
@@ -750,6 +738,37 @@ struct CoachView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+
+    /// The small Edit action in the My Script header: change this script (or type it by hand),
+    /// switch scripts, or write a new one. A menu, so clicking it never folds the card.
+    private var scriptEditMenu: some View {
+        Menu {
+            Button("Edit this script...") { edit(campaigns.selected) }
+            Button("Write a new script with Claude...") { showScriptMaker = true }
+            Divider()
+            Text("Switch script")
+            ForEach(campaigns.campaigns) { c in
+                Button {
+                    switchTo(c)
+                } label: {
+                    if c.id == campaigns.selected.id { Label(c.name, systemImage: "checkmark") } else { Text(c.name) }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "pencil")
+                Text("Edit")
+            }
+            .font(.callout).foregroundStyle(Brand.subtext)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(coach.status != .ready)
+        .help("Edit this script, type it by hand, switch scripts, or write a new one")
     }
 
     /// What to say: pick a script, edit it, or have Claude write a new one. Who to call is the
@@ -1014,7 +1033,7 @@ struct CoachView: View {
             }
             }
         }
-        .padding(16)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Brand.scriptCard, in: RoundedRectangle(cornerRadius: 14))
         .overlay(alignment: .leading) {
@@ -1022,7 +1041,7 @@ struct CoachView: View {
             Rectangle().fill(Brand.teal).frame(width: 3)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.edge, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.blue.opacity(0.45), lineWidth: 1))
         .overlay(MeetingGlow(trigger: coach.meetingMoments))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
         .onChange(of: coach.suggestion.say) { showFullLine = false }
