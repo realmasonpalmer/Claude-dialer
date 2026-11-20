@@ -642,7 +642,6 @@ struct CoachView: View {
             Button(setupLabel) { showSetup = true }
             Button(Prefs.voicemailDropOn ? "Voicemail drop (on)..." : "Voicemail drop...") { showDropSetup = true }
             Button("Settings...") { showSettings = true }
-            Button("Help") { showHelp = true }
             Button("Show me around") { tourStep = 0 }
                 .disabled(coach.status != .ready)
         } label: {
