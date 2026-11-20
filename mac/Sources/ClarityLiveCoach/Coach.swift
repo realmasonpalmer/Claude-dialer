@@ -232,8 +232,27 @@ final class CoachModel: ObservableObject {
 
     /// The "Auto-dial" switch next to Aircall phone.
     var autoDial: Bool {
-        get { Prefs.autoDial }
+        get { Prefs.autoDial && !stoppedByRep }
         set { Prefs.autoDial = newValue; objectWillChange.send() }
+    }
+    /// The rep pressed STOP CALLING: auto dial pauses until START CALLING (the Auto Dial option stays on).
+    @Published var stoppedByRep = false
+    /// START CALLING was pressed with Auto Dial on: the app is working down the list by itself.
+    @Published var autoSession = false
+
+    /// The big green button: start working down the list (by itself when Auto Dial is on).
+    func startCalling() {
+        stoppedByRep = false
+        autoSession = Prefs.autoDial
+        ActivityLog.add("START CALLING (auto dial \(Prefs.autoDial ? "on" : "off"))")
+    }
+
+    /// The red button: stop auto dialing now. A call already ringing keeps going; nothing new starts.
+    func stopCalling() {
+        stoppedByRep = true
+        autoSession = false
+        cancelAutoNext()
+        ActivityLog.add("STOP CALLING: auto dial stopped by the rep")
     }
 
     // MARK: Double dial

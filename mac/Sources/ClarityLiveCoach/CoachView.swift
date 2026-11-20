@@ -1203,8 +1203,8 @@ struct CoachView: View {
         } else if inTour {
             // Walkthrough: a sample person, since no list is loaded yet.
             HStack(spacing: 8) {
-                bigButton("Call \(TourSample.name)", icon: "phone.fill") {}
-                smallButton("Skip") {}
+                smallButton("Next Person") {}
+                bigButton("START CALLING", icon: "phone.fill") {}
             }
             .controlSize(.large)
             .allowsHitTesting(false)
@@ -1238,7 +1238,8 @@ struct CoachView: View {
                     leadMode ? (nextName != nil && !coach.dialing) : (nextEnabled && !coach.dialing),
                     { coach.nextLead() })
         }()
-        let goIsNext = !coach.shouldOfferRedial && !notCalledYet
+        // Auto dial running: between calls the app moves on by itself, so the button is STOP.
+        let autoRunning = coach.autoSession && coach.autoDial
         return VStack(alignment: .leading, spacing: 6) {
             if let error = coach.dialError { warningText(error) }
             HStack(spacing: 8) {
@@ -1251,14 +1252,21 @@ struct CoachView: View {
                 .disabled(leadMode ? !coach.leads.canGoBack : !backEnabled)
                 .help("Go back to the person before")
 
-                bigButton(go.title, icon: go.icon, green: go.title == "START CALLING", action: go.action)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!go.enabled)
-
-                smallButton("Skip") { coach.nextLead() }
+                smallButton("Next Person") { coach.nextLead() }
                     .keyboardShortcut("n", modifiers: .command)
-                    .disabled(goIsNext || nextName == nil || coach.dialing)
-                    .help("Skip this person and call the next one (Command-N)")
+                    .disabled(nextName == nil || coach.dialing)
+                    .help("Skip this person and go to the next one (Command-N)")
+
+                if autoRunning {
+                    // Auto dial is working down the list: one big red button stops it.
+                    bigButton("STOP CALLING", icon: "stop.fill", color: Brand.stop) { coach.stopCalling() }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .help("Stop auto dialing. Nothing new starts until you press START CALLING.")
+                } else {
+                    bigButton(go.title, icon: go.icon, color: Brand.go) { coach.startCalling(); go.action() }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(!go.enabled)
+                }
             }
             .controlSize(.large)
             // Call them once more after their two tries (Command-R), without a button taking space.
@@ -1272,7 +1280,7 @@ struct CoachView: View {
         }
     }
 
-    private func bigButton(_ title: String, icon: String, green: Bool = false, action: @escaping () -> Void) -> some View {
+    private func bigButton(_ title: String, icon: String, color: Color = Brand.go, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
@@ -1280,9 +1288,9 @@ struct CoachView: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 2)
+            .padding(.vertical, 4)
         }
-        .buttonStyle(BrandPrimaryButton(color: green ? Brand.go : Brand.blue))
+        .buttonStyle(BrandPrimaryButton(color: color))
     }
 
     private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {

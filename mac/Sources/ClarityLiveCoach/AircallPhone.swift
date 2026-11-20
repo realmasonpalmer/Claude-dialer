@@ -509,36 +509,51 @@ struct AircallPhonePanel: View {
     @AppStorage("aircallTextNumberID") private var textNumberID = 0
     @State private var numbers: [Aircall.Number] = []
 
+    @State private var showOptions = false
+
     var body: some View {
-        // Two rows, so nothing gets squeezed on a narrow window. Labels and buttons never shrink.
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                if !numbers.isEmpty {
-                    Text("Calls go out from").font(.caption).foregroundStyle(.secondary).fixedSize()
-                    // The app dials through Aircall's system, so it needs to be told which line to use.
-                    Picker("From", selection: $numberID) {
-                        if !numbers.contains(where: { $0.id == numberID }) { Text("Pick number").tag(0) }
-                        ForEach(numbers) { Text($0.name).tag($0.id) }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: 200)
-                    .help("Calls go out from this Aircall number")
+        // The top row of the calling bar: which number calls go out from, and Options for the rest.
+        HStack(spacing: 10) {
+            Image(systemName: "phone").foregroundStyle(Brand.subtext)
+            if numbers.isEmpty {
+                Text("Aircall number").font(.callout).foregroundStyle(Brand.muted)
+            } else {
+                // The app dials through Aircall's system, so it needs to be told which line to use.
+                Picker("Calling from", selection: $numberID) {
+                    if !numbers.contains(where: { $0.id == numberID }) { Text("Pick number").tag(0) }
+                    ForEach(numbers) { Text($0.name).tag($0.id) }
                 }
-                Spacer(minLength: 0)
+                .labelsHidden()
+                .frame(maxWidth: 220)
+                .help("Calls go out from this Aircall number")
             }
-            DialingSwitches(card: false)
-            if !numbers.isEmpty {
-                HStack(spacing: 12) {
-                    Text("Texts go out from").font(.caption).foregroundStyle(.secondary).fixedSize()
-                    Picker("Texts", selection: $textNumberID) {
-                        Text("Same as calls").tag(0)
-                        ForEach(numbers) { Text($0.name).tag($0.id) }
+            Spacer(minLength: 0)
+            Button { showOptions.toggle() } label: {
+                Label("Options", systemImage: "slider.horizontal.3").font(.callout)
+            }
+            .buttonStyle(BrandQuietButton())
+            .help("Auto dial, Call twice, Mobile numbers only, the texting number and time zones")
+            .tourSpot(.options)
+            .popover(isPresented: $showOptions, arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Calling options").font(.headline)
+                    DialingSwitches(card: false, stacked: true)
+                    if !numbers.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Texts go out from").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+                            Picker("Texts", selection: $textNumberID) {
+                                Text("Same as calls").tag(0)
+                                ForEach(numbers) { Text($0.name).tag($0.id) }
+                            }
+                            .labelsHidden()
+                            .frame(maxWidth: 240)
+                            .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
+                        }
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 200)
-                    .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
-                    Spacer(minLength: 0)
                 }
+                .padding(16)
+                .frame(width: 300)
+                .brandWindow()
             }
         }
         .task {
@@ -573,9 +588,15 @@ struct AircallPhoneSide: View {
 
 /// Auto dial and Call twice, shown with "Show more" on the coach.
 struct DialingSwitches: View {
+    @ViewBuilder private func stack<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        if stacked { VStack(alignment: .leading, spacing: 10, content: content) } else { HStack(spacing: 14, content: content) }
+    }
+
     @AppStorage(PrefKey.nextDials) private var autoDial = true
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     var card = true
+    /// In the Options popover: one switch per line, time zones as a labeled dropdown.
+    var stacked = false
     @State private var mobileTick = false
     @EnvironmentObject var coach: CoachModel
 
@@ -613,17 +634,17 @@ struct DialingSwitches: View {
     }
 
     var body: some View {
-        let row = HStack(spacing: 14) {
-            Toggle("Auto dial", isOn: $autoDial)
+        let row = stack {
+            Toggle("Auto Dial", isOn: $autoDial)
                 .toggleStyle(.checkbox)
                 .fixedSize()
                 .help("On: the app calls the next person by itself. Off: you click Call each time.")
-            Toggle("Call twice", isOn: $doubleTap)
+            Toggle("Call Twice", isOn: $doubleTap)
                 .toggleStyle(.checkbox)
                 .fixedSize()
                 .help("On: if they don't pick up, the app calls them one more time right away. Off: one call, then the next person.")
-            Spacer(minLength: 0)
-            Toggle("Mobile numbers only", isOn: Binding(
+            if !stacked { Spacer(minLength: 0) }
+            Toggle("Mobile Numbers Only", isOn: Binding(
                 get: { MobileOnly.on },
                 set: { MobileOnly.setOn($0); mobileTick.toggle() }
             ))
@@ -631,7 +652,14 @@ struct DialingSwitches: View {
                 .fixedSize()
                 .id(mobileTick)
                 .help("On: skip anyone with no Mobile in Salesforce, for the call list in use now. Better pick up rates, and every text can go out.")
-            timeZoneMenu.tourSpot(.zone)
+            if stacked {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Time zones").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+                    timeZoneMenu
+                }
+            } else {
+                timeZoneMenu
+            }
         }
         .font(.callout)
         if card {
