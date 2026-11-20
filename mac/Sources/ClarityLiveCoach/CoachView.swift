@@ -504,6 +504,7 @@ struct CoachView: View {
         VStack(alignment: .leading, spacing: 8) {
             // One row for the three menus when they fit. If the window is narrow they wrap to two rows,
             // so nothing is ever pushed off the edge.
+            salesforceListMenu
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     campaignMenu.tourSpot(.segment)
@@ -532,6 +533,42 @@ struct CoachView: View {
                 .opacity(0).frame(width: 0, height: 0)
                 .allowsHitTesting(false)
         )
+    }
+
+    /// Who to call: the Salesforce list, right at the top. Picking one saves it on the call list in use
+    /// and opens it in Chrome. Shows the list open in Chrome when none is saved.
+    private var salesforceListMenu: some View {
+        let selected = campaigns.selected
+        let openKey = coach.callList.listKey?.view ?? ""
+        let openName = listViewCache.first { !openKey.isEmpty && ($0.id.prefix(15) == openKey.prefix(15) || $0.developerName == openKey) }?.label
+        let name = selected.listName.isEmpty ? (openName ?? "Pick a Salesforce list") : selected.listName
+        return Menu {
+            if !Salesforce.isConnected {
+                Text("Sign in to Salesforce first: gear, then Set up.")
+            } else if listViewCache.isEmpty {
+                Text("Loading your Salesforce lists...")
+            }
+            ForEach(listViewCache) { v in
+                Button {
+                    var c = campaigns.selected
+                    c.listViewID = v.id; c.listObject = v.object; c.listName = v.label
+                    campaigns.save(c) // onChange opens it in Chrome
+                    coach.listDone = false
+                } label: {
+                    if v.id.prefix(15) == selected.listViewID.prefix(15) { Label(v.title, systemImage: "checkmark") } else { Text(v.title) }
+                }
+            }
+        } label: {
+            Label(Self.short(name, max: 40), systemImage: "list.bullet.rectangle")
+                .labelStyle(.titleAndIcon)
+                .font(.callout.weight(.semibold)).lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(coach.status != .ready)
+        .help(coach.status == .ready ? "Who to call: the Salesforce list. Pick one and it opens in Chrome." : "Finish the call to switch lists")
+        .task {
+            if listViewCache.isEmpty, Salesforce.isConnected { listViewCache = (try? await Salesforce.listViews()) ?? [] }
+        }
     }
 
     /// A long call list name shortened with "..." so the menu is never wider than the bar.

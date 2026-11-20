@@ -68,35 +68,9 @@ struct CampaignEditorView: View {
     /// Who this campaign calls: a Salesforce list view. Picking the campaign opens this list.
     private var listPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Who to call (a Salesforce list)").font(.headline)
-            if !Salesforce.isConnected {
-                Text("Sign in to Salesforce first: click the gear, then Set up. Then pick the list here.")
-                    .font(.callout).foregroundStyle(.secondary)
-            } else if loadingLists && listViews.isEmpty {
-                ProgressView().controlSize(.small)
-            } else if let listError, listViews.isEmpty {
-                HStack(spacing: 8) {
-                    Text(listError).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                    Button("Try again") { Task { await loadLists() } }
-                }
-            } else {
-                Picker("", selection: Binding(
-                    get: { draft.listViewID },
-                    set: { id in
-                        if let v = listViews.first(where: { $0.id == id }) {
-                            draft.listViewID = v.id; draft.listObject = v.object; draft.listName = v.label
-                        } else {
-                            draft.listViewID = ""; draft.listObject = ""; draft.listName = ""
-                        }
-                    }
-                )) {
-                    Text("None (use the list open in Chrome)").tag("")
-                    ForEach(listViews) { Text($0.title).tag($0.id) }
-                }
-                .labelsHidden()
-                Text("When you pick this call list, these people open in Chrome. The app calls everyone who is due today.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            Text("Who to call").font(.headline)
+            Text(draft.listName.isEmpty ? "Pick the Salesforce list at the top of the coach." : "\(draft.listName). Change it at the top of the coach.")
+                .font(.callout).foregroundStyle(.secondary)
             Toggle("Mobile numbers only", isOn: Binding(
                 get: { MobileOnly.isOn(for: draft.id) },
                 set: { UserDefaults.standard.set($0, forKey: MobileOnly.key(draft.id)); mobileOnlyTick.toggle() }
