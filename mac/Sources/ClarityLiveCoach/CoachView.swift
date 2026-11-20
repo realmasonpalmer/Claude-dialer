@@ -949,7 +949,6 @@ struct CoachView: View {
                         .buttonStyle(.link).font(.caption)
                 }
             }
-            TranscriptSection(transcript: coach.transcript, open: $showTranscript)
         }
     }
 
