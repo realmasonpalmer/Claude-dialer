@@ -16,7 +16,7 @@ final class Updater: ObservableObject {
 
     private var installedSHA: String? { UserDefaults.standard.string(forKey: PrefKey.installedSHA) }
 
-    /// Asks GitHub for the newest version (at launch, then every 10 minutes).
+    /// Asks GitHub for the newest version (at launch, then every 15 seconds).
     /// - Parameter byHand: the rep clicked "Check for updates", so always say what happened.
     func check(byHand: Bool = false) async {
         guard let url = URL(string: "https://api.github.com/repos/\(Self.repo)/commits/\(Self.branch)") else { return }
