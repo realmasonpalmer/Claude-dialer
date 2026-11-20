@@ -5,7 +5,8 @@ import Foundation
 enum LiveCoach {
     /// This call's live-line model: calls alternate Haiku and Sonnet, to compare them on real calls.
     static var callModel = "claude-haiku-5-5"
-    static let testModels = ["claude-haiku-5-5", "claude-sonnet-5-5"]
+    /// Haiku only: Sonnet was too slow for live lines (the Haiku vs Sonnet comparison is over).
+    static let testModels = ["claude-haiku-5-5"]
 
     /// The next call's model (alternates, and remembers across app restarts).
     static func pickModelForNextCall() -> String {

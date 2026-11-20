@@ -85,7 +85,7 @@ extension CoachModel {
         CallTrace.event("manual", ["action": "space: fresh line", "was": suggestion.say])
         ActivityLog.add("Space: fresh line from the whole call (Sonnet)")
         holdLine = false
-        nextAskModel = "claude-sonnet-5-5"
+        nextAskModel = nil // Haiku only: a fresh line comes from the same fast model
         freshLineIDs.insert(seq + 1) // the id ask() is about to use
         ask(.reply, user: CoachPrompt.reply(turns: turns, latest: latest, calling: calling, details: recordDetails, style: callOpener,
                                             openTimes: bookingText(), fullContext: true)
