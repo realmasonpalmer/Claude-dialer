@@ -8,7 +8,7 @@ for the full picture (files, setup state, next tasks).
 - **Fastest install (new teammates):** open Terminal, paste this and press Enter. It installs Apple's free tools if needed, downloads, builds and opens the app:
 
   ```bash
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/confident-gates-ji8r2l/mac/scripts/get.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/main-update/mac/scripts/get.sh)"
   ```
 
   Then click the gear, then Setup, and follow the 7 steps.

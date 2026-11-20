@@ -6,7 +6,7 @@ import AppKit
 @MainActor
 final class Updater: ObservableObject {
     static let repo = "realmasonpalmer/claude-dialer"
-    static let branch = "claude/confident-gates-ji8r2l"
+    static let branch = "claude/main-update"
 
     @Published private(set) var updateAvailable = false
     @Published private(set) var updating = false

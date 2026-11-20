@@ -1,6 +1,6 @@
 # Clarity Live Coach: handoff (2026-10-30)
 
-Read this first in a new chat. Repo: `realmasonpalmer/claude-dialer`, branch `claude/confident-gates-ji8r2l`.
+Read this first in a new chat. Repo: `realmasonpalmer/claude-dialer`, branch `claude/main-update`.
 
 ## Who the user is and how to talk to them
 
@@ -93,7 +93,7 @@ meant to replace Aircall, a Twilio dialer server, and a web-page coach. Don't re
 
 ## Conventions
 
-- Commit to `claude/confident-gates-ji8r2l` and push. Don't open a PR unless asked.
+- Commit to `claude/main-update` and push. Don't open a PR unless asked.
 - End commit messages with the attribution lines given in the session's system reminder.
 - Never put API keys in code or chat. Mason once pasted something that looked like a password; it was flagged and not used.
 

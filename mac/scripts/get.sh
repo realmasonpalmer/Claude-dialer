@@ -1,9 +1,9 @@
 #!/bin/bash
 # One command to install (or reinstall) Clarity Live Coach on a Mac:
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/confident-gates-ji8r2l/mac/scripts/get.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/main-update/mac/scripts/get.sh)"
 set -euo pipefail
 REPO="realmasonpalmer/Claude-dialer"
-BRANCH="claude/confident-gates-ji8r2l"
+BRANCH="claude/main-update"
 
 echo ""
 echo "Installing Clarity Live Coach..."
