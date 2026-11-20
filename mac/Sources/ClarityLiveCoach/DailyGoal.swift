@@ -9,6 +9,7 @@ struct DailyGoalCard: View {
     let activeCampaigns: [Campaign]
     @AppStorage("sprintMinutes") private var minutes = 20
     @AppStorage("sprintTarget") private var target = 20
+    @AppStorage("sprintCardOpen") private var cardOpen = true
 
     static let perHour = 50
 
@@ -17,8 +18,21 @@ struct DailyGoalCard: View {
             let now = context.date
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    Image(systemName: "bolt").font(.title3.weight(.semibold)).foregroundStyle(Brand.blue)
-                    Text("Call Sprint").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
+                    Button { cardOpen.toggle() } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: cardOpen ? "chevron.down" : "chevron.right").font(.callout.weight(.semibold))
+                                .foregroundStyle(Brand.subtext)
+                            Image(systemName: "bolt").font(.title3.weight(.semibold)).foregroundStyle(Brand.blue)
+                            Text("Call Sprint").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
+                            // Folded and running: the two numbers that matter, in the header.
+                            if !cardOpen, let start = coach.blockStartedAt {
+                                Text("\(Self.clock(min(now.timeIntervalSince(start), CoachModel.blockLength))) · \(touchpoints.dials(from: start, to: now.addingTimeInterval(1))) / \(target)")
+                                    .font(.callout.weight(.semibold)).monospacedDigit().foregroundStyle(Brand.subtext)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     Spacer(minLength: 0)
                     if coach.sprintDone {
                         pill("Complete", Brand.blue)
@@ -26,7 +40,9 @@ struct DailyGoalCard: View {
                         pill("Active", .green)
                     }
                 }
-                if coach.sprintDone, let start = coach.blockStartedAt {
+                if !cardOpen {
+                    EmptyView()
+                } else if coach.sprintDone, let start = coach.blockStartedAt {
                     complete(start: start)
                 } else if let start = coach.blockStartedAt {
                     active(start: start, now: now)

@@ -157,6 +157,7 @@ struct TouchpointsCard: View {
     var toCall: String? = nil
     @AppStorage(PrefKey.touchpointsPeriod) private var periodRaw = Touchpoints.Period.today.rawValue
     @AppStorage(PrefKey.touchpointsOpen) private var open = false
+    @AppStorage("activityCardOpen") private var cardOpen = true
     @State private var confirmReset = false
 
     private var period: Touchpoints.Period { Touchpoints.Period(rawValue: periodRaw) ?? .today }
@@ -170,7 +171,18 @@ struct TouchpointsCard: View {
         VStack(alignment: .leading, spacing: 10) {
             // Always: the title, the date filter and the four numbers that matter.
             HStack(spacing: 8) {
-                Text("My Activity").font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
+                Button { cardOpen.toggle() } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: cardOpen ? "chevron.down" : "chevron.right").font(.caption.weight(.semibold))
+                            .foregroundStyle(Brand.subtext)
+                        Text("My Activity").font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
+                        if !cardOpen {
+                            Text("· \(dials) dials · \(meetings) meetings").font(.caption).foregroundStyle(Brand.muted)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 if let toCall {
                     Text("· " + CallQueue.short(toCall)).font(.caption).foregroundStyle(Brand.muted).help(toCall)
                 }
@@ -181,6 +193,7 @@ struct TouchpointsCard: View {
                 .labelsHidden()
                 .fixedSize()
             }
+            if cardOpen {
             HStack(spacing: 8) {
                 tile("Dials", dials)
                 tile("Human answers", pickups)
@@ -236,6 +249,7 @@ struct TouchpointsCard: View {
                     Button("Set to zero", role: .destructive) { touchpoints.resetToday() }
                     Button("Cancel", role: .cancel) {}
                 }
+            }
             }
         }
         .padding(12)
