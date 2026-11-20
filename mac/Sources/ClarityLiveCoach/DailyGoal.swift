@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "This block: 12 of 50": contacts in the 50 minute block running now. One ring per block today.
+/// "Call Block: 12 / 50 Dials": dials in the 50 minute block running now. One ring per block today.
 /// Contacts = dials, texts and LinkedIn notes. The goal is 50 every hour.
 /// Below: today's total and how many people are due on each active campaign.
 struct DailyGoalCard: View {
@@ -19,7 +19,7 @@ struct DailyGoalCard: View {
             let blocks = BlockLog.today()
             // The count is for the block running now (or the last one today). No block yet: 0.
             let current = blocks.last
-            let done = current.map { touchpoints.contacts(from: $0, to: BlockLog.end(of: $0, in: blocks, now: now)) } ?? 0
+            let done = current.map { touchpoints.dials(from: $0, to: BlockLog.end(of: $0, in: blocks, now: now)) } ?? 0
             let hit = done >= Self.perHour
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -47,7 +47,7 @@ struct DailyGoalCard: View {
                 // One ring per 50 min block started today, filling with that block's contacts.
                 HStack(spacing: 5) {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { _, start in
-                        let count = touchpoints.contacts(from: start, to: BlockLog.end(of: start, in: blocks, now: now))
+                        let count = touchpoints.dials(from: start, to: BlockLog.end(of: start, in: blocks, now: now))
                         HourRing(progress: Double(count) / Double(Self.perHour))
                     }
                     Spacer(minLength: 8)
@@ -56,7 +56,7 @@ struct DailyGoalCard: View {
                     }
                 }
                 if open {
-                Text(hit ? "Goal hit for this block" : "\(Self.perHour - done) to go")
+                Text(hit ? "Goal hit: 50 dials in this block" : "\(Self.perHour - done) dials to go · goal: 50 dials in 50 minutes")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(hit ? Color.green : Color.secondary)
                 Text(([ "Today: \(touchpoints.totalAll(in: .today)) contacts · \(blocks.count) block\(blocks.count == 1 ? "" : "s")" ]
@@ -87,11 +87,11 @@ struct DailyGoalCard: View {
         } else if let start = coach.blockStartedAt {
             let left = max(0, Int(CoachModel.blockLength - now.timeIntervalSince(start)))
             Text(String(format: "%d:%02d left", left / 60, left % 60)).font(.callout.weight(.semibold).monospacedDigit())
-            Button("Stop") { coach.stopBlock() }.buttonStyle(.brandLink).font(.caption)
+            Button("End Block") { coach.stopBlock() }.buttonStyle(.brandLink).font(.caption)
         } else {
-            Button("Start a 50 min block") { coach.startBlock() }
-                .buttonStyle(.bordered).controlSize(.small)
-                .help("50 minutes of calling, then a 10 minute break. Each block gets its own ring.")
+            Button("Start Block") { coach.startBlock() }
+                .buttonStyle(BrandPrimaryButton(color: Brand.blue)).controlSize(.small)
+                .help("Goal: 50 dials in 50 minutes, then a 10 minute break. Each block gets its own ring.")
         }
     }
 
