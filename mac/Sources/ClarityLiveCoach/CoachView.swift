@@ -211,6 +211,8 @@ struct CoachView: View {
     /// A script step the rep is reading with Previous / Next (nil = follow the call).
     @State private var browsingStep: ScriptStep?
     @State private var showFullScript = false
+    @State private var editingOpener = false
+    @State private var openerDraft = ""
     /// The first-run tour: 0 = welcome card, 1...n = steps, nil = hidden.
     @State private var tourStep: Int?
     @AppStorage(PrefKey.tourSeen) private var tourSeen = false
@@ -764,6 +766,20 @@ struct CoachView: View {
         .fixedSize()
     }
 
+    /// Saves the edited opener into the script: replaces the old opener where it's written, else adds it
+    /// as the rep's own wording. The coach then shows it on the next call.
+    private func saveOpener() {
+        editingOpener = false
+        let new = openerDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let old = coach.scriptOpenerLine() ?? ""
+        guard !new.isEmpty, new != old else { return }
+        var c = campaigns.selected
+        c.pastedScript = ScriptPage.shared.edit(script: c.pastedScript, title: "OPENER", oldLines: [old], newLines: [new])
+        campaigns.save(c)
+        coach.suggestion = Suggestion(say: coach.fillTags(new, for: coach.calling), cue: "Your opener", stage: "Opener", sayComplete: true)
+        ActivityLog.add("Opener edited by the rep")
+    }
+
     /// The small Edit action in the My Script header: change this script (or type it by hand),
     /// switch scripts, or write a new one. A menu, so clicking it never folds the card.
     private var scriptEditMenu: some View {
@@ -1026,7 +1042,23 @@ struct CoachView: View {
                         .help("Don't like this line? Get a new one right now.")
                 }
             }
-            if liveCardOpen {
+            if liveCardOpen, editingOpener {
+                // Quick edit of the opener: saved into the script, so every call uses it.
+                VStack(alignment: .leading, spacing: 6) {
+                    TextEditor(text: $openerDraft)
+                        .font(.title3)
+                        .scrollContentBackground(.hidden)
+                        .padding(6)
+                        .frame(minHeight: 80)
+                        .background(Brand.navy.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.blue, lineWidth: 1))
+                    HStack(spacing: 10) {
+                        Button("Save opener") { saveOpener() }.buttonStyle(BrandPrimaryButton())
+                        Button("Cancel") { editingOpener = false }.buttonStyle(.brandLink)
+                        Text("Use [Name] for their first name.").font(.caption).foregroundStyle(Brand.muted)
+                    }
+                }
+            } else if liveCardOpen {
             lineText(inTour && coach.status == .ready ? TourSample.line
                  : coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, and upload your keys file." : "Getting your line ready...")
@@ -1036,6 +1068,13 @@ struct CoachView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(lineIsSoft ? Color.secondary : Color.primary)
                 .opacity(coach.historyIndex == nil ? 1 : 0.6)
+                // Between calls, click the opener to edit it.
+                .onTapGesture {
+                    guard coach.status == .ready, coach.kind == .opener, !inTour else { return }
+                    openerDraft = coach.scriptOpenerLine() ?? coach.suggestion.say
+                    editingOpener = true
+                }
+                .help(coach.status == .ready && coach.kind == .opener ? "Click to edit your opener" : "")
             // THINK mode: one thought on the card; the full line only when the rep asks (⌘⇧L).
             if thinkShown || showFullLine {
                 Button(showFullLine ? "Back to the short thought" : "Full line (⌘⇧L)") { showFullLine.toggle() }
