@@ -316,14 +316,14 @@ struct CoachView: View {
             }
             Spacer(minLength: 0)
             // The sticky calling bar: caller number + Options (between calls only), then the big buttons.
-            VStack(alignment: .leading, spacing: 10) {
-                if appPhone, coach.status == .ready { AircallPhonePanel().tourSpot(.phone) }
+            VStack(alignment: .leading, spacing: 16) {
+                if appPhone, coach.status == .ready { AircallPhonePanel(onSettings: { showSettings = true }).tourSpot(.phone) }
                 bottomBanner
                 navigation.tourSpot(.call)
             }
-            .padding(12)
-            .background(Brand.card, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
+            .padding(18)
+            .background(Brand.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Brand.edge, lineWidth: 1))
         }
         .padding(.horizontal, margin)
         .padding(.vertical, gap)
@@ -1271,13 +1271,13 @@ struct CoachView: View {
                 Button {
                     coach.previousLead()
                 } label: {
-                    Image(systemName: "chevron.left").frame(width: 16, height: 20)
+                    Image(systemName: "chevron.left").font(.title3.weight(.semibold)).frame(width: 44, height: 36)
                 }
                 .buttonStyle(BrandQuietButton())
                 .disabled(leadMode ? !coach.leads.canGoBack : !backEnabled)
                 .help("Go back to the person before")
 
-                smallButton("Next Person") { coach.nextLead() }
+                smallButton("Next Person", icon: "person.2") { coach.nextLead() }
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(nextName == nil || coach.dialing)
                     .help("Skip this person and go to the next one (Command-N)")
@@ -1307,21 +1307,25 @@ struct CoachView: View {
 
     private func bigButton(_ title: String, icon: String, color: Color = Brand.go, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                Text(title).font(.callout.weight(.semibold)).lineLimit(1)
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.title3)
+                Text(title).font(.title3.weight(.bold)).lineLimit(1)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .padding(.vertical, 8)
         }
         .buttonStyle(BrandPrimaryButton(color: color))
     }
 
-    private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
+    private func smallButton(_ title: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.callout).lineLimit(1).frame(maxWidth: 120)
-                .padding(.vertical, 2)
+            HStack(spacing: 8) {
+                if let icon { Image(systemName: icon) }
+                Text(title).font(.body.weight(.semibold)).lineLimit(1)
+            }
+            .frame(minWidth: 140)
+            .padding(.vertical, 8)
         }
         .buttonStyle(BrandQuietButton())
     }

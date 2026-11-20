@@ -509,17 +509,82 @@ struct AircallPhonePanel: View {
     @AppStorage("aircallTextNumberID") private var textNumberID = 0
     @State private var numbers: [Aircall.Number] = []
 
+    /// The gear in the Outbound Setup header.
+    var onSettings: () -> Void = {}
+    @EnvironmentObject var coach: CoachModel
+    @AppStorage(PrefKey.nextDials) private var autoDial = true
+    @AppStorage(PrefKey.doubleTap) private var doubleTap = true
+    @AppStorage(PrefKey.autoText) private var autoText = true
+    @AppStorage("linkedInBotSend") private var autoLinkedIn = true
+    @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
+    @State private var tick = false
+
     var body: some View {
-        // Calling options, always in view between calls: the two numbers on top, the switches below.
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                numberField("CALLS GO OUT FROM", selection: $numberID, sameAsCalls: false)
-                    .help("Calls go out from this Aircall number")
-                numberField("TEXTS GO OUT FROM", selection: $textNumberID, sameAsCalls: true)
-                    .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
+        // Outbound Setup: the numbers, calling options and follow-up automation, between calls.
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "phone.fill").font(.title3).foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Brand.blue, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Outbound Setup").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
+                    Text("Choose your channels and calling preferences").font(.callout).foregroundStyle(Brand.subtext)
+                }
+                Spacer(minLength: 0)
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape").font(.title3).foregroundStyle(Brand.text)
+                        .frame(width: 44, height: 44)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
             }
             Divider().overlay(Brand.edge)
-            DialingSwitches(card: false).tourSpot(.options)
+            HStack(alignment: .top, spacing: 12) {
+                numberField("CALLS GO OUT FROM", icon: "phone", selection: $numberID, sameAsCalls: false)
+                    .help("Calls go out from this Aircall number")
+                numberField("TEXTS GO OUT FROM", icon: "bubble.left", selection: $textNumberID, sameAsCalls: true)
+                    .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
+            }
+            HStack(alignment: .top, spacing: 12) {
+                optionBox("Calling Options", icon: "phone") {
+                    HStack(spacing: 16) {
+                        Toggle("Auto Dial", isOn: $autoDial).toggleStyle(BlueCheck())
+                            .help("The app calls the next person by itself.")
+                        Toggle("Call Twice", isOn: $doubleTap).toggleStyle(BlueCheck())
+                            .help("If they don't pick up, call them one more time right away.")
+                        Toggle("Mobile Only", isOn: Binding(get: { MobileOnly.on }, set: { MobileOnly.setOn($0); tick.toggle() }))
+                            .toggleStyle(BlueCheck()).id(tick)
+                            .help("Skip anyone with no Mobile in Salesforce. Better pick up rates, and every text can go out.")
+                    }
+                }
+                .tourSpot(.options)
+                optionBox("Follow-Up Automation", icon: "paperplane") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 16) {
+                            infoToggle("Auto Text", $autoText, "After a voicemail, the text goes out by itself while the next person loads.")
+                            infoToggle("Auto LinkedIn Connect", $autoLinkedIn, "The app sends the LinkedIn connection request in Chrome in the background.")
+                        }
+                        infoToggle("Auto Voicemail Drop", $dropOn, "Drops your recorded voicemail after the beep. Record it first: Settings, then Voicemail drop.")
+                    }
+                }
+            }
+            Divider().overlay(Brand.edge)
+            HStack(spacing: 10) {
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.arrow.down").font(.title3).foregroundStyle(Brand.blue)
+                Text("East Coast First").font(.body.weight(.medium)).foregroundStyle(Brand.text)
+                if let zone = TimeZoneFilter.selected {
+                    Text("(\(zone.label) only)").font(.caption).foregroundStyle(Brand.muted)
+                }
+                Toggle("", isOn: Binding(
+                    get: { TimeZoneFilter.selected == nil && TimeZoneFilter.eastCoastFirst },
+                    set: { on in coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(on) }
+                ))
+                .toggleStyle(.switch).labelsHidden().tint(Brand.blue)
+                .help("On: start in the East and go West, so nobody gets called before 9 there.")
+            }
         }
         .task {
             numbers = (try? await Aircall.numbers()) ?? []
@@ -528,12 +593,35 @@ struct AircallPhonePanel: View {
         }
     }
 
+    private func optionBox<C: View>(_ title: String, icon: String, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).foregroundStyle(Brand.blue)
+                Text(title).font(.body.weight(.semibold)).foregroundStyle(Brand.text)
+            }
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
+    }
+
+    private func infoToggle(_ title: String, _ value: Binding<Bool>, _ info: String) -> some View {
+        HStack(spacing: 6) {
+            Toggle(title, isOn: value).toggleStyle(BlueCheck())
+            Image(systemName: "info.circle").font(.caption).foregroundStyle(Brand.subtext).help(info)
+        }
+    }
+
     /// A labeled dropdown for an Aircall number: gray caps label, the number's name, one down arrow.
-    private func numberField(_ title: String, selection: Binding<Int>, sameAsCalls: Bool) -> some View {
+    private func numberField(_ title: String, icon: String, selection: Binding<Int>, sameAsCalls: Bool) -> some View {
         let name = sameAsCalls && selection.wrappedValue == 0 ? "Same as calls"
             : numbers.first { $0.id == selection.wrappedValue }?.name ?? (numbers.isEmpty ? "Aircall not set up" : "Pick a number")
         return VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption.weight(.medium)).tracking(0.4).foregroundStyle(Brand.subtext)
+            HStack(spacing: 8) {
+                Image(systemName: icon).foregroundStyle(Brand.blue)
+                Text(title).font(.caption.weight(.semibold)).tracking(0.6).foregroundStyle(Brand.subtext)
+            }
             Menu {
                 if sameAsCalls { Button("Same as calls") { selection.wrappedValue = 0 } }
                 ForEach(numbers) { n in
@@ -687,6 +775,28 @@ struct RoundCheck: ToggleStyle {
                 }
                 .frame(width: 18, height: 18)
                 configuration.label.foregroundStyle(Brand.text)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A blue filled square with a white check when on, an outlined square when off.
+struct BlueCheck: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(configuration.isOn ? Brand.blue : Color.clear)
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(configuration.isOn ? Brand.blue : Brand.controlEdge, lineWidth: 1.5))
+                    if configuration.isOn {
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 20, height: 20)
+                configuration.label.foregroundStyle(Brand.text).fixedSize()
             }
             .contentShape(Rectangle())
         }
