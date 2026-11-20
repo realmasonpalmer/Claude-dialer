@@ -293,7 +293,7 @@ struct CoachView: View {
                 DialingSwitches()
             }
             if showAll, showTouchpoints && coach.status == .ready {
-                TouchpointsCard(touchpoints: coach.touchpoints).tourScrollSpot(.numbers)
+                TouchpointsCard(touchpoints: coach.touchpoints, toCall: coach.leads.isActive ? coach.leads.summary : coach.callList.summary).tourScrollSpot(.numbers)
             }
             warnings
             }
@@ -389,7 +389,7 @@ struct CoachView: View {
                 : ("Open your list in Salesforce, in Chrome.", warning)
         }
         if coach.shouldOfferRedial { return ("No answer. Click Redial to try one more time.", Brand.blue) }
-        return ("Ready. Click Call.", listening)
+        return ("", listening) // ready: no words needed, the green button says it
     }
 
     /// "Ready to dial": a light for each thing calling needs. Only shows while something isn't ready;
@@ -453,12 +453,13 @@ struct CoachView: View {
 
     private var nowBar: some View {
         let now = nowLine
-        let plan = coach.status == .ready ? (coach.leads.isActive ? coach.leads.summary : coach.callList.summary) : nil
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Circle().fill(now.color).frame(width: 7, height: 7)
-                Text(now.text).font(.caption.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+                if !now.text.isEmpty {
+                    Circle().fill(now.color).frame(width: 7, height: 7)
+                    Text(now.text).font(.caption.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer(minLength: 0)
                 Button(showMore ? "Show less" : "Show more") { showMore.toggle() }
                     .buttonStyle(.link).font(.caption)
@@ -494,12 +495,6 @@ struct CoachView: View {
             }
             if let toast = coach.toast {
                 Text(toast).font(.caption2.weight(.semibold)).foregroundStyle(Color.green).padding(.leading, 13)
-            }
-            if let plan {
-                Text(CallQueue.short(plan)).font(.caption2).foregroundStyle(.secondary)
-                    .padding(.leading, 13)
-                    .help(plan)
-                    .help("Late = behind on the 5 day plan. Resting = waiting for their next call day.")
             }
         }
     }
@@ -1054,11 +1049,13 @@ struct CoachView: View {
         if coach.status != .ready {
             // During a call: no stage buttons, just a way out if the app ever misses the hang-up.
             HStack(spacing: 8) {
-                Button(role: .destructive) {
+                Button {
                     coach.hangUpAndEnd()
                 } label: {
-                    Label("End call", systemImage: "phone.down.fill").frame(maxWidth: .infinity)
+                    Label("END CALL", systemImage: "phone.down.fill").font(.callout.weight(.semibold))
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(BrandPrimaryButton(color: Color(red: 1, green: 0.15, blue: 0.15)))
                 .help("Is the call over, but the app is still listening? Click here. (Command-E)")
                 if coach.status == .live {
                     Button("Voicemail") { coach.markVoicemail() }

@@ -144,6 +144,8 @@ final class Touchpoints: ObservableObject {
 /// The Touchpoints card: pick a time period, see the numbers that matter.
 struct TouchpointsCard: View {
     @ObservedObject var touchpoints: Touchpoints
+    /// "Today: 3 late · 12 due · 30 new", shown as "251 to call".
+    var toCall: String? = nil
     @AppStorage(PrefKey.touchpointsPeriod) private var periodRaw = Touchpoints.Period.today.rawValue
     @AppStorage(PrefKey.touchpointsOpen) private var open = false
     @State private var confirmReset = false
@@ -166,6 +168,10 @@ struct TouchpointsCard: View {
                     Text(open ? "My numbers" : "My numbers \(period.rawValue.lowercased()): \(dials) calls · \(meetings) meetings")
                         .font(.callout.weight(.semibold))
                     Spacer(minLength: 0)
+                    if let toCall {
+                        Text(CallQueue.short(toCall)).font(.caption).foregroundStyle(.secondary)
+                            .help(toCall)
+                    }
                 }
                 .contentShape(Rectangle())
             }
