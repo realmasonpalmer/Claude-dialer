@@ -597,6 +597,15 @@ final class CoachModel: ObservableObject {
     var followUpThisCall = false
     var followUpWatchdog: Task<Void, Never>?
 
+    /// The title line from the Salesforce page, if it shows one.
+    var recordTitle: String? {
+        guard let lines = recordDetails?.components(separatedBy: "\n") else { return nil }
+        for (i, line) in lines.enumerated() where line.trimmingCharacters(in: .whitespaces) == "Title" {
+            if i + 1 < lines.count { return lines[i + 1].trimmingCharacters(in: .whitespaces) }
+        }
+        return nil
+    }
+
     /// The company line from the Salesforce page, if it shows one (helps LinkedIn find the right person).
     var recordCompany: String? {
         guard let lines = recordDetails?.components(separatedBy: "\n") else { return nil }

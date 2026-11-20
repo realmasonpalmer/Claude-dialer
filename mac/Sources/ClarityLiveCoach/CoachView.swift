@@ -268,6 +268,7 @@ struct CoachView: View {
             }
             // Show less (between calls): no line card or script, just the call block and your numbers.
             // During a call the line always shows: it's what to say.
+            if prospect != nil { prospectCard }
             if showAll || coach.status != .ready { scriptCard.tourScrollSpot(.line) }
             if showAll { ScriptOutlineCard(coach: coach, editMenu: AnyView(scriptEditMenu)).tourScrollSpot(.script) }
             belowCard
@@ -986,14 +987,6 @@ struct CoachView: View {
 
     private var scriptCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let d = coach.leads.details {
-                let who = Salesforce.isPlaceholderName(d.name) ? (d.company ?? d.name) : d.name
-                Label("Calling \(who)", systemImage: "phone.fill")
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Brand.blue.opacity(0.25), in: Capsule())
-            }
             HStack(spacing: 6) {
                 Button { liveCardOpen.toggle() } label: {
                     HStack(spacing: 6) {
@@ -1401,6 +1394,75 @@ struct CoachView: View {
         if d.doNotCall { return "Do Not Call" }
         if !Aircall.canPlaceCalls { return "Set up Aircall first (gear)" }
         return d.callNumber != nil ? "Call \(d.name)" : "No phone number"
+    }
+
+    // MARK: Up next: the one person everything refers to
+
+    /// The person whose Salesforce record is open (the same one the phone, the script and Salesforce use).
+    private var prospect: (name: String, title: String?, company: String?, position: Int?, total: Int)? {
+        if coach.leads.isActive {
+            guard let d = coach.leads.details else { return nil }
+            let name = Salesforce.isPlaceholderName(d.name) ? (d.company ?? d.name) : d.name
+            return (name, d.title, d.company, coach.leads.index + 1, coach.leads.rows.count)
+        }
+        guard coach.calling != nil, currentName != "them" else { return nil }
+        let records = coach.callList.records
+        return (currentName, coach.recordTitle, coach.recordCompany, coach.callList.currentIndex().map { $0 + 1 }, records.count)
+    }
+
+    /// UP NEXT before a call, ON CALL during it, then the call's outcome until the rep moves on.
+    @ViewBuilder private var prospectCard: some View {
+        if let p = prospect {
+            let onCall = coach.status != .ready
+            let called = !onCall && coach.currentAttemptKey != nil
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    if onCall { Circle().fill(Color.green).frame(width: 8, height: 8) }
+                    Text(([onCall ? "ON CALL" : (called ? "CALLED" : "UP NEXT")]
+                          + [p.position.map { "\($0) OF \(p.total)" }].compactMap { $0 }).joined(separator: " · "))
+                        .font(.caption.weight(.semibold)).tracking(0.6)
+                        .foregroundStyle(onCall ? Color.green : Brand.subtext)
+                    Spacer(minLength: 0)
+                    if !onCall {
+                        Button { coach.previousLead() } label: { Image(systemName: "chevron.left") }
+                            .buttonStyle(.brandLink).help("The person before")
+                        Button { coach.nextLead(dial: false) } label: { Image(systemName: "chevron.right") }
+                            .buttonStyle(.brandLink).help("Skip to the next person")
+                            .disabled(coach.dialing)
+                    }
+                }
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(p.name).font(.title.weight(.bold)).foregroundStyle(Brand.text).lineLimit(1).minimumScaleFactor(0.7)
+                        let line = [p.title, p.company].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                        if !line.isEmpty {
+                            Text(line).font(.body).foregroundStyle(Brand.subtext).lineLimit(1)
+                        }
+                        if called, let outcome = coach.recordStatus, !outcome.isEmpty {
+                            Text(outcome).font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Brand.quiet, in: Capsule())
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Text(Self.initials(p.name)).font(.title3.weight(.semibold)).foregroundStyle(Brand.text)
+                        .frame(width: 52, height: 52)
+                        .background(Brand.blue.opacity(0.35), in: Circle())
+                }
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Brand.card, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.controlEdge, lineWidth: 1))
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2).fill(Brand.teal).frame(width: 3).padding(.vertical, 14)
+            }
+            .animation(.easeOut(duration: 0.15), value: p.name)
+        }
+    }
+
+    private static func initials(_ name: String) -> String {
+        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
     }
 
     /// The person on screen now, from the Salesforce tab (e.g. Lead "Burcin Sonmezer").
