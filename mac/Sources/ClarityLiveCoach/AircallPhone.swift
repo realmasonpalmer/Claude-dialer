@@ -521,6 +521,11 @@ struct AircallPhonePanel: View {
             Divider().overlay(Brand.edge)
             DialingSwitches(card: false).tourSpot(.options)
         }
+        .task {
+            numbers = (try? await Aircall.numbers()) ?? []
+            Aircall.pickTextNumber(from: numbers)
+            textNumberID = UserDefaults.standard.integer(forKey: "aircallTextNumberID")
+        }
     }
 
     /// A labeled dropdown for an Aircall number: gray caps label, the number's name, one down arrow.
@@ -554,13 +559,6 @@ struct AircallPhonePanel: View {
             .disabled(numbers.isEmpty)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-        .task {
-            numbers = (try? await Aircall.numbers()) ?? []
-            Aircall.pickTextNumber(from: numbers)
-            textNumberID = UserDefaults.standard.integer(forKey: "aircallTextNumberID")
-        }
     }
 }
 

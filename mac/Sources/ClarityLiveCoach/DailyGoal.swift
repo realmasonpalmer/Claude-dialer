@@ -159,7 +159,7 @@ enum BlockLog {
     }
 
     /// A block counts until 50 minutes pass, the next block starts, or now.
-    static func end(of start: Date, in blocks: [Date], now: Date) -> Date {
+    @MainActor static func end(of start: Date, in blocks: [Date], now: Date) -> Date {
         var end = min(start.addingTimeInterval(CoachModel.blockLength), now)
         if let next = blocks.first(where: { $0 > start }) { end = min(end, next) }
         return end
