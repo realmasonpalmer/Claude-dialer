@@ -41,6 +41,8 @@ final class CoachModel: ObservableObject {
 
     @Published var status: Status = .ready
     @Published var suggestion = Suggestion()
+    /// Bumped for every line shown, so the card resets to THINK even when the words repeat.
+    @Published var cardVersion = 0
     @Published var kind: Kind = .opener
     @Published var latestProspect = ""
     /// The live transcript lives in its own small model, so a new word only redraws the

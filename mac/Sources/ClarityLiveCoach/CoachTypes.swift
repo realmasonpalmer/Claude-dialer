@@ -24,6 +24,9 @@ struct Suggestion: Equatable {
     var keys = ""
     /// A nudge from the app ("Still with me?"), not a script line: shown softer.
     var nudge = false
+    /// An approved script line said word for word (an instant script answer, or a SAY that matches a script
+    /// Say line). Set by the app when the line is shown; the CUE's [row] tag alone doesn't make it EXACT.
+    var exact = false
 
     /// The script row this line came from, when the cue starts with one: "[S5 manual 2] ..." -> "S5 manual 2".
     var rowTag: String? {

@@ -1302,3 +1302,40 @@ public enum Repeats {
         return Double(shared) / Double(min(x.count, y.count)) >= 0.6
     }
 }
+
+
+/// EXACT means an approved script line said word for word. A script-derived suggestion is not
+/// automatically EXACT: Claude tags most lines with a row or stage id, so the tag alone proves nothing.
+public enum ExactScript {
+    private static var cache: (script: String, rows: [Set<String>])?
+
+    /// Every Say cell of every script table with a "Say" column.
+    static func sayRows(_ script: String) -> [Set<String>] {
+        if let c = cache, c.script == script { return c.rows }
+        var out: [Set<String>] = []
+        var sayCol: Int?
+        for raw in script.components(separatedBy: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            let sep = line.contains("|") ? "|" : (line.contains("\t") ? "\t" : nil)
+            guard let sep else { continue }
+            let cols = line.components(separatedBy: sep).map { $0.trimmingCharacters(in: .whitespaces) }
+            if let y = cols.firstIndex(where: { $0.lowercased() == "say" }) { sayCol = y; continue }
+            guard let y = sayCol, cols.count > y else { continue }
+            let say = cols[y].replacingOccurrences(of: #"\[[^\]]*\]"#, with: " ", options: .regularExpression)
+            let words = Set(Delivery.words(say))
+            if words.count >= 3 { out.append(words) }
+        }
+        cache = (script, out)
+        return out
+    }
+
+    /// The line is one of the script's Say lines, word for word (slots filled in are allowed).
+    public static func isApproved(_ say: String, script: String) -> Bool {
+        let mine = Set(Delivery.words(say))
+        guard mine.count >= 3 else { return false }
+        return sayRows(script).contains { row in
+            let shared = Double(row.intersection(mine).count)
+            return shared / Double(row.count) >= 0.85 && shared / Double(mine.count) >= 0.75
+        }
+    }
+}

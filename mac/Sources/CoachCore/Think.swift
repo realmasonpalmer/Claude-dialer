@@ -168,9 +168,25 @@ public enum Think {
         return mine.isEmpty || !mine.intersection(Repeats.meaning(say)).isEmpty
     }
 
+    /// What the card shows, and why. One function for the card and for the trace, so they can't disagree.
+    public enum Display: String, Sendable { case think, say, exact, fallback }
+
+    public static func resolve(think: String, say: String, exact: Bool, enabled: Bool, showFull: Bool,
+                               thinkProblems: [String] = []) -> (text: String, display: Display, reason: String) {
+        if !enabled { return (say, .say, "THINK mode is off") }
+        if exact { return (say, .exact, "an approved script line, word for word") }
+        if showFull { return (say, .say, "the rep asked for the full line") }
+        guard let t = valid(think) else {
+            return (say, .fallback, think.trimmingCharacters(in: .whitespaces).isEmpty ? "THINK was missing" : "THINK wasn't usable (format)")
+        }
+        // Serious THINK problems mean the move is wrong; those lines are suppressed before they get here.
+        // Anything left (wording differs from SAY, a new topic) still shows THINK: different words are fine.
+        _ = thinkProblems
+        return (t, .think, "")
+    }
+
     /// What the big line shows. Script rows (exact) and missing or bad thoughts show SAY; the rep can ask for SAY anytime.
     public static func primary(think: String, say: String, exact: Bool, enabled: Bool, showFull: Bool, move: String = "") -> String {
-        guard enabled, !exact, !showFull, let t = valid(think), agrees(think: t, say: say, move: move) else { return say }
-        return t
+        resolve(think: think, say: say, exact: exact, enabled: enabled, showFull: showFull).text
     }
 }

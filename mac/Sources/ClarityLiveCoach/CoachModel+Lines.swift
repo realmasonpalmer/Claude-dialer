@@ -615,7 +615,7 @@ extension CoachModel {
     static func lineProblems(_ s: Suggestion) -> [String] {
         // A question is required only when the move is to learn something: answer, acknowledge and close may end plainly.
         let plainEnding = ["answer", "acknowledge", "close"].contains(s.move)
-        var p = Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil || plainEnding, allowTimes: true)
+        var p = Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || isExact(s) || plainEnding, allowTimes: true)
         // The conversation outranks the stage (Nov 20).
         if RoleCheck.speaksAsProspect(s.say) {
             p.append("the rep claims the prospect's role: the rep is the caller, never the one who decides there")
@@ -628,14 +628,19 @@ extension CoachModel {
             p.append("they declined: a clear no gets no sales question (MOVE acknowledge or close)")
         }
         // THINK is the coaching: a normal live line needs a useful one, checked against this conversation.
-        if Think.enabled, s.rowTag == nil, !s.nudge, !s.skip {
+        if Think.enabled, !Self.isExact(s), !s.nudge, !s.skip {
             p.append(contentsOf: Think.problems(think: s.think, say: s.say, move: s.move, intent: intent,
                                                 objectionKind: ObjectionTracker.detect(CoachPrompt.latestProspect),
                                                 latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
                                                 scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions))
         }
         // A script row copied word for word ("S2 open" is 26 words) isn't sent back for being long.
-        return s.rowTag == nil ? p : p.filter { !$0.contains("words (max") }
+        return !isExact(s) ? p : p.filter { !$0.contains("words (max") }
+    }
+
+    /// EXACT: an instant script answer, or a SAY that is one of the script's Say lines word for word.
+    static func isExact(_ s: Suggestion) -> Bool {
+        s.exact || s.cue.hasPrefix("From your script") || ExactScript.isApproved(s.say, script: CoachPrompt.scriptText)
     }
 
     /// A problem that trimming can't fix: the move or the coaching is wrong for this moment.
@@ -861,7 +866,7 @@ extension CoachModel {
         markRequestStart()
         seq += 1
         ActivityLog.add("Coach #\(seq): instant answer from your script (\(e.id)), no AI")
-        offer(Suggestion(say: e.say, cue: "From your script: \(e.id)", stage: "Objection", sayComplete: true),
+        offer(Suggestion(say: e.say, cue: "From your script: \(e.id)", stage: "Objection", sayComplete: true, exact: true),
               id: seq, kind: .reply, askedAt: Date())
         return true
     }
@@ -1069,9 +1074,21 @@ extension CoachModel {
             if testLineCounted { callLinesShown += 1 }
         }
         if status == .live {
-            CallTrace.event("suggestion.shown", ["line": s.say, "think": s.think, "think_mode": Think.enabled, "cue": s.cue, "stage": s.stage, "move": s.move, "label": LineLook.label(move: s.move, exact: s.rowTag != nil), "key_part": LineLook.emphasis(s.say)?.key ?? "", "kind": "\(kind)",
+            CallTrace.event("suggestion.shown", ["line": s.say, "think": s.think, "think_mode": Think.enabled, "cue": s.cue, "stage": s.stage, "move": s.move, "label": LineLook.label(move: s.move, exact: s.exact), "key_part": LineLook.emphasis(s.say)?.key ?? "", "kind": "\(kind)",
                                                  "replaced": suggestion.say, "replaced_delivered": lineDelivered], sug: id)
         }
+        // What the card actually shows, once per line (the same resolver the card uses).
+        if status == .live {
+            let thinkOn = Think.enabled && kind == .reply && !s.nudge
+            let r = Think.resolve(think: s.think, say: s.say, exact: s.exact, enabled: thinkOn, showFull: false,
+                                  thinkProblems: thinkProblems)
+            CallTrace.event("card.rendered", ["id": id, "kind": "\(kind)", "think": s.think, "say": s.say, "move": s.move,
+                                              "stage": s.stage, "think_enabled": thinkOn, "think_problems": thinkProblems,
+                                              "exact": s.exact, "exact_source": s.exact ? (s.cue.hasPrefix("From your script") ? "instant script answer" : "matches a script Say line") : "",
+                                              "cue_tag": s.rowTag ?? "", "full_line": false, "rendered": r.text,
+                                              "display": r.display.rawValue, "why_not_think": r.reason], sug: id)
+        }
+        cardVersion += 1 // the card resets to THINK for every new line, even one with the same words
         pending = nil
         lineSuperseded = false
         if kind == .reply { repTextSinceAsk = ""; repWordsAtLastAsk = repWordsInCall } // round 2 #9

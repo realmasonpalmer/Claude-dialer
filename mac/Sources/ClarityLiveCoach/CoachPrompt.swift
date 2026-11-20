@@ -59,8 +59,8 @@ enum CoachPrompt {
           call-screen/talk-over rule that says show nothing: the move is silent.
         - A row that says "Show <text>" in capitals (like USE NAME DIRECTORY): put that text in SAY.
         - Nothing matches: use the fallback row for the current stage.
-        - CUE starts with the row's ID (or its stage, like S3) in brackets, then the row's Then
-          (e.g. "[S5 manual 2] then ask how long").
+        - CUE starts with the row's ID in brackets ONLY when SAY is that row's Say line word for word
+          (e.g. "[S5 manual 2] then ask how long"). Your own words, a fallback or a stage guess: no brackets.
         - STAGE maps the script's stages to the app's: GATE or gatekeeper = Gatekeeper, OPEN or opener = Opener,
           REASON, PROBLEM or the question = Value, PAIN or discovery = Discovery, PLAYBACK and BRIDGE = Discovery,
           any objection row = Objection, ASK = Closing, JOIN and LOCK = Goal reached once a time is picked,

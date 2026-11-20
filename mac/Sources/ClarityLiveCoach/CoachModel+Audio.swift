@@ -304,7 +304,9 @@ extension CoachModel {
         if speaker == .rep { repTextSinceAsk += " " + text }
         if speaker == .rep, status == .live, !suggestion.say.isEmpty {
             repSaidSinceShown += " " + text
-            if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown) {
+            // THINK is what the rep sees: saying its question in their own words counts as following the line.
+            if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown)
+                || (!suggestion.think.isEmpty && suggestion.think.contains("?") && Delivery.delivered(line: suggestion.think, spoken: repSaidSinceShown)) {
                 lineDelivered = true
                 if testLineCounted { callLinesUsed += 1 }
                 let conf = Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)

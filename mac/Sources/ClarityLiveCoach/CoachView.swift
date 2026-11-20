@@ -1077,7 +1077,10 @@ struct CoachView: View {
                 .help(coach.status == .ready && coach.kind == .opener ? "Click to edit your opener" : "")
             // THINK mode: one thought on the card; the full line only when the rep asks (⌘⇧L).
             if thinkShown || showFullLine {
-                Button(showFullLine ? "Back to the short thought" : "Full line (⌘⇧L)") { showFullLine.toggle() }
+                Button(showFullLine ? "Back to the short thought" : "Full line (⌘⇧L)") {
+                    showFullLine.toggle()
+                    CallTrace.event("card.full_line", ["on": showFullLine, "rendered": showFullLine ? coach.suggestion.say : coach.suggestion.think])
+                }
                     .buttonStyle(.brandLink).font(.caption2)
                     .keyboardShortcut("l", modifiers: [.command, .shift])
                     .help("Show the full suggested sentence. Only while the app is in front, so it never touches your typing.")
@@ -1101,7 +1104,7 @@ struct CoachView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Brand.blue.opacity(0.45), lineWidth: 1))
         .overlay(MeetingGlow(trigger: coach.meetingMoments))
         .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
-        .onChange(of: coach.suggestion.say) { showFullLine = false }
+        .onChange(of: coach.cardVersion) { showFullLine = false } // every new line starts on THINK
     }
 
     /// THINK mode is on and this card is a normal live line (not a script row, nudge or history).
@@ -1112,7 +1115,7 @@ struct CoachView: View {
     private var cardLine: String {
         guard thinkActive else { return coach.suggestion.say }
         return Think.primary(think: coach.suggestion.think, say: coach.suggestion.say,
-                             exact: coach.suggestion.rowTag != nil, enabled: true, showFull: showFullLine,
+                             exact: coach.suggestion.exact, enabled: true, showFull: showFullLine,
                              move: coach.suggestion.move)
     }
     /// A thought (not SAY) is on the card right now.
@@ -1154,8 +1157,8 @@ struct CoachView: View {
         case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
         case .reply:
             // THINK mode: no label while a thought is up. If THINK didn't hold up, the full line shows and says so.
-            if thinkActive { return coach.suggestion.rowTag != nil ? "EXACT" : (thinkShown ? "" : "SAY THIS") }
-            return coach.suggestion.rowTag != nil ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
+            if thinkActive { return coach.suggestion.exact ? "EXACT" : (thinkShown ? "" : "SAY THIS") }
+            return coach.suggestion.exact ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
         }
     }
 
