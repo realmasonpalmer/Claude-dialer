@@ -76,8 +76,8 @@ enum Tour {
                  text: "Voicemails get a text and a LinkedIn request, sent by themselves. Pick how the call went here so Salesforce stays up to date.",
                  corner: 14),
         // 4. Track progress
-        TourStep(spot: .goal, part: "Track progress", title: "Call Block",
-                 text: "Click Start Block for 50 minutes of calling, then a 10 minute break. The goal is 50 dials. Each block today gets a ring.",
+        TourStep(spot: .goal, part: "Track progress", title: "Call Sprint",
+                 text: "Pick 20, 30 or 50 minutes and a dial target. The sprint starts with your first dial and shows your time, dials and whether you're ahead of pace. A 10 minute break follows.",
                  corner: 10, pad: 4),
         TourStep(spot: .numbers, part: "Track progress", title: "My Activity",
                  text: "Dials, human answers, conversations and meetings, for today, this week or more. More details shows voicemails, texts and LinkedIn.",

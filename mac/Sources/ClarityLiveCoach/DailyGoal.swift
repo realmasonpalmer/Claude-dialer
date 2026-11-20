@@ -7,121 +7,165 @@ struct DailyGoalCard: View {
     @ObservedObject var touchpoints: Touchpoints
     @ObservedObject var coach: CoachModel
     let activeCampaigns: [Campaign]
-    @State private var due: [UUID: (people: Int, touches: Int)] = [:]
-    /// Folded: the hour's count, time left and the bar. Open: today's total and what's due.
-    @AppStorage(PrefKey.goalCardOpen) private var open = false
+    @AppStorage("sprintMinutes") private var minutes = 20
+    @AppStorage("sprintTarget") private var target = 20
+    @AppStorage("sprintArmed") private var armed = true
 
     static let perHour = 50
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = context.date
-            let blocks = BlockLog.today()
-            // The count is for the block running now (or the last one today). No block yet: 0.
-            let current = blocks.last
-            let done = current.map { touchpoints.dials(from: $0, to: BlockLog.end(of: $0, in: blocks, now: now)) } ?? 0
-            let hit = done >= Self.perHour
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Button { open.toggle() } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                            HStack(spacing: 0) {
-                                Text("This block: ")
-                                Text("\(done)")
-                                    .contentTransition(.numericText(value: Double(done)))
-                                    .animation(.snappy, value: done)
-                                Text(" of \(Self.perHour)")
-                            }
-                            .font(.callout.weight(.semibold).monospacedDigit())
-                        }
-                        .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "bolt").font(.title3.weight(.semibold)).foregroundStyle(Brand.blue)
+                    Text("Call Sprint").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
+                    Spacer(minLength: 0)
+                    if coach.breakUntil != nil {
+                        pill("Break", .orange)
+                    } else if coach.blockStartedAt != nil {
+                        pill("Active", .green)
+                    }
+                }
+                if let until = coach.breakUntil {
+                    breakView(left: max(0, Int(until.timeIntervalSince(now))))
+                } else if let start = coach.blockStartedAt {
+                    active(start: start, now: now)
+                } else {
+                    setup
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .brandCard(radius: 14)
+        }
+    }
+
+    // MARK: Before: pick the length and the target
+
+    private var setup: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Set your goal. Start dialing. Beat your best.").font(.callout).foregroundStyle(Brand.subtext)
+            Text("How long do you want to dial?").font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
+            HStack(spacing: 6) {
+                ForEach([20, 30, 50], id: \.self) { m in
+                    Button {
+                        if target == minutes { target = m } // the target follows the length until it's changed
+                        minutes = m
+                    } label: {
+                        Text("\(m) min").font(.callout.weight(.medium))
+                            .foregroundStyle(minutes == m ? Brand.text : Brand.subtext)
+                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                            .background(minutes == m ? Brand.quiet : Color.clear, in: Capsule())
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Dial target").font(.callout.weight(.medium)).foregroundStyle(Brand.text)
                     Spacer()
-                    blockControl(now: now)
+                    stepButton("minus") { target = max(5, target - 5) }
+                    Text("\(target)").font(.title3.weight(.semibold)).monospacedDigit().frame(minWidth: 36)
+                    stepButton("plus") { target = min(200, target + 5) }
                 }
-                ProgressView(value: Double(min(done, Self.perHour)), total: Double(Self.perHour))
-                    .tint(hit ? .green : Brand.blue)
-                    .animation(.easeOut(duration: 0.4), value: done)
-                // One ring per 50 min block started today, filling with that block's contacts.
-                HStack(spacing: 5) {
-                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, start in
-                        let count = touchpoints.dials(from: start, to: BlockLog.end(of: start, in: blocks, now: now))
-                        HourRing(progress: Double(count) / Double(Self.perHour))
-                    }
-                    Spacer(minLength: 8)
-                    if let line = beatLine {
-                        Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-                if open {
-                Text(hit ? "Goal hit: 50 dials in this block" : "\(Self.perHour - done) dials to go · goal: 50 dials in 50 minutes")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(hit ? Color.green : Color.secondary)
-                Text(([ "Today: \(touchpoints.totalAll(in: .today)) contacts · \(blocks.count) block\(blocks.count == 1 ? "" : "s")" ]
-                      + activeCampaigns.compactMap { c in due[c.id].map { "\(c.name): \($0.people) due" } })
-                    .joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("Aim for \(target) dials in \(minutes) minutes.").font(.caption).foregroundStyle(Brand.muted)
             }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .brandCard(radius: 10)
-        .task(id: activeCampaigns.map(\.id)) {
-            while !Task.isCancelled {
-                await refresh()
-                try? await Task.sleep(for: .seconds(600))
+            .padding(12)
+            .background(Brand.navy.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+            if armed {
+                Label("Sprint starts automatically with your first dial.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(Brand.subtext)
+            } else {
+                Button("Start sprint") { coach.startBlock() }.buttonStyle(BrandPrimaryButton())
             }
         }
     }
 
-    /// Start a 50 min block, or its time left with Stop, or the break with Skip.
-    @ViewBuilder private func blockControl(now: Date) -> some View {
-        if let until = coach.breakUntil {
-            let left = max(0, Int(until.timeIntervalSince(now)))
-            Text(String(format: "Break %d:%02d", left / 60, left % 60)).font(.caption.monospacedDigit())
-            Button("Skip break") { coach.endBreak() }.buttonStyle(.brandLink).font(.caption)
-        } else if let start = coach.blockStartedAt {
-            let left = max(0, Int(CoachModel.blockLength - now.timeIntervalSince(start)))
-            Text(String(format: "%d:%02d left", left / 60, left % 60)).font(.callout.weight(.semibold).monospacedDigit())
-            Button("End Block") { coach.stopBlock() }.buttonStyle(.brandLink).font(.caption)
-        } else {
-            Button("Start Block") { coach.startBlock() }
-                .buttonStyle(BrandPrimaryButton(color: Brand.blue)).controlSize(.small)
-                .help("Goal: 50 dials in 50 minutes, then a 10 minute break. Each block gets its own ring.")
-        }
-    }
+    // MARK: During: time, dials, pace
 
-    /// "4 more to beat yesterday", then "Ahead of yesterday" once passed.
-    private var beatLine: String? {
-        guard let last = touchpoints.lastDay(), last.total > 0 else { return nil }
-        let today = touchpoints.totalAll(in: .today)
-        return today > last.total ? "Ahead of \(last.name)" : "\(last.total - today + 1) more to beat \(last.name)"
-    }
-
-    /// For each active campaign: people still due today, and the contacts their plan step still needs.
-    private func refresh() async {
-        guard Salesforce.isConnected else { return }
-        var result: [UUID: (people: Int, touches: Int)] = [:]
-        for c in activeCampaigns where !c.listViewID.isEmpty {
-            guard let rows = try? await Salesforce.fullList(object: c.listObject, key: c.listViewID) else { continue }
-            var people = 0, touches = 0
-            for r in rows where !RemovedList.contains(r.id) && !DialHistory.isMaxed(r.id) && Cadence.isDue(r.id) {
-                guard let step = Cadence.step(for: r.id) else { continue }
-                let p = DialHistory.person(r.id)
-                let dialsToday = p.dials.filter { Calendar.current.isDateInToday($0) }.count
-                var left = max(2 - dialsToday, 0)
-                if step.textToday, !DialHistory.textedToday(r.id) { left += 1 }
-                if step.linkedInConnect, !DialHistory.linkedInToday(r.id) { left += 1 }
-                if step.linkedInConnect, !DialHistory.linkedInMessageToday(r.id) { left += 1 }
-                if left > 0 { people += 1; touches += left }
+    private func active(start: Date, now: Date) -> some View {
+        let total = CoachModel.blockLength
+        let elapsed = min(max(now.timeIntervalSince(start), 0), total)
+        let done = touchpoints.dials(from: start, to: now.addingTimeInterval(1))
+        let progress = min(Double(done) / Double(max(target, 1)), 1)
+        let expected = Double(target) * elapsed / total
+        let ahead = Int((Double(done) - expected).rounded())
+        let mins = max(elapsed / 60, 0.5)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(Self.clock(elapsed)).font(.system(size: 36, weight: .bold)).monospacedDigit()
+                    Text("/ " + Self.clock(total)).font(.title3).foregroundStyle(Brand.muted).monospacedDigit()
+                }
+                Divider().frame(height: 36)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(done) / \(target)").font(.title.weight(.bold)).monospacedDigit()
+                    Text("Dials").font(.caption).foregroundStyle(Brand.subtext)
+                }
+                Spacer(minLength: 0)
             }
-            result[c.id] = (people: people, touches: touches)
+            HStack(spacing: 10) {
+                ProgressView(value: progress).tint(Brand.blue)
+                Text("\(Int(progress * 100))%").font(.callout).foregroundStyle(Brand.subtext).monospacedDigit()
+            }
+            let tone: Color = ahead > 0 ? .green : (ahead < 0 ? .orange : Brand.subtext)
+            Label(ahead > 0 ? "\(ahead) ahead of pace" : ahead < 0 ? "\(-ahead) behind pace" : "On pace",
+                  systemImage: ahead >= 0 ? "arrow.up" : "arrow.down")
+                .font(.callout.weight(.semibold)).foregroundStyle(tone)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(tone.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+            HStack {
+                stat(String(format: "%.1f / min", Double(done) / mins), "Current pace")
+                Divider().frame(height: 30)
+                stat(String(format: "%.1f / min", Double(target) / (total / 60)), "Target pace")
+                Divider().frame(height: 30)
+                stat(Self.clock(total - elapsed), "Time left")
+            }
+            Button("End sprint") { coach.stopBlock() }.buttonStyle(.brandLink).font(.caption)
         }
-        due = result
+    }
+
+    private func breakView(left: Int) -> some View {
+        HStack(spacing: 10) {
+            Text("Break: " + Self.clock(TimeInterval(left))).font(.title3.weight(.semibold)).monospacedDigit()
+            Spacer()
+            Button("Skip break") { coach.endBreak() }.buttonStyle(.brandLink)
+        }
+    }
+
+    // MARK: Pieces
+
+    private func pill(_ text: String, _ color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(text).font(.callout.weight(.semibold)).foregroundStyle(color)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(color.opacity(0.15), in: Capsule())
+    }
+
+    private func stepButton(_ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.callout.weight(.semibold)).frame(width: 30, height: 30)
+                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func stat(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.callout.weight(.semibold)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(Brand.subtext)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private static func clock(_ t: TimeInterval) -> String {
+        let s = max(0, Int(t))
+        return String(format: "%02d:%02d", s / 60, s % 60)
     }
 }
 

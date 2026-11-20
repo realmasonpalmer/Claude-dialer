@@ -202,7 +202,9 @@ final class CoachModel: ObservableObject {
     var yesBranchTask: Task<Void, Never>?
     var lastRepFinalAt = Date.distantPast
     var pendingDialSince: Date?
-    @Published var dialing = false
+    @Published var dialing = false {
+        didSet { if dialing && !oldValue { sprintSawDial() } }
+    }
     @Published var dialError: String?
 
     // MARK: Status card (Contact: Relationship Status. Lead: Lead Status.)

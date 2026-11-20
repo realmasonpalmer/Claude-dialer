@@ -580,10 +580,26 @@ extension CoachModel {
 
     // MARK: Block timer: 50 minutes of calling, then a 10 minute break
 
-    static let blockLength: TimeInterval = 50 * 60
+    /// The sprint's length, picked on the Call Sprint card (20, 30 or 50 minutes).
+    static var blockLength: TimeInterval {
+        let m = UserDefaults.standard.integer(forKey: "sprintMinutes")
+        return TimeInterval((m > 0 ? m : 20) * 60)
+    }
+    /// The sprint starts by itself on the first dial unless the rep ended one by hand.
+    static var sprintArmed: Bool {
+        get { UserDefaults.standard.object(forKey: "sprintArmed") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "sprintArmed") }
+    }
+
+    /// A dial started: begins the sprint if one is waiting for its first dial.
+    func sprintSawDial() {
+        guard Self.sprintArmed, blockStartedAt == nil, breakUntil == nil else { return }
+        startBlock()
+    }
     static let breakLength: TimeInterval = 10 * 60
 
     func startBlock() {
+        Self.sprintArmed = true
         blockStartedAt = Date()
         breakUntil = nil
         BlockLog.add(blockStartedAt!)
@@ -591,6 +607,7 @@ extension CoachModel {
     }
 
     func stopBlock() {
+        Self.sprintArmed = false // ended by hand: don't restart on the next dial
         if breakUntil != nil { autoDial = autoDialBeforeBreak }
         blockStartedAt = nil
         breakUntil = nil
