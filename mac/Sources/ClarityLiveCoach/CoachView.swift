@@ -505,21 +505,10 @@ struct CoachView: View {
             // One row for the three menus when they fit. If the window is narrow they wrap to two rows,
             // so nothing is ever pushed off the edge.
             salesforceListMenu
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    campaignMenu.tourSpot(.segment)
-                    Spacer(minLength: 0)
-                    timeZoneMenu.tourSpot(.zone)
-                    settingsMenu.tourSpot(.gear)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        campaignMenu.tourSpot(.segment)
-                        Spacer(minLength: 0)
-                        settingsMenu.tourSpot(.gear)
-                    }
-                    timeZoneMenu.tourSpot(.zone)
-                }
+            HStack(spacing: 8) {
+                campaignMenu.tourSpot(.segment)
+                Spacer(minLength: 0)
+                settingsMenu.tourSpot(.gear)
             }
             // Updates get their own row, so the button always has room. It checks by itself every
             // 2 minutes and when the app is opened.

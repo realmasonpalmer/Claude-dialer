@@ -577,6 +577,40 @@ struct DialingSwitches: View {
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     var card = true
     @State private var mobileTick = false
+    @EnvironmentObject var coach: CoachModel
+
+    /// Every time zone setting in one dropdown: all zones, East Coast first, or one zone only.
+    private var timeZoneMenu: some View {
+        let picked = TimeZoneFilter.selected
+        let east = TimeZoneFilter.eastCoastFirst
+        return Menu {
+            Button {
+                coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(true)
+            } label: {
+                if picked == nil && east { Label("East Coast first, then West", systemImage: "checkmark") } else { Text("East Coast first, then West") }
+            }
+            Button {
+                coach.setTimeZoneFilter(nil); coach.setEastCoastFirst(false)
+            } label: {
+                if picked == nil && !east { Label("All time zones, list order", systemImage: "checkmark") } else { Text("All time zones, list order") }
+            }
+            Divider()
+            ForEach(CallZone.allCases) { zone in
+                Button {
+                    coach.setTimeZoneFilter(zone)
+                } label: {
+                    let title = "Only \(zone.label) · \(zone.timeNow) there now"
+                    if picked == zone { Label(title, systemImage: "checkmark") } else { Text(title) }
+                }
+            }
+        } label: {
+            Text(picked.map { "\($0.label) only" } ?? (east ? "East Coast first" : "All time zones"))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(coach.status != .ready)
+        .help("Where to call: East Coast first (nobody called before 9 there), all time zones, or one time zone only")
+    }
 
     var body: some View {
         let row = HStack(spacing: 14) {
@@ -597,15 +631,7 @@ struct DialingSwitches: View {
                 .fixedSize()
                 .id(mobileTick)
                 .help("On: skip anyone with no Mobile in Salesforce, for the call list in use now. Better pick up rates, and every text can go out.")
-            Toggle("East Coast first", isOn: Binding(
-                get: { TimeZoneFilter.eastCoastFirst },
-                set: { TimeZoneFilter.eastCoastFirst = $0; mobileTick.toggle()
-                       NotificationCenter.default.post(name: .eastCoastFirstChanged, object: nil) }
-            ))
-                .toggleStyle(.checkbox)
-                .fixedSize()
-                .id(mobileTick)
-                .help("On: with all time zones, start in the East and go West, so nobody gets called before 9 there.")
+            timeZoneMenu.tourSpot(.zone)
         }
         .font(.callout)
         if card {
