@@ -343,6 +343,7 @@ struct CoachView: View {
             coach.activate(true)
             syncScriptToList()
             openListAtLaunch()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { bringUpNextPerson(why: "the app just opened") }
         }
         .task {
             // Look for a new version now and every 15 seconds (the public commit feed, no hourly limit).
@@ -352,6 +353,21 @@ struct CoachView: View {
             }
         }
         .onDisappear { coach.activate(false) }
+        .task {
+            // Signed back in to Salesforce in Chrome (the tab went from missing or a login page to the app):
+            // go back to the call list and open the next person's record.
+            var signedOut = false
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                let url = SalesforceChrome.url(live: true)?.lowercased()
+                let onLogin = url == nil || url!.contains("login") || url!.contains("secur/") || !url!.contains("lightning")
+                if onLogin { signedOut = true; continue }
+                if signedOut {
+                    signedOut = false
+                    bringUpNextPerson(why: "signed back in to Salesforce")
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .eastCoastFirstChanged)) { _ in coach.applyEastCoastFirst() }
         // Also check whenever the rep switches back to the app.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -892,6 +908,19 @@ struct CoachView: View {
         guard !origin.isEmpty else { return }
         _ = SalesforceChrome.open("\(origin)/lightning/o/\(campaign.listObject)/list?filterName=\(campaign.listViewID)")
         ActivityLog.add("Campaign: \(campaign.name), list \(campaign.listName)")
+    }
+
+    /// The card shows who's next, but their record isn't open in Chrome (app just opened, Chrome on another list,
+    /// or Salesforce was signed out): open the call list, then their record, so the card and Chrome agree.
+    private func bringUpNextPerson(why: String) {
+        guard coach.status == .ready, coach.calling == nil, !coach.leads.isActive else { return }
+        openList(of: campaigns.selected) // no-op when Chrome is already on the list
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4)) // the list page loads first
+            guard coach.status == .ready, coach.calling == nil else { return }
+            coach.nextLead(dial: false)
+            ActivityLog.add("Up next: opened their record in Salesforce (\(why))")
+        }
     }
 
     /// App just opened and Chrome has no Salesforce tab: open this call list's Salesforce list there,
@@ -1479,6 +1508,11 @@ struct CoachView: View {
                         .font(.caption.weight(.semibold)).tracking(0.6)
                         .foregroundStyle(onCall ? Color.green : Brand.subtext)
                     Spacer(minLength: 0)
+                    if !onCall, coach.calling == nil, !coach.leads.isActive {
+                        Button("Open in Salesforce") { bringUpNextPerson(why: "the rep asked") }
+                            .buttonStyle(.brandLink).font(.caption)
+                            .help("Their record isn't open in Chrome yet")
+                    }
                     if !onCall {
                         Button { coach.previousLead() } label: { Image(systemName: "chevron.left") }
                             .buttonStyle(.brandLink).help("The person before")
