@@ -18,8 +18,9 @@ final class ThinkTests: XCTestCase {
         // A short instruction is a valid nudge too.
         XCTAssertEqual(Think.primary(think: "Explain the free AI health check.", say: "It's a free look at how your team logs calls. Worth a look?",
                                      exact: false, enabled: true, showFull: false), "Explain the free AI health check.")
-        // THINK asks one thing, SAY asks another: not the same move, so the card shows SAY.
-        XCTAssertEqual(Think.primary(think: "Who handles sales tools there?", say: say, exact: false, enabled: true, showFull: false), say)
+        // Different wording from SAY no longer swaps THINK out (THINK first). A wrong move is caught earlier and suppressed.
+        XCTAssertEqual(Think.primary(think: "Who handles sales tools there?", say: say, exact: false, enabled: true, showFull: false),
+                       "Who handles sales tools there?")
     }
 
     func testFullLineOnRequestAndScriptRowsInFull() {

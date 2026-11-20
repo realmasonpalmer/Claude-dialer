@@ -786,6 +786,13 @@ struct CoachView: View {
         Menu {
             Button("Edit this script...") { edit(campaigns.selected) }
             Button("Write a new script with Claude...") { showScriptMaker = true }
+            Button("Edit opener...") {
+                // The opener shows on the Live Coach card between calls: open it there, ready to type.
+                showMore = true
+                liveCardOpen = true
+                openerDraft = coach.scriptOpenerLine() ?? coach.suggestion.say
+                editingOpener = true
+            }
             Divider()
             Text("Switch script (using \(campaigns.selected.name))")
             ForEach(campaigns.campaigns) { c in
