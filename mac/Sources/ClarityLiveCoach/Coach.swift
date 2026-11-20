@@ -315,7 +315,14 @@ final class CoachModel: ObservableObject {
     @Published var streak = 0
     var lastDialAt = Date.distantPast
     /// A 50 minute calling block, then a 10 minute break. nil = no block running.
-    @Published var blockStartedAt: Date?
+    /// The Call Sprint running now (saved, so a restart keeps it). nil = waiting for the first dial.
+    @Published var blockStartedAt: Date? = UserDefaults.standard.object(forKey: "sprintStartedAt") as? Date {
+        didSet { UserDefaults.standard.set(blockStartedAt, forKey: "sprintStartedAt") }
+    }
+    /// The sprint's time ran out: show Sprint Complete until the rep starts a new one.
+    @Published var sprintDone = UserDefaults.standard.bool(forKey: "sprintDone") {
+        didSet { UserDefaults.standard.set(sprintDone, forKey: "sprintDone") }
+    }
     @Published var breakUntil: Date?
     var autoDialBeforeBreak = true
     /// Voicemail and follow-ups written ahead of time for the next person, by record Id (15 characters).

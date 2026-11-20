@@ -593,8 +593,15 @@ extension CoachModel {
 
     /// A dial started: begins the sprint if one is waiting for its first dial.
     func sprintSawDial() {
-        guard Self.sprintArmed, blockStartedAt == nil, breakUntil == nil else { return }
+        guard blockStartedAt == nil, !sprintDone else { return }
         startBlock()
+    }
+
+    /// Sprint Complete → New Sprint: back to the setup, waiting for the next first dial.
+    func newSprint() {
+        blockStartedAt = nil
+        sprintDone = false
+        breakUntil = nil
     }
     static let breakLength: TimeInterval = 10 * 60
 
@@ -603,7 +610,7 @@ extension CoachModel {
         blockStartedAt = Date()
         breakUntil = nil
         BlockLog.add(blockStartedAt!)
-        ActivityLog.add("Block: 50 minutes started")
+        ActivityLog.add("Sprint started on the first dial")
     }
 
     func stopBlock() {
@@ -619,14 +626,12 @@ extension CoachModel {
             if Date() >= until { endBreak() }
             return
         }
-        guard let start = blockStartedAt, status == .ready, !dialing,
+        // Time's up: mark it complete. Never touches a call or auto dial; the rep keeps calling.
+        guard let start = blockStartedAt, !sprintDone,
               Date().timeIntervalSince(start) >= Self.blockLength else { return }
-        autoDialBeforeBreak = autoDial
-        autoDial = false
-        cancelAutoNext()
-        breakUntil = Date().addingTimeInterval(Self.breakLength)
+        sprintDone = true
         NSSound(named: "Glass")?.play()
-        ActivityLog.add("Block: done. 10 minute break")
+        ActivityLog.add("Sprint complete")
     }
 
     /// Skip break, or the break is over: auto dial back on, new block, next call.

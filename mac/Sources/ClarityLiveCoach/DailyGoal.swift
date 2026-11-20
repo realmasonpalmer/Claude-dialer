@@ -9,7 +9,6 @@ struct DailyGoalCard: View {
     let activeCampaigns: [Campaign]
     @AppStorage("sprintMinutes") private var minutes = 20
     @AppStorage("sprintTarget") private var target = 20
-    @AppStorage("sprintArmed") private var armed = true
 
     static let perHour = 50
 
@@ -21,14 +20,14 @@ struct DailyGoalCard: View {
                     Image(systemName: "bolt").font(.title3.weight(.semibold)).foregroundStyle(Brand.blue)
                     Text("Call Sprint").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
                     Spacer(minLength: 0)
-                    if coach.breakUntil != nil {
-                        pill("Break", .orange)
+                    if coach.sprintDone {
+                        pill("Complete", Brand.blue)
                     } else if coach.blockStartedAt != nil {
                         pill("Active", .green)
                     }
                 }
-                if let until = coach.breakUntil {
-                    breakView(left: max(0, Int(until.timeIntervalSince(now))))
+                if coach.sprintDone, let start = coach.blockStartedAt {
+                    complete(start: start)
                 } else if let start = coach.blockStartedAt {
                     active(start: start, now: now)
                 } else {
@@ -50,8 +49,9 @@ struct DailyGoalCard: View {
             HStack(spacing: 6) {
                 ForEach([20, 30, 50], id: \.self) { m in
                     Button {
-                        if target == minutes { target = m } // the target follows the length until it's changed
                         minutes = m
+                        target = m // 20, 30 or 50 dials; the rep can change it after
+
                     } label: {
                         Text("\(m) min").font(.callout.weight(.medium))
                             .foregroundStyle(minutes == m ? Brand.text : Brand.subtext)
@@ -74,12 +74,8 @@ struct DailyGoalCard: View {
             }
             .padding(12)
             .background(Brand.navy.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-            if armed {
-                Label("Sprint starts automatically with your first dial.", systemImage: "info.circle")
-                    .font(.caption).foregroundStyle(Brand.subtext)
-            } else {
-                Button("Start sprint") { coach.startBlock() }.buttonStyle(BrandPrimaryButton())
-            }
+            Label("Sprint starts automatically with your first dial.", systemImage: "info.circle")
+                .font(.caption).foregroundStyle(Brand.subtext)
         }
     }
 
@@ -92,7 +88,6 @@ struct DailyGoalCard: View {
         let progress = min(Double(done) / Double(max(target, 1)), 1)
         let expected = Double(target) * elapsed / total
         let ahead = Int((Double(done) - expected).rounded())
-        let mins = max(elapsed / 60, 0.5)
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 14) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -110,29 +105,38 @@ struct DailyGoalCard: View {
                 ProgressView(value: progress).tint(Brand.blue)
                 Text("\(Int(progress * 100))%").font(.callout).foregroundStyle(Brand.subtext).monospacedDigit()
             }
-            let tone: Color = ahead > 0 ? .green : (ahead < 0 ? .orange : Brand.subtext)
-            Label(ahead > 0 ? "\(ahead) ahead of pace" : ahead < 0 ? "\(-ahead) behind pace" : "On pace",
-                  systemImage: ahead >= 0 ? "arrow.up" : "arrow.down")
+            let hit = done >= target
+            let tone: Color = hit || ahead > 0 ? .green : (ahead < 0 ? .orange : Brand.subtext)
+            Label(hit ? "Target hit! Keep going" : ahead > 0 ? "\(ahead) ahead of pace" : ahead < 0 ? "\(-ahead) behind pace" : "On pace",
+                  systemImage: hit ? "party.popper" : ahead >= 0 ? "arrow.up" : "arrow.down")
                 .font(.callout.weight(.semibold)).foregroundStyle(tone)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
                 .background(tone.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
-            HStack {
-                stat(String(format: "%.1f / min", Double(done) / mins), "Current pace")
-                Divider().frame(height: 30)
-                stat(String(format: "%.1f / min", Double(target) / (total / 60)), "Target pace")
-                Divider().frame(height: 30)
-                stat(Self.clock(total - elapsed), "Time left")
-            }
-            Button("End sprint") { coach.stopBlock() }.buttonStyle(.brandLink).font(.caption)
         }
     }
 
-    private func breakView(left: Int) -> some View {
-        HStack(spacing: 10) {
-            Text("Break: " + Self.clock(TimeInterval(left))).font(.title3.weight(.semibold)).monospacedDigit()
-            Spacer()
-            Button("Skip break") { coach.endBreak() }.buttonStyle(.brandLink)
+    /// Time's up: the totals, and New Sprint. Calling carries on regardless.
+    private func complete(start: Date) -> some View {
+        let total = CoachModel.blockLength
+        let done = touchpoints.dials(from: start, to: start.addingTimeInterval(total))
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Sprint Complete").font(.title2.weight(.bold))
+            HStack(spacing: 18) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(done) / \(target)").font(.title.weight(.bold)).monospacedDigit()
+                    Text("Dials").font(.caption).foregroundStyle(Brand.subtext)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(Self.clock(total)).font(.title.weight(.bold)).monospacedDigit()
+                    Text("Time").font(.caption).foregroundStyle(Brand.subtext)
+                }
+                Spacer(minLength: 0)
+            }
+            Label(done >= target ? "Target achieved" : "\(target - done) short of the target",
+                  systemImage: done >= target ? "checkmark.circle.fill" : "flag")
+                .font(.callout.weight(.semibold)).foregroundStyle(done >= target ? Color.green : Brand.subtext)
+            Button("New Sprint") { coach.newSprint() }.buttonStyle(BrandPrimaryButton())
         }
     }
 

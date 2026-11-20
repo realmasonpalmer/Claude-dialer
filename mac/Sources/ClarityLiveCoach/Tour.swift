@@ -77,7 +77,7 @@ enum Tour {
                  corner: 14),
         // 4. Track progress
         TourStep(spot: .goal, part: "Track progress", title: "Call Sprint",
-                 text: "Pick 20, 30 or 50 minutes and a dial target. The sprint starts with your first dial and shows your time, dials and whether you're ahead of pace. A 10 minute break follows.",
+                 text: "Pick 20, 30 or 50 minutes and a dial target. The sprint starts with your first dial and shows your time, dials and whether you're ahead of pace. When time is up it shows your totals; you can keep calling.",
                  corner: 10, pad: 4),
         TourStep(spot: .numbers, part: "Track progress", title: "My Activity",
                  text: "Dials, human answers, conversations and meetings, for today, this week or more. More details shows voicemails, texts and LinkedIn.",
