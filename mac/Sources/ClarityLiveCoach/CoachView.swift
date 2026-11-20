@@ -832,11 +832,6 @@ struct CoachView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
                 // Which script row (or which opener) this line is, so the rep learns what works.
-                if let tag = coach.suggestion.rowTag {
-                    tagChip(tag)
-                } else if coach.kind == .opener, let name = coach.openerName {
-                    tagChip(name)
-                }
                 Spacer()
                 if coach.thinking && coach.status == .live {
                     ProgressView().controlSize(.mini)
