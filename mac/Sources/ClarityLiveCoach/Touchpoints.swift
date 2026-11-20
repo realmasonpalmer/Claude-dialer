@@ -217,7 +217,7 @@ struct TouchpointsCard: View {
                 Text("\(dials / max(meetings, 1)) calls per meeting").font(.caption).foregroundStyle(.secondary)
             }
             Button("Set today back to zero") { confirmReset = true }
-                .buttonStyle(.link).font(.caption)
+                .buttonStyle(.brandLink).font(.caption)
                 .confirmationDialog("Set today's numbers back to zero?", isPresented: $confirmReset) {
                     Button("Set to zero", role: .destructive) { touchpoints.resetToday() }
                     Button("Cancel", role: .cancel) {}

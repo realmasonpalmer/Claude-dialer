@@ -83,11 +83,11 @@ struct DailyGoalCard: View {
         if let until = coach.breakUntil {
             let left = max(0, Int(until.timeIntervalSince(now)))
             Text(String(format: "Break %d:%02d", left / 60, left % 60)).font(.caption.monospacedDigit())
-            Button("Skip break") { coach.endBreak() }.buttonStyle(.link).font(.caption)
+            Button("Skip break") { coach.endBreak() }.buttonStyle(.brandLink).font(.caption)
         } else if let start = coach.blockStartedAt {
             let left = max(0, Int(CoachModel.blockLength - now.timeIntervalSince(start)))
             Text(String(format: "%d:%02d left", left / 60, left % 60)).font(.callout.weight(.semibold).monospacedDigit())
-            Button("Stop") { coach.stopBlock() }.buttonStyle(.link).font(.caption)
+            Button("Stop") { coach.stopBlock() }.buttonStyle(.brandLink).font(.caption)
         } else {
             Button("Start a 50 min block") { coach.startBlock() }
                 .buttonStyle(.bordered).controlSize(.small)

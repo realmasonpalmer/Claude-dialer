@@ -112,7 +112,7 @@ struct AudioCheckView: View {
                 }
                 if onCancel == nil, let onSkip, model.step != .done {
                     Button("Skip for now") { onSkip() }
-                        .buttonStyle(.link)
+                        .buttonStyle(.brandLink)
                         .help("You can do the audio check later: click the gear, then Set up.")
                 }
             }
@@ -185,7 +185,7 @@ struct AudioCheckView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 Button("Test again") { model.testAgain() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.brandLink)
             }
         }
     }

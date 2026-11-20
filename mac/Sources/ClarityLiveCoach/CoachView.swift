@@ -428,7 +428,7 @@ struct CoachView: View {
                     .font(.caption).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
                 Button("Set up") { showDropSetup = true }.controlSize(.small)
-                Button("Not now") { dropNudgeDismissed = true }.buttonStyle(.link).font(.caption)
+                Button("Not now") { dropNudgeDismissed = true }.buttonStyle(.brandLink).font(.caption)
             }
             .padding(8)
             .background(Brand.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
@@ -469,7 +469,7 @@ struct CoachView: View {
                 }
                 Spacer(minLength: 0)
                 Button(showMore ? "Show less" : "Show more") { showMore.toggle() }
-                    .buttonStyle(.link).font(.caption)
+                    .buttonStyle(.brandLink).font(.caption)
                     .help(showMore ? "Back to just the person, the line and the buttons"
                                    : "Also show the opening line and your script")
             }
@@ -477,7 +477,7 @@ struct CoachView: View {
                 if coach.streak >= 3 { Text("🔥 \(coach.streak) in a row").font(.caption2.weight(.semibold)) }
                 if coach.streak > 0 {
                     Button("Reset streak") { coach.streak = 0; coach.lastDialAt = .distantPast }
-                        .buttonStyle(.link).font(.caption2)
+                        .buttonStyle(.brandLink).font(.caption2)
                         .help("Start the in-a-row count over")
                 }
                 Spacer(minLength: 0)
@@ -494,7 +494,7 @@ struct CoachView: View {
                     Button("Skip LinkedIn") {
                         ActivityLog.add("LinkedIn skipped by the rep")
                         coach.followUp?.linkedinDone = true
-                    }.buttonStyle(.link).font(.caption2)
+                    }.buttonStyle(.brandLink).font(.caption2)
                 }.padding(.leading, 13)
             }
             if !coach.waitingForLinkedIn, let s = coach.linkedInStatus {
@@ -866,7 +866,7 @@ struct CoachView: View {
             HStack(spacing: 6) {
                 Text(cardLabel)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.teal)
+                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.subtext)
                 // Which script row (or which opener) this line is, so the rep learns what works.
                 Spacer()
                 if coach.thinking && coach.status == .live {
@@ -874,21 +874,21 @@ struct CoachView: View {
                 }
                 if coach.historyIndex != nil {
                     Button("Latest") { coach.showLatest() }
-                        .buttonStyle(.link).font(.caption2)
+                        .buttonStyle(.brandLink).font(.caption2)
                 } else if coach.status == .live {
                     Text(coach.coachState.rawValue).font(.caption2).foregroundStyle(.secondary)
                     Button(coach.holdLine ? "Release" : "Hold") { coach.holdLine.toggle() }
-                        .buttonStyle(.link).font(.caption2)
+                        .buttonStyle(.brandLink).font(.caption2)
                         .help("Hold keeps this line on screen until you release it.")
                     if coach.pending != nil {
                         Text(coach.lineSuperseded ? "They moved on. New line ready" : "Next line ready")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
                         Button("Next") { coach.promoteNow() }
-                            .buttonStyle(.link).font(.caption2)
+                            .buttonStyle(.brandLink).font(.caption2)
                             .help("Show the new line now. It shows by itself when you stop talking.")
                     }
                     Button("For a fresh line (press space bar)") { coach.newLine() }
-                        .buttonStyle(.link).font(.caption2)
+                        .buttonStyle(.brandLink).font(.caption2)
                         .help("Don't like this line? Get a new one right now.")
                 }
             }
@@ -904,7 +904,7 @@ struct CoachView: View {
             // THINK mode: one thought on the card; the full line only when the rep asks (⌘⇧L).
             if thinkShown || showFullLine {
                 Button(showFullLine ? "Back to the short thought" : "Full line (⌘⇧L)") { showFullLine.toggle() }
-                    .buttonStyle(.link).font(.caption2)
+                    .buttonStyle(.brandLink).font(.caption2)
                     .keyboardShortcut("l", modifiers: [.command, .shift])
                     .help("Show the full suggested sentence. Only while the app is in front, so it never touches your typing.")
             }
@@ -1010,7 +1010,7 @@ struct CoachView: View {
                         .font(.callout.weight(.medium))
                     Spacer()
                     Button("Other times") { coach.skipOfferedTimes() }
-                        .buttonStyle(.link).font(.caption)
+                        .buttonStyle(.brandLink).font(.caption)
                 }
             }
         }
@@ -1030,7 +1030,7 @@ struct CoachView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     warningText("Chrome needs one setting. At the top of your screen: click View, then Developer, then Allow JavaScript from Apple Events.")
                     Button("Show me with pictures") { showSetup = true }
-                        .buttonStyle(.link).font(.caption)
+                        .buttonStyle(.brandLink).font(.caption)
                 }
             } else if let message = updater.message, !updater.updating,
                       message.hasPrefix("The update") || message.hasPrefix("Couldn't") {
@@ -1057,7 +1057,7 @@ struct CoachView: View {
             HStack {
                 Text("How did it go with \(Screener.firstName(coach.calling) ?? "them")?").font(.callout.weight(.semibold))
                 Spacer(minLength: 0)
-                Button("Skip") { coach.skipOutcome() }.buttonStyle(.link).font(.caption)
+                Button("Skip") { coach.skipOutcome() }.buttonStyle(.brandLink).font(.caption)
                     .help("Don't rate this call, move on")
             }
             HStack(spacing: 8) {
@@ -1118,7 +1118,7 @@ struct CoachView: View {
                     Label("END CALL", systemImage: "phone.down.fill").font(.callout.weight(.semibold))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(BrandPrimaryButton(color: Color(red: 1, green: 0.15, blue: 0.15)))
+                .buttonStyle(BrandPrimaryButton(color: Brand.stop))
                 .help("Is the call over, but the app is still listening? Click here. (Command-E)")
                 if coach.status == .live {
                     Button("Voicemail") { coach.markVoicemail() }
@@ -1208,7 +1208,7 @@ struct CoachView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 2)
         }
-        .buttonStyle(BrandPrimaryButton(color: green ? .green : Brand.blue))
+        .buttonStyle(BrandPrimaryButton(color: green ? Brand.go : Brand.blue))
     }
 
     private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -1294,7 +1294,7 @@ struct CoachView: View {
                                          : "Nobody is due to call right now on \(campaigns.selected.name).")
                     .font(.callout.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
-                Button(showWhy ? "Hide why" : "Why?") { showWhy.toggle() }.buttonStyle(.link).font(.caption)
+                Button(showWhy ? "Hide why" : "Why?") { showWhy.toggle() }.buttonStyle(.brandLink).font(.caption)
                 if why.noMobile > 0, why.noMobile * 2 >= why.total {
                     // Most of the list is blocked by one setting: say so up front, with the fix.
                     Text("\(why.noMobile) of \(why.total) people have no Mobile number, and Mobile numbers only is on.")
@@ -1369,7 +1369,7 @@ struct CoachView: View {
             if let left = coach.textSendIn {
                 VStack(alignment: .leading, spacing: 6) {
                     countdownBar("Sending the text in \(left)", left: left) { coach.stopTextCountdown() }
-                    Button("Skip text") { coach.startNextSequence() }.buttonStyle(.link).font(.caption)
+                    Button("Skip text") { coach.startNextSequence() }.buttonStyle(.brandLink).font(.caption)
                 }
             } else {
             HStack(spacing: 8) {
@@ -1590,7 +1590,7 @@ struct FollowUpCard: View {
                     Spacer()
                     // Their profile, any day, right away (the connection note below waits for its words).
                     Button(f.linkedinURL == nil ? "Find on LinkedIn" : "LinkedIn profile") { onProfile() }
-                        .buttonStyle(.link).font(.caption)
+                        .buttonStyle(.brandLink).font(.caption)
                         .help(f.linkedinURL == nil ? "No LinkedIn link in Salesforce: searches LinkedIn for them" : "Opens their LinkedIn profile")
                     Button {
                         followUp = nil
@@ -1618,7 +1618,7 @@ struct FollowUpCard: View {
                     if !f.linkedInMessageFirst || f.linkedinDone {
                         row(done: f.linkedinDone, title: "LinkedIn connection note" + (f.linkedInDue ? "" : " (extra today)"), message: f.linkedin) {
                             if f.linkedinDone {
-                                Button("Open again") { onLinkedIn() }.buttonStyle(.link)
+                                Button("Open again") { onLinkedIn() }.buttonStyle(.brandLink)
                             } else {
                                 Button(f.linkedinURL == nil ? "Search LinkedIn + copy note" : "Open profile + copy note") { onLinkedIn() }
                                     .keyboardShortcut("l", modifiers: .command)
@@ -1636,7 +1636,7 @@ struct FollowUpCard: View {
                     }
                     row(done: f.linkedinMessageDone, title: "LinkedIn message" + (f.linkedInDue ? "" : " (extra today)"), message: f.linkedinMessage) {
                         if f.linkedinMessageDone {
-                            Button("Copy again") { onLinkedInMessage() }.buttonStyle(.link)
+                            Button("Copy again") { onLinkedInMessage() }.buttonStyle(.brandLink)
                         } else {
                             Button("Copy message") { onLinkedInMessage() }
                                 .buttonStyle(.bordered)
@@ -1670,7 +1670,7 @@ struct FollowUpCard: View {
                         HStack(spacing: 12) {
                             Button("Copy") { copy(f.text); followUp?.textDone = true }
                             Button("Send from Aircall in one click...") { onSetupAircall() }
-                                .buttonStyle(.link)
+                                .buttonStyle(.brandLink)
                         }
                     }
                 }
@@ -1822,7 +1822,7 @@ struct RelationshipCard: View {
                 }
             }
             Button(showAllStatuses ? "Fewer choices" : "More choices") { showAllStatuses.toggle() }
-                .buttonStyle(.link).font(.caption)
+                .buttonStyle(.brandLink).font(.caption)
             if showAllStatuses {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
                 ForEach(Salesforce.statuses(object), id: \.self) { value in

@@ -21,14 +21,20 @@ enum Brand {
     static let edge = hex(0x303D52)
     /// Control outlines: a step brighter than decorative borders so buttons read as buttons.
     static let controlEdge = hex(0x3E4D66)
-    /// Main text: soft white.
-    static let text = hex(0xE5EAF2)
-    /// Instructions, timestamps, labels.
-    static let subtext = hex(0xA7B2C5)
+    /// Main text: white. All regular text is white or gray, never blue.
+    static let text = hex(0xFFFFFF)
+    /// Secondary text: labels, instructions.
+    static let subtext = hex(0xCBD5E1)
+    /// Muted text: timestamps, hints, disabled.
+    static let muted = hex(0x94A3B8)
     /// Primary action blue.
     static let blue = hex(0x2563EB)
-    /// Teal accent: labels and small highlights.
+    /// Teal accent: the script card's edge and small highlights (never text).
     static let teal = hex(0x45C3CB)
+    /// The main call button.
+    static let go = hex(0x16A34A)
+    /// Stop and End call.
+    static let stop = hex(0xEF4444)
 }
 
 extension View {
@@ -42,7 +48,7 @@ extension View {
     /// Put on every window's root view.
     func brandWindow() -> some View {
         tint(Brand.blue)
-            .foregroundStyle(Brand.text, Brand.subtext)
+            .foregroundStyle(Brand.text, Brand.subtext, Brand.muted)
             .background(Brand.navy)
             .preferredColorScheme(.dark)
     }
@@ -95,4 +101,31 @@ struct BrandQuietButton: ButtonStyle {
                 .contentShape(RoundedRectangle(cornerRadius: 8))
         }
     }
+}
+
+/// Text-style links (Stop, Skip, Show more...): white text, underlined on hover, never blue on blue.
+struct BrandLinkButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Look(configuration: configuration)
+    }
+
+    private struct Look: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var enabled
+        @State private var hover = false
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(enabled ? Brand.text : Brand.muted)
+                .underline(hover && enabled)
+                .opacity(configuration.isPressed ? 0.7 : 1)
+                .contentShape(Rectangle())
+                .onHover { hover = $0 }
+        }
+    }
+}
+
+extension ButtonStyle where Self == BrandLinkButton {
+    /// White text link (replaces the system blue link style).
+    static var brandLink: BrandLinkButton { BrandLinkButton() }
 }

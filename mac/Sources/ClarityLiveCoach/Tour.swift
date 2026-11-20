@@ -182,7 +182,7 @@ struct TourOverlay: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(Tour.label(for: number, in: steps).uppercased())
                 .font(.caption2.weight(.semibold)).tracking(0.6)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Brand.subtext)
             Text(s.title).font(.headline)
             Text(s.text).font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

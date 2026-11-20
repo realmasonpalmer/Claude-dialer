@@ -20,7 +20,7 @@ struct CampaignSelectorView: View {
             HStack {
                 Text("Call lists").font(.title2.weight(.semibold))
                 Spacer()
-                Button("Show me how") { tourStep = 1 }.buttonStyle(.link)
+                Button("Show me how") { tourStep = 1 }.buttonStyle(.brandLink)
             }
             Text("A call list is people to call, plus what to say to them. One call list is on at a time: turning one on turns the others off.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -172,7 +172,7 @@ struct NewCampaignView: View {
             HStack {
                 Text("New call list").font(.title2.weight(.semibold))
                 Spacer()
-                Button("Show me how") { tourStep = 1 }.buttonStyle(.link)
+                Button("Show me how") { tourStep = 1 }.buttonStyle(.brandLink)
             }
 
             VStack(alignment: .leading, spacing: 4) {

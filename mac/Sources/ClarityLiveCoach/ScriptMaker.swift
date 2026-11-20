@@ -53,7 +53,7 @@ struct ScriptMakerView: View {
                 switch step {
                 case .done:
                     Button("Start calling") { dismiss() }
-                        .buttonStyle(BrandPrimaryButton(color: .green)).keyboardShortcut(.defaultAction)
+                        .buttonStyle(BrandPrimaryButton(color: Brand.go)).keyboardShortcut(.defaultAction)
                 case .failed:
                     Button("Close") { dismiss() }
                     Button("Try again") { run() }.buttonStyle(BrandPrimaryButton()).keyboardShortcut(.defaultAction)
