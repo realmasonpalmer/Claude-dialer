@@ -340,6 +340,7 @@ extension CoachModel {
             }
         }
         CoachPrompt.questionFacts = questionTracker.promptText // current before the next prompt is built
+        CoachPrompt.answeredQuestions = questionTracker.questions.filter { $0.asker == .rep && $0.status == .answered }.map(\.text)
         for c in objectionTracker.add(turn: text, from: speaker == .rep ? .rep : .prospect, turn: CallTrace.turn) {
             let o = c.objection
             CallTrace.event("objection.\(o.status.rawValue)", [

@@ -1069,7 +1069,8 @@ struct CoachView: View {
     private var cardLine: String {
         guard thinkActive else { return coach.suggestion.say }
         return Think.primary(think: coach.suggestion.think, say: coach.suggestion.say,
-                             exact: coach.suggestion.rowTag != nil, enabled: true, showFull: showFullLine)
+                             exact: coach.suggestion.rowTag != nil, enabled: true, showFull: showFullLine,
+                             move: coach.suggestion.move)
     }
     /// A thought (not SAY) is on the card right now.
     private var thinkShown: Bool { thinkActive && cardLine != coach.suggestion.say }
@@ -1109,7 +1110,8 @@ struct CoachView: View {
         case .screener: return "A ROBOT ANSWERED · SAY THIS"
         case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
         case .reply:
-            if thinkActive { return coach.suggestion.rowTag != nil ? "EXACT" : "" } // THINK mode: no "SAY THIS"
+            // THINK mode: no label while a thought is up. If THINK didn't hold up, the full line shows and says so.
+            if thinkActive { return coach.suggestion.rowTag != nil ? "EXACT" : (thinkShown ? "" : "SAY THIS") }
             return coach.suggestion.rowTag != nil ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
         }
     }

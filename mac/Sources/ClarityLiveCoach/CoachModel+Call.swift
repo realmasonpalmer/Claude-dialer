@@ -720,6 +720,8 @@ extension CoachModel {
         SpaceKey.install()
         SpaceKey.callLive = true // Space in Chrome = fresh line, during this call only
         CoachPrompt.questionFacts = "" // never carry the last call's questions into this one
+        CoachPrompt.answeredQuestions = []
+        CoachPrompt.recentText = ""
         doNotCall = false
         timeline = SpeechTimeline()
         CoachPrompt.blockerHints = BlockerBook.hints(campaign.id)

@@ -17,10 +17,13 @@ enum CoachPrompt {
         ("Claude" is often heard as "cloud" or "clod"). Read words in context.
 
         How to coach:
-        1. One line, \(LineBudget.promptMax) words at most, easy to say out loud on the first read. End with a question unless the line ends the call or copies a script row word for word.
+        1. One line, \(LineBudget.promptMax) words at most, easy to say out loud on the first read. A question is the
+           right ending when you're learning about them (discover, clarify, objection). When you're answering,
+           acknowledging or closing, a plain statement is fine; never add a question just to have one.
         2. Sound like a confident, friendly human. Plain words, contractions, no jargon, no hype. A short question beats a pitch.
         3. Answer what the prospect just said. Never contradict a need they stated or ask what they already answered.
-           A direct question gets a one-sentence answer, then the next question for the stage you're in.
+           A direct question gets a plain answer first. Add a question only if it follows naturally from that answer,
+           never one that changes the subject.
         4. Objections: acknowledge in a few words, then ask a curious question. Never argue.
         5. Never invent a fact, number, client name, price, offer, feature or result. Use only what the campaign gives.
         6. Move toward the campaign objective. Once reached, help the rep confirm details and wrap up. Stop selling.
@@ -29,17 +32,24 @@ enum CoachPrompt {
            "This is [rep's first name] calling for [prospect's first name]." Then waits. Stage: Screener.
         9. If talk is flowing well or the rep is mid-thought, the move is silent.
 
-        The campaign's script leads. Follow its lines and its order, in its words. Go off-script only when you're
-        highly confident a different line moves the call toward the objective better (the prospect said something
-        the script doesn't cover, or its next line no longer fits). Then write it in the script's voice and get back
-        to the script as soon as you can. Everything below fills gaps; it never overrides the script.
+        What decides the next move, in this order (the first one that applies wins):
+        1. An opt-out or a request not to be called: end it, no more questions.
+        2. They're ending the call, or they've said no: acknowledge, don't push. A second no ends the call.
+        3. A direct question from them: answer it plainly.
+        4. What's already established: never ask again what they answered, declined or deflected; build on what they confirmed.
+        5. The best next move for this conversation (answer, clarify, discover, acknowledge, objection, close).
+        6. The stage's goal: it guides the move, it never overrides what they just said.
+        7. The script: it supplies the strategy, facts and approved wording. Use its lines in its words when a
+           row truly fits what they meant, not just a few shared words. A script question that doesn't fit the
+           moment is skipped, not forced. Its banned words, facts and compliance limits always hold.
 
         Scripts built as a backbone (output rules, banned words, facts, state, a pick order, and tables of
-        ID or Condition / Sounds like / Say / Then): follow them exactly, like a decision tree.
-        - The script's output rules, banned words and facts beat everything else in these instructions.
+        ID or Condition / Sounds like / Say / Then) are the source of approved rows and facts:
+        - The script's banned words, facts and compliance limits beat the style rules below.
         - Track the script's state from the call so far: line type, stage, whether a problem was named, how many no's.
-        - Each turn, walk the pick order and use the first row that matches. "Sounds like" is a meaning match, not
-          exact words. Treat the script's transcript noise list as the same word.
+        - Each turn, check the pick order, but a row only matches when its "Sounds like" fits what they MEANT
+          (a meaning match, not shared words), and nothing above in the decision order applies first.
+          Treat the script's transcript noise list as the same word.
         - SAY is that row's Say line word for word, with only the [slots] filled in ([Name], [Firm] or [Company],
           [SDR] = the rep's first name, [Day] [Time] or [SlotA] [SlotB] = the open meeting times below).
           If a slot is unknown, drop it naturally. Never show a bracket.
@@ -187,6 +197,11 @@ enum CoachPrompt {
     static var prospectNos = 0
     /// The prospect's words the latest reply was written for (the line check reads it).
     static var latestProspect = ""
+    /// The last turns word for word and the campaign script, for the "is this THINK about this call" check.
+    static var recentText = ""
+    static var scriptText = ""
+    /// Questions the rep asked that were answered (the line check refuses to repeat them).
+    static var answeredQuestions: [String] = []
     /// Lines already shown to the rep this call, and which of them the rep actually said.
     static var shownLines: [String] = []
     static var saidLines: [String] = []
@@ -209,6 +224,7 @@ enum CoachPrompt {
         if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }
         let repLast = turns.last { $0.speaker == .rep }?.text ?? ""
         latestProspect = (repLed || assumeYes) ? "" : latest
+        recentText = recent.suffix(6).map(\.text).joined(separator: " ")
         let intent = (repLed || assumeYes) ? ConversationIntent.other : ConversationIntent.classify(latest)
         let priority: String = {
             switch intent {
@@ -243,23 +259,23 @@ enum CoachPrompt {
         \(history)
 
         \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
-        \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked exactly, trust these):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
+        \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked by simple rules from the transcript):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked by simple rules from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
         \(priority)\(shown)\(prospectNos == 1 ? "They have said no once. One short respectful question, then accept their answer.\n" : "")
+        The tracked questions and objections above come from simple rules on the transcript. If the transcript
+        shows something different, the transcript is the truth.
         The rep's actual words are the truth; the script is the guide. If the rep already covered something in
         their own words (the reason for the call, the pitch, a question), it's done: never repeat it. Coach from
         where the rep really is toward the next goal of the script.
         If the prospect asked a question, the first sentence answers it plainly and directly.
         Roles: the rep is the caller from Clarity. The prospect is the person being called. Never have the rep
         claim the prospect's role, title or decisions ("I'm the one who decides"). If unsure who decides, ask.
-        Decide in this order: opt-out, they're ending the call, answer their direct question, respect a no or
-        objection, skip what they already answered, then move the script forward. The stage guides; it never
-        overrides what they just said.
         A pain is theirs only if they said it. Never state a problem as theirs or as what "usually" bothers teams when
         they haven't said it. You may offer one as a question ("Some teams say call notes never get typed in. True for you?").
         Two no's and a go: after one no, one short respectful question, then accept. After two no's, thank them and end.
-        What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most, ending in one question
-        (unless the call is ending). Follow the script mostly; if you're sure a different answer breaks through
-        better, use it.
+        What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most. End with one
+        question when the move is to learn something (discover, clarify, objection); an answer, acknowledgment or
+        close can end plainly. Use the script's wording when a row truly fits; otherwise write what this
+        conversation needs.
         """
     }
 

@@ -386,8 +386,10 @@ final class CoachModel: ObservableObject {
     @Published private(set) var campaign = Campaign.clarityDiscovery
     var system = CoachPrompt.system(for: .clarityDiscovery)
 
+
     func use(_ next: Campaign) {
         touchpoints.currentCampaign = next.name
+        CoachPrompt.scriptText = next.promptText
         guard next != campaign else { return }
         campaign = next
         touchpoints.currentCampaign = next.name

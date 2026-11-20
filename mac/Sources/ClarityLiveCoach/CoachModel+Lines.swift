@@ -192,7 +192,7 @@ extension CoachModel {
         guard isMeaningful(text) else { return }
         // A script answer waits for their full sentence ("I don't know..." can end "...that I'm the right fit"):
         // the final words go through the same priority checks.
-        if scriptAnswers.matchInContext(text).entry != nil { return }
+        if scriptAnswers.matchInContext(text, answeredQuestions: CoachPrompt.answeredQuestions).entry != nil { return }
         // Draft early once their meaning is clear: a finished sentence (200 ms), or 6+ words that
         // stopped changing (450 ms). Each new word cancels the wait, so there's no flood of requests.
         // A yes to the rep's question, with the yes line already written: no draft needed.
@@ -613,7 +613,9 @@ extension CoachModel {
 
     /// The house rules for a live line (offered meeting times are allowed).
     static func lineProblems(_ s: Suggestion) -> [String] {
-        var p = Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil, allowTimes: true)
+        // A question is required only when the move is to learn something: answer, acknowledge and close may end plainly.
+        let plainEnding = ["answer", "acknowledge", "close"].contains(s.move)
+        var p = Guardrail.problems(s.say, endsCall: ["Exit", "Goal reached", "Voicemail"].contains(s.stage) || s.rowTag != nil || plainEnding, allowTimes: true)
         // The conversation outranks the stage (Nov 20).
         if RoleCheck.speaksAsProspect(s.say) {
             p.append("the rep claims the prospect's role: the rep is the caller, never the one who decides there")
@@ -624,6 +626,13 @@ extension CoachModel {
         }
         if s.move == "discover", intent == .rejection {
             p.append("they declined: acknowledge it, no more discovery (MOVE acknowledge or close)")
+        }
+        // THINK is the coaching: a normal live line needs a useful one, checked against this conversation.
+        if Think.enabled, s.rowTag == nil, !s.nudge, !s.skip {
+            p.append(contentsOf: Think.problems(think: s.think, say: s.say, move: s.move, intent: intent,
+                                                objectionKind: ObjectionTracker.detect(CoachPrompt.latestProspect),
+                                                latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
+                                                scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions))
         }
         // A script row copied word for word ("S2 open" is 26 words) isn't sent back for being long.
         return s.rowTag == nil ? p : p.filter { !$0.contains("words (max") }
@@ -649,7 +658,7 @@ extension CoachModel {
         }
         for model in [LiveCoach.callModel] { // one retry at most, on this call's model (H4)
             var text = ""
-            let retry = user + "\n\nYour last SAY broke these rules: \(problems.joined(separator: "; ")). It was: \"\(bad.say)\". Write it again."
+            let retry = user + "\n\nYour last answer broke these rules: \(problems.joined(separator: "; ")). THINK was: \"\(bad.think)\". SAY was: \"\(bad.say)\". Write MOVE, STAGE, THINK, SAY and CUE again."
             CallTrace.event("claude.retry.request", ["model": model, "user_message": retry], req: id)
             let t0 = Date()
             ActivityLog.add("Line check: asking \(ClaudeClient.displayName(model)) to fix it")
@@ -824,7 +833,7 @@ extension CoachModel {
         // Only when they're answering the rep's question: otherwise a phrase match is out of context.
         let repJustAsked = turns.dropLast().last { $0.speaker == .rep }?.text.contains("?") ?? false
         // Never ahead of higher-priority rules: a direct question, a no or a sign-off goes to the full coach.
-        let (hit, why) = answers.matchInContext(said)
+        let (hit, why) = answers.matchInContext(said, answeredQuestions: CoachPrompt.answeredQuestions)
         guard repJustAsked, let e = hit else {
             CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said,
                                              "intent": ConversationIntent.classify(said).rawValue,
@@ -1012,6 +1021,20 @@ extension CoachModel {
             ActivityLog.add("Coach line shown (\(kind)\(ms.map { ", \($0) ms after their last words" } ?? "")): \(s.say)")
         }
         var s = s
+        // THINK that doesn't hold up against this conversation never reaches the card: SAY shows instead, on purpose
+        // (the card says "SAY THIS"), and the reason is in the trace.
+        if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, !s.think.isEmpty {
+            let why = Think.problems(think: s.think, say: s.say, move: s.move, intent: ConversationIntent.classify(CoachPrompt.latestProspect),
+                                     objectionKind: ObjectionTracker.detect(CoachPrompt.latestProspect),
+                                     latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
+                                     scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions)
+            if !why.isEmpty {
+                CallTrace.event("think.fallback", ["think": s.think, "say": s.say, "problems": why], sug: id)
+                s.think = ""
+            }
+        } else if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, s.think.isEmpty {
+            CallTrace.event("think.fallback", ["think": "", "say": s.say, "problems": ["THINK was missing"]], sug: id)
+        }
         s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
         // Still an unfilled slot ([Day], [Firm] we don't know): never show it. Keep the current line (script rule).
         if status == .live, kind == .reply, TokenFill.hasOpenSlot(s.say) {
