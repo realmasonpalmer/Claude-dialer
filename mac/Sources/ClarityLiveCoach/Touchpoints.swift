@@ -77,6 +77,10 @@ final class Touchpoints: ObservableObject {
     }
 
     /// Every contact since a time, across all campaigns, for the hourly goal.
+    func contacts(from start: Date, to end: Date) -> Int {
+        events.filter { Self.contactKinds.contains($0.kind) && $0.at >= start && $0.at < end }.count
+    }
+
     func contacts(since start: Date) -> Int {
         let contacts: Set<Kind> = [.dial, .text, .linkedin, .linkedinMessage]
         return events.filter { contacts.contains($0.kind) && $0.at >= start }.count

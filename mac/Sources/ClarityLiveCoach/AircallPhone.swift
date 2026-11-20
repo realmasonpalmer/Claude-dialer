@@ -526,6 +526,7 @@ struct AircallPhonePanel: View {
                 }
                 Spacer(minLength: 0)
             }
+            DialingSwitches(card: false)
             if !numbers.isEmpty {
                 HStack(spacing: 12) {
                     Text("Texts go out from").font(.caption).foregroundStyle(.secondary).fixedSize()
@@ -574,9 +575,10 @@ struct AircallPhoneSide: View {
 struct DialingSwitches: View {
     @AppStorage(PrefKey.nextDials) private var autoDial = true
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
+    var card = true
 
     var body: some View {
-        HStack(spacing: 14) {
+        let row = HStack(spacing: 14) {
             Toggle("Auto dial", isOn: $autoDial)
                 .toggleStyle(.checkbox)
                 .fixedSize()
@@ -588,8 +590,10 @@ struct DialingSwitches: View {
             Spacer(minLength: 0)
         }
         .font(.callout)
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .brandCard(radius: 10)
+        if card {
+            row.padding(10).frame(maxWidth: .infinity, alignment: .leading).brandCard(radius: 10)
+        } else {
+            row
+        }
     }
 }

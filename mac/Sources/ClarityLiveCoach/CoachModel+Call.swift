@@ -586,6 +586,7 @@ extension CoachModel {
     func startBlock() {
         blockStartedAt = Date()
         breakUntil = nil
+        BlockLog.add(blockStartedAt!)
         ActivityLog.add("Block: 50 minutes started")
     }
 
@@ -616,6 +617,7 @@ extension CoachModel {
         autoDial = autoDialBeforeBreak
         breakUntil = nil
         blockStartedAt = Date()
+        BlockLog.add(blockStartedAt!)
         ActivityLog.add("Block: break over, calling again")
         if autoDial { startNextSequence() }
     }

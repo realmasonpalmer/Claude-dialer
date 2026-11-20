@@ -290,7 +290,6 @@ struct CoachView: View {
             if showAll, coach.status == .ready {
                 DailyGoalCard(touchpoints: coach.touchpoints, coach: coach, activeCampaigns: campaigns.activeCampaigns)
                     .tourScrollSpot(.goal)
-                DialingSwitches()
             }
             if showAll, showTouchpoints && coach.status == .ready {
                 TouchpointsCard(touchpoints: coach.touchpoints, toCall: coach.leads.isActive ? coach.leads.summary : coach.callList.summary).tourScrollSpot(.numbers)
@@ -464,7 +463,7 @@ struct CoachView: View {
                 Button(showMore ? "Show less" : "Show more") { showMore.toggle() }
                     .buttonStyle(.link).font(.caption)
                     .help(showMore ? "Back to just the person, the line and the buttons"
-                                   : "Also show this hour, your numbers, Auto dial and Call twice")
+                                   : "Also show this block and your numbers")
             }
             HStack(spacing: 10) {
                 if coach.streak >= 3 { Text("🔥 \(coach.streak) in a row").font(.caption2.weight(.semibold)) }

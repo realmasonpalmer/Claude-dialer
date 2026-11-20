@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "This hour: 12 of 50 · 23:14 left", with a countdown to the top of the hour.
+/// "This block: 12 of 50": contacts in the 50 minute block running now. One ring per block today.
 /// Contacts = dials, texts and LinkedIn notes. The goal is 50 every hour.
 /// Below: today's total and how many people are due on each active campaign.
 struct DailyGoalCard: View {
@@ -16,48 +16,38 @@ struct DailyGoalCard: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = context.date
-            let hour = Calendar.current.dateInterval(of: .hour, for: now)
-            let done = touchpoints.contacts(since: hour?.start ?? now)
-            let left = max(Int((hour?.end ?? now).timeIntervalSince(now)), 0)
+            let blocks = BlockLog.today()
+            // The count is for the block running now (or the last one today). No block yet: 0.
+            let current = blocks.last
+            let done = current.map { touchpoints.contacts(from: $0, to: BlockLog.end(of: $0, in: blocks, now: now)) } ?? 0
             let hit = done >= Self.perHour
             VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    open.toggle()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
-                        // The count rolls up like a clock digit each time it changes.
-                        HStack(spacing: 0) {
-                            Text("This hour: ")
-                            Text("\(done)")
-                                .contentTransition(.numericText(value: Double(done)))
-                                .animation(.snappy, value: done)
-                            Text(" of \(Self.perHour)")
-                        }
-                        .font(.callout.weight(.semibold).monospacedDigit())
-                        Spacer()
-                        Text(String(format: "%d:%02d left", left / 60, left % 60))
+                HStack(spacing: 6) {
+                    Button { open.toggle() } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2)
+                            HStack(spacing: 0) {
+                                Text("This block: ")
+                                Text("\(done)")
+                                    .contentTransition(.numericText(value: Double(done)))
+                                    .animation(.snappy, value: done)
+                                Text(" of \(Self.perHour)")
+                            }
                             .font(.callout.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(hit ? Color.green : left < 600 ? Color.orange : Color.primary)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    Spacer()
+                    blockControl(now: now)
                 }
-                .buttonStyle(.plain)
-                let hours = touchpoints.contactsByHourToday()
-                let closed = hours.filter { $0 >= Self.perHour }.count
                 ProgressView(value: Double(min(done, Self.perHour)), total: Double(Self.perHour))
                     .tint(hit ? .green : Brand.blue)
                     .animation(.easeOut(duration: 0.4), value: done)
-                    // One soft pulse when the hour's goal is hit.
-                    .keyframeAnimator(initialValue: 1.0, trigger: closed) { content, scale in
-                        content.scaleEffect(x: 1, y: scale)
-                    } keyframes: { _ in
-                        SpringKeyframe(2.2, duration: 0.18)
-                        SpringKeyframe(1.0, duration: 0.5)
-                    }
-                // One ring per hour today, closing at the goal. And how today compares with last time.
+                // One ring per 50 min block started today, filling with that block's contacts.
                 HStack(spacing: 5) {
-                    ForEach(Array(hours.enumerated()), id: \.offset) { _, count in
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, start in
+                        let count = touchpoints.contacts(from: start, to: BlockLog.end(of: start, in: blocks, now: now))
                         HourRing(progress: Double(count) / Double(Self.perHour))
                     }
                     Spacer(minLength: 8)
@@ -65,12 +55,11 @@ struct DailyGoalCard: View {
                         Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                blockRow(now: now)
                 if open {
-                Text(hit ? "Goal hit for this hour" : "\(Self.perHour - done) to go")
+                Text(hit ? "Goal hit for this block" : "\(Self.perHour - done) to go")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(hit ? Color.green : Color.secondary)
-                Text(([ "Today: \(touchpoints.totalAll(in: .today)) contacts" ]
+                Text(([ "Today: \(touchpoints.totalAll(in: .today)) contacts · \(blocks.count) block\(blocks.count == 1 ? "" : "s")" ]
                       + activeCampaigns.compactMap { c in due[c.id].map { "\(c.name): \($0.people) due" } })
                     .joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
@@ -82,7 +71,6 @@ struct DailyGoalCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .brandCard(radius: 10)
         .task(id: activeCampaigns.map(\.id)) {
-            // Recount now and every 10 minutes.
             while !Task.isCancelled {
                 await refresh()
                 try? await Task.sleep(for: .seconds(600))
@@ -90,26 +78,20 @@ struct DailyGoalCard: View {
         }
     }
 
-    /// The 50 minute block lives here with the hour's goal: one button to start it, then its time left.
-    @ViewBuilder private func blockRow(now: Date) -> some View {
+    /// Start a 50 min block, or its time left with Stop, or the break with Skip.
+    @ViewBuilder private func blockControl(now: Date) -> some View {
         if let until = coach.breakUntil {
             let left = max(0, Int(until.timeIntervalSince(now)))
-            HStack(spacing: 8) {
-                Text(String(format: "Break: %d:%02d left", left / 60, left % 60)).font(.caption.monospacedDigit())
-                Button("Skip break") { coach.endBreak() }.buttonStyle(.link).font(.caption)
-                Spacer(minLength: 0)
-            }
+            Text(String(format: "Break %d:%02d", left / 60, left % 60)).font(.caption.monospacedDigit())
+            Button("Skip break") { coach.endBreak() }.buttonStyle(.link).font(.caption)
         } else if let start = coach.blockStartedAt {
             let left = max(0, Int(CoachModel.blockLength - now.timeIntervalSince(start)))
-            HStack(spacing: 8) {
-                Text(String(format: "50 min block: %d:%02d left", left / 60, left % 60)).font(.caption.monospacedDigit())
-                Button("Stop") { coach.stopBlock() }.buttonStyle(.link).font(.caption)
-                Spacer(minLength: 0)
-            }
+            Text(String(format: "%d:%02d left", left / 60, left % 60)).font(.callout.weight(.semibold).monospacedDigit())
+            Button("Stop") { coach.stopBlock() }.buttonStyle(.link).font(.caption)
         } else {
             Button("Start a 50 min block") { coach.startBlock() }
                 .buttonStyle(.bordered).controlSize(.small)
-                .help("50 minutes of calling, then a 10 minute break. Counts toward this hour's goal.")
+                .help("50 minutes of calling, then a 10 minute break. Each block gets its own ring.")
         }
     }
 
@@ -159,5 +141,27 @@ struct HourRing: View {
         }
         .frame(width: 10, height: 10)
         .help(done ? "Goal hit this hour" : "\(Int(progress * 100))% of the hour's goal")
+    }
+}
+
+/// The 50 minute blocks started today, saved so the rings survive a restart.
+enum BlockLog {
+    private static let key = "blockStarts"
+
+    static func today() -> [Date] {
+        let all = (UserDefaults.standard.array(forKey: key) as? [Double]) ?? []
+        return all.map { Date(timeIntervalSince1970: $0) }.filter { Calendar.current.isDateInToday($0) }
+    }
+
+    static func add(_ start: Date) {
+        let kept = today().map(\.timeIntervalSince1970) // drops earlier days
+        UserDefaults.standard.set(kept + [start.timeIntervalSince1970], forKey: key)
+    }
+
+    /// A block counts until 50 minutes pass, the next block starts, or now.
+    static func end(of start: Date, in blocks: [Date], now: Date) -> Date {
+        var end = min(start.addingTimeInterval(CoachModel.blockLength), now)
+        if let next = blocks.first(where: { $0 > start }) { end = min(end, next) }
+        return end
     }
 }
