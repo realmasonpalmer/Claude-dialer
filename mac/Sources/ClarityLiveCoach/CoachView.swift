@@ -574,8 +574,8 @@ struct CoachView: View {
                 }
             }
             }
-            // Updates live in Settings; only a running update shows a line here.
-            if updater.updating { updateBar }
+            // A new version: the Update button shows here between calls (and while it installs).
+            updateBar
         }
         // No status, Voicemail or End call buttons here (the app handles those by itself).
         // Command-E still ends a call; Settings has both buttons.
