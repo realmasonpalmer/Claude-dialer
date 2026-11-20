@@ -19,7 +19,6 @@ struct CampaignEditorView: View {
     @State private var filling = false
     @State private var showWho = false
     @State private var mobileOnlyTick = false
-    @State private var eastTick = false
     @State private var writeStart = Date()
     @State private var thought = ""
     /// Extra direction for Claude, kept between uses.
@@ -104,14 +103,6 @@ struct CampaignEditorView: View {
             ))
             .id(mobileOnlyTick)
             Text("On: skip anyone with no Mobile in Salesforce (office lines only). Better pick up rates, and every text can go out.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Toggle("Call the East Coast first", isOn: Binding(
-                get: { TimeZoneFilter.eastCoastFirst },
-                set: { TimeZoneFilter.eastCoastFirst = $0; eastTick.toggle()
-                       NotificationCenter.default.post(name: .eastCoastFirstChanged, object: nil) }
-            ))
-            .id(eastTick)
-            Text("On: with all time zones, start in the East and go West, so nobody gets called before 9 there.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .task { if listViews.isEmpty { await loadLists() } }

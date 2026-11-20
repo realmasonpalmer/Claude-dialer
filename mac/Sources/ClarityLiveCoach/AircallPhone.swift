@@ -597,6 +597,15 @@ struct DialingSwitches: View {
                 .fixedSize()
                 .id(mobileTick)
                 .help("On: skip anyone with no Mobile in Salesforce, for the call list in use now. Better pick up rates, and every text can go out.")
+            Toggle("East Coast first", isOn: Binding(
+                get: { TimeZoneFilter.eastCoastFirst },
+                set: { TimeZoneFilter.eastCoastFirst = $0; mobileTick.toggle()
+                       NotificationCenter.default.post(name: .eastCoastFirstChanged, object: nil) }
+            ))
+                .toggleStyle(.checkbox)
+                .fixedSize()
+                .id(mobileTick)
+                .help("On: with all time zones, start in the East and go West, so nobody gets called before 9 there.")
         }
         .font(.callout)
         if card {
