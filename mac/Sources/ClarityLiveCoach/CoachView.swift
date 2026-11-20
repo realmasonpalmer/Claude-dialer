@@ -557,22 +557,24 @@ struct CoachView: View {
                 }
                 Divider().overlay(Brand.edge)
                 HStack(alignment: .center, spacing: 8) {
-                    headerField("SCRIPT") { campaignMenu }.tourSpot(.segment)
+                    headerField("ACTIVE SCRIPT") { campaignMenu }.tourSpot(.segment)
                     Spacer(minLength: 0)
                     Button {
                         edit(campaigns.selected)
                     } label: {
-                        Label("Edit Script", systemImage: "pencil")
-                            .font(.callout).foregroundStyle(Brand.text)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .overlay(Capsule().stroke(Brand.controlEdge, lineWidth: 1))
-                            .contentShape(Capsule())
+                        Label("Edit", systemImage: "pencil")
+                            .font(.title3).foregroundStyle(Brand.text)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
+                            .contentShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
                     .disabled(coach.status != .ready)
                     .help("Change what the coach says, or have Claude rewrite it")
                 }
             }
+            .padding(16)
+            .background(Brand.card, in: RoundedRectangle(cornerRadius: 16))
             }
             // A new version: the Update button shows here between calls (and while it installs).
             updateBar
@@ -634,11 +636,12 @@ struct CoachView: View {
     }
 
     /// What a dropdown looks like: the value in white, one down arrow, a visible box.
-    private func dropdownLabel(_ text: String, chevron: Bool = true) -> some View {
+    private func dropdownLabel(_ text: String, chevron: Bool = true, icon: String? = nil) -> some View {
         HStack(spacing: 8) {
+            if let icon { Image(systemName: icon).font(.callout).foregroundStyle(Brand.subtext) }
             Text(text).font(.title3.weight(.medium)).foregroundStyle(Brand.text).lineLimit(1).truncationMode(.tail)
             if chevron {
-                Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+                Image(systemName: "chevron.down").font(.callout.weight(.semibold)).foregroundStyle(Brand.blue)
             }
         }
         .contentShape(Rectangle())
@@ -734,9 +737,9 @@ struct CoachView: View {
             Button("Show me around") { tourStep = 0 }
                 .disabled(coach.status != .ready)
         } label: {
-            Image(systemName: "gearshape").font(.title3).foregroundStyle(Brand.text)
-                .frame(width: 40, height: 40)
-                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
+            Image(systemName: "slider.horizontal.3").font(.title3).foregroundStyle(Brand.text)
+                .frame(width: 44, height: 44)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.controlEdge, lineWidth: 1))
                 .overlay(alignment: .topTrailing) {
                     if updater.updateAvailable || tourShowsUpdate {
                         Circle().fill(Brand.go).frame(width: 9, height: 9).offset(x: -5, y: 5)
@@ -776,7 +779,7 @@ struct CoachView: View {
             }
             .disabled(coach.status != .ready) // switching scripts mid-call would change what the coach says
         } label: {
-            dropdownLabel(Self.short(campaigns.selected.name, max: 30), chevron: false)
+            dropdownLabel(Self.short(campaigns.selected.name, max: 30), chevron: false, icon: "doc.text")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
