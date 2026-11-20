@@ -541,42 +541,22 @@ struct AircallPhonePanel: View {
                 .help("Settings")
             }
             Divider().overlay(Brand.edge)
-            HStack(alignment: .top, spacing: 12) {
-                numberField("CALLS GO OUT FROM", icon: "phone", selection: $numberID, sameAsCalls: false)
-                    .help("Calls go out from this Aircall number")
-                numberField("TEXTS GO OUT FROM", icon: "bubble.left", selection: $textNumberID, sameAsCalls: true)
-                    .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
+            // Side by side when there's room, stacked on a narrow window: never wider than the window.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) { callsField; textsField }
+                VStack(alignment: .leading, spacing: 12) { callsField; textsField }
             }
-            HStack(alignment: .top, spacing: 12) {
-                optionBox("Calling Options", icon: "phone") {
-                    HStack(spacing: 16) {
-                        Toggle("Auto Dial", isOn: $autoDial).toggleStyle(BlueCheck())
-                            .help("The app calls the next person by itself.")
-                        Toggle("Call Twice", isOn: $doubleTap).toggleStyle(BlueCheck())
-                            .help("If they don't pick up, call them one more time right away.")
-                        Toggle("Mobile Only", isOn: Binding(get: { MobileOnly.on }, set: { MobileOnly.setOn($0); tick.toggle() }))
-                            .toggleStyle(BlueCheck()).id(tick)
-                            .help("Skip anyone with no Mobile in Salesforce. Better pick up rates, and every text can go out.")
-                    }
-                }
-                .tourSpot(.options)
-                optionBox("Follow-Up Automation", icon: "paperplane") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 16) {
-                            infoToggle("Auto Text", $autoText, "After a voicemail, the text goes out by itself while the next person loads.")
-                            infoToggle("Auto LinkedIn Connect", $autoLinkedIn, "The app sends the LinkedIn connection request in Chrome in the background.")
-                        }
-                        infoToggle("Auto Voicemail Drop", $dropOn, "Drops your recorded voicemail after the beep. Record it first: Settings, then Voicemail drop.")
-                    }
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) { callingBox; followUpBox }
+                VStack(alignment: .leading, spacing: 12) { callingBox; followUpBox }
             }
             Divider().overlay(Brand.edge)
             HStack(spacing: 10) {
                 Spacer(minLength: 0)
                 Image(systemName: "arrow.up.arrow.down").font(.title3).foregroundStyle(Brand.blue)
-                Text("East Coast First").font(.body.weight(.medium)).foregroundStyle(Brand.text)
+                Text("East Coast First").font(.body.weight(.medium)).foregroundStyle(Brand.text).lineLimit(1)
                 if let zone = TimeZoneFilter.selected {
-                    Text("(\(zone.label) only)").font(.caption).foregroundStyle(Brand.muted)
+                    Text("(\(zone.label) only)").font(.caption).foregroundStyle(Brand.muted).lineLimit(1)
                 }
                 Toggle("", isOn: Binding(
                     get: { TimeZoneFilter.selected == nil && TimeZoneFilter.eastCoastFirst },
@@ -590,6 +570,50 @@ struct AircallPhonePanel: View {
             numbers = (try? await Aircall.numbers()) ?? []
             Aircall.pickTextNumber(from: numbers)
             textNumberID = UserDefaults.standard.integer(forKey: "aircallTextNumberID")
+        }
+    }
+
+    private var callsField: some View {
+        numberField("CALLS GO OUT FROM", icon: "phone", selection: $numberID, sameAsCalls: false)
+            .help("Calls go out from this Aircall number")
+    }
+
+    private var textsField: some View {
+        numberField("TEXTS GO OUT FROM", icon: "bubble.left", selection: $textNumberID, sameAsCalls: true)
+            .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
+    }
+
+    private var callingBox: some View {
+                optionBox("Calling Options", icon: "phone") {
+                    flow {
+                        Toggle("Auto Dial", isOn: $autoDial).toggleStyle(BlueCheck())
+                            .help("The app calls the next person by itself.")
+                        Toggle("Call Twice", isOn: $doubleTap).toggleStyle(BlueCheck())
+                            .help("If they don't pick up, call them one more time right away.")
+                        Toggle("Mobile Only", isOn: Binding(get: { MobileOnly.on }, set: { MobileOnly.setOn($0); tick.toggle() }))
+                            .toggleStyle(BlueCheck()).id(tick)
+                            .help("Skip anyone with no Mobile in Salesforce. Better pick up rates, and every text can go out.")
+                    }
+                }
+                .tourSpot(.options)
+    }
+
+    private var followUpBox: some View {
+                optionBox("Follow-Up Automation", icon: "paperplane") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        infoToggle("Auto Text", $autoText, "After a voicemail, the text goes out by itself while the next person loads.")
+                        infoToggle("Auto LinkedIn Connect", $autoLinkedIn, "The app sends the LinkedIn connection request in Chrome in the background.")
+                        infoToggle("Auto Voicemail Drop", $dropOn, "Drops your recorded voicemail after the beep. Record it first: Settings, then Voicemail drop.")
+                    }
+                }
+    }
+
+    /// Switches in a row when they fit, one per line when they don't.
+    private func flow<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        let c = content()
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { c }
+            VStack(alignment: .leading, spacing: 10) { c }
         }
     }
 
@@ -796,7 +820,7 @@ struct BlueCheck: ToggleStyle {
                     }
                 }
                 .frame(width: 20, height: 20)
-                configuration.label.foregroundStyle(Brand.text).fixedSize()
+                configuration.label.foregroundStyle(Brand.text).lineLimit(1)
             }
             .contentShape(Rectangle())
         }
