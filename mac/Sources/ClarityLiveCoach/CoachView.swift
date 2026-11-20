@@ -1004,8 +1004,11 @@ struct CoachView: View {
                     .transition(.opacity)
             }
             Divider().overlay(Brand.edge)
-            ScriptStepper(coach: coach, browsing: $browsingStep, showFull: $showFullScript)
-                .tourSpot(.script)
+            HStack {
+                Spacer(minLength: 0)
+                Button("View Full Script") { showFullScript = true }.buttonStyle(.brandLink).font(.caption)
+            }
+            .tourSpot(.script)
             }
         }
         .padding(16)
