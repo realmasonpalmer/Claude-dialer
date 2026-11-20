@@ -13,38 +13,8 @@ struct SettingsPane: View {
     @AppStorage(PrefKey.coachSpeed) private var speed = CoachSpeed.balanced.rawValue
     @AppStorage(PrefKey.nextDials) private var autoDial = true
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
-    @AppStorage(PrefKey.autoLinkedIn) private var autoLinkedIn = false
     @AppStorage(PrefKey.autoText) private var autoText = true
-    private func runLinkedInTest(really: Bool) {
-        guard let url = URL(string: testProfile.trimmingCharacters(in: .whitespaces)), url.host?.contains("linkedin.com") == true else {
-            testResult = "That doesn't look like a LinkedIn profile link."
-            return
-        }
-        testing = true
-        testResult = nil
-        Task { @MainActor in
-            LinkedInBot.testRun = !really
-            let r = await LinkedInBot.connect(profile: url, note: LinkedInBot.note("", first: Screener.firstName(coach.followUp?.prospect) ?? "there"),
-                                              company: testCompany.isEmpty ? nil : testCompany) { testResult = $0 }
-            LinkedInBot.testRun = false
-            testing = false
-            switch r {
-            case .sent: testResult = "SENT. The connection request went out with the note."
-            case .alreadyConnected: testResult = "Already connected. Try someone you're not connected to."
-            case .pending: testResult = "Request already pending. Try someone else."
-            case .skipped(let why): testResult = why
-            case .blocked(let why): testResult = "Stopped: \(why)"
-            }
-            ActivityLog.add("LinkedIn bot \(really ? "real send" : "test"): \(testResult ?? "")")
-        }
-    }
-
-    @State private var audioRecording = false
-    @State private var testProfile = ""
-    @State private var testCompany = ""
-    @State private var testing = false
-    @State private var confirmSend = false
-    @State private var testResult: String?
+    @AppStorage("linkedInBotSend") private var autoLinkedInRequest = true
     @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
     @State private var confirmReset = false
     @State private var note: String?
@@ -56,63 +26,17 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Settings").font(.title2.weight(.semibold))
 
-            section("Calling") {
+            section("Automated outbound") {
                 Toggle("Send texts by itself", isOn: $autoText)
                 Text("On: the text goes out in the background while the next person loads.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("Drop my recorded voicemail by itself", isOn: $dropOn)
                 Text("Set it up first: gear, then Voicemail drop.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            section("Call diagnostics") {
-                Text("Every call is saved as a detailed timeline: what was heard, what Claude got and said, why each line showed or waited, and timing to the millisecond. Export the last call as a folder you can give to Claude to find what went wrong.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button("Export last call for Claude") { CallTrace.exportLast() }
-            }
-            section("Audio problems") {
-                Text("Records 60 seconds of everything your Mac plays (what you hear), plus the call audio the app gets, and a report of your audio devices and their speeds. Start it, then make a call. Saved in Documents, Clarity Audio Debug. Nothing is sent anywhere.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Button(audioRecording ? "Recording..." : "Record audio for debugging (60 s)") {
-                        audioRecording = true
-                        Task { @MainActor in
-                            let dir = await AudioDebug.shared.record()
-                            audioRecording = false
-                            if let dir { NSWorkspace.shared.open(dir) }
-                        }
-                    }
-                    .disabled(audioRecording)
-                }
-            }
-            section("Test the LinkedIn bot") {
-                Text("Uses the person on screen now (their LinkedIn from Salesforce), or paste any profile. It does everything except Send, then cancels. Nothing goes out.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                TextField("https://www.linkedin.com/in/...", text: $testProfile)
-                HStack {
-                    Button(testing ? "Testing..." : "Test it") { runLinkedInTest(really: false) }
-                    .disabled(testing || LinkedInBot.running)
-                    .onAppear {
-                        let d = coach.leads.details
-                        if testProfile.isEmpty, let url = coach.followUp?.linkedinURL ?? d?.linkedIn { testProfile = url.absoluteString }
-                        if testCompany.isEmpty { testCompany = d?.company ?? coach.recordCompany ?? "" }
-                    }
-                    Button("Send for real") { confirmSend = true }
-                        .disabled(testing || LinkedInBot.running)
-                        .help("Sends one real connection request with the note.")
-                        .confirmationDialog("Send a real LinkedIn connection request to this person?", isPresented: $confirmSend) {
-                            Button("Send it") { runLinkedInTest(really: true) }
-                            Button("Cancel", role: .cancel) {}
-                        }
-                    if let testResult { Text(testResult).font(.caption).fixedSize(horizontal: false, vertical: true) }
-                }
-            }
-
-            section("Coach") {
-                // No model picker while Haiku and Sonnet are being compared: calls alternate on their own.
-                Text("Live lines alternate Haiku and Sonnet call by call, to find the better one. See the Model test in Next debug.")
+                Toggle("Send LinkedIn connection requests by itself", isOn: $autoLinkedInRequest)
+                Text("On: the app sends it in Chrome in the background while you keep calling. Off: it opens their profile and types the note, you click Send.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-
             section("Tools") {
                 // Script Lab holds the call results, script suggestions and the opener scoreboard.
                 Button(coach.lab.hasNewSuggestions ? "What's working (new ideas)" : "What's working") {
