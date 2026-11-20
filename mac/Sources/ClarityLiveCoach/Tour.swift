@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The parts of the screen the first-run tour points at.
 enum TourSpot: String {
-    case gear, segment, zone, line, script, call, followUp, status, goal, numbers, phone, update
+    case gear, list, segment, zone, line, script, call, followUp, status, goal, numbers, phone, update, options
     // The Call lists window
     case listsTable, listsOnOff, listsNew, listsEdit, listsStart
     // The New call list window

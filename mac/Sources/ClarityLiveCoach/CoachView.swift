@@ -512,15 +512,26 @@ struct CoachView: View {
         VStack(alignment: .leading, spacing: 8) {
             // One row for the three menus when they fit. If the window is narrow they wrap to two rows,
             // so nothing is ever pushed off the edge.
-            salesforceListMenu
-            HStack(spacing: 8) {
-                campaignMenu.tourSpot(.segment)
+            // Three controls: who to call, what to say, settings. Nothing else up here.
+            HStack(alignment: .bottom, spacing: 8) {
+                headerField("CALL LIST") { salesforceListMenu }.tourSpot(.list)
                 Spacer(minLength: 0)
                 settingsMenu.tourSpot(.gear)
             }
-            // Updates get their own row, so the button always has room. It checks by itself every
-            // 2 minutes and when the app is opened.
-            updateBar
+            HStack(alignment: .bottom, spacing: 8) {
+                headerField("SCRIPT") { campaignMenu }.tourSpot(.segment)
+                Button {
+                    edit(campaigns.selected)
+                } label: {
+                    Label("Edit Script", systemImage: "square.and.pencil").font(.callout)
+                }
+                .buttonStyle(BrandQuietButton())
+                .disabled(coach.status != .ready)
+                .help("Change what the coach says, or have Claude rewrite it")
+                Spacer(minLength: 0)
+            }
+            // Updates live in Settings; only a running update shows a line here.
+            if updater.updating { updateBar }
         }
         // No status, Voicemail or End call buttons here (the app handles those by itself).
         // Command-E still ends a call; Settings has both buttons.
@@ -558,16 +569,36 @@ struct CoachView: View {
                 }
             }
         } label: {
-            Label("Salesforce List: " + Self.short(name, max: 32), systemImage: "list.bullet.rectangle")
-                .labelStyle(.titleAndIcon)
-                .font(.callout.weight(.semibold)).lineLimit(1)
+            dropdownLabel(Self.short(name, max: 34), icon: "list.bullet.rectangle")
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .disabled(coach.status != .ready)
         .help(coach.status == .ready ? "Who to call: the Salesforce list. Pick one and it opens in Chrome." : "Finish the call to switch lists")
         .task {
             if listViewCache.isEmpty, Salesforce.isConnected { listViewCache = (try? await Salesforce.listViews()) ?? [] }
         }
+    }
+
+    /// A small gray label over a control: "CALL LIST", "SCRIPT".
+    private func headerField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.caption2.weight(.semibold)).tracking(0.6).foregroundStyle(Brand.muted)
+            content()
+        }
+    }
+
+    /// What a dropdown looks like: the value in white, one down arrow, a visible box.
+    private func dropdownLabel(_ text: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).foregroundStyle(Brand.subtext)
+            Text(text).font(.callout.weight(.semibold)).foregroundStyle(Brand.text).lineLimit(1).truncationMode(.tail)
+            Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(Brand.subtext)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.controlEdge, lineWidth: 1))
     }
 
     /// A long call list name shortened with "..." so the menu is never wider than the bar.
@@ -649,15 +680,30 @@ struct CoachView: View {
     /// Three items only. Everything else lives in the Setup and Settings panes.
     private var settingsMenu: some View {
         Menu {
+            if updater.updateAvailable {
+                Button("Install the new version (about 2 min)") { updater.update() }
+                    .disabled(coach.status != .ready)
+                Divider()
+            }
             Button(setupLabel) { showSetup = true }
             Button(Prefs.voicemailDropOn ? "Voicemail drop (on)..." : "Voicemail drop...") { showDropSetup = true }
             Button("Settings...") { showSettings = true }
             Button("Show me around") { tourStep = 0 }
                 .disabled(coach.status != .ready)
         } label: {
-            Image(systemName: "gearshape")
+            HStack(spacing: 6) {
+                Image(systemName: "gearshape").foregroundStyle(Brand.subtext)
+                Text("Settings").font(.callout.weight(.semibold)).foregroundStyle(Brand.text)
+                if updater.updateAvailable || tourShowsUpdate {
+                    Circle().fill(Brand.go).frame(width: 8, height: 8).help("A new version is ready: open Settings")
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.controlEdge, lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
     }
 
@@ -684,16 +730,15 @@ struct CoachView: View {
                 }
             }
             Divider()
-            Button("Edit this script...") { edit(campaigns.selected) }
-            Button("Write my script (one click)...") { showScriptMaker = true }
+            Button("Write a new script with Claude (one click)...") { showScriptMaker = true }
             }
             .disabled(coach.status != .ready) // switching scripts mid-call would change what the coach says
         } label: {
-            Label("Script: " + Self.short(campaigns.selected.name), systemImage: "text.quote")
-                .labelStyle(.titleAndIcon)
-                .font(.caption.weight(.semibold)).lineLimit(1).truncationMode(.tail)
+            dropdownLabel(Self.short(campaigns.selected.name, max: 30), icon: "text.quote")
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .help(coach.status == .ready ? "What to say: pick a script, edit it, or have Claude write a new one" : "Finish the call to switch scripts")
     }
 
