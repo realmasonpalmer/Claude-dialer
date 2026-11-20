@@ -24,24 +24,31 @@ struct DailyGoalCard: View {
                                 .foregroundStyle(Brand.subtext)
                             Image(systemName: "bolt").font(.title3.weight(.semibold)).foregroundStyle(Brand.blue)
                             Text("Call Sprint").font(.title3.weight(.bold)).foregroundStyle(Brand.text)
-                            // Folded and running: the two numbers that matter, in the header.
-                            if !cardOpen, let start = coach.blockStartedAt {
-                                Text("\(Self.clock(min(now.timeIntervalSince(start), CoachModel.blockLength))) · \(touchpoints.dials(from: start, to: now.addingTimeInterval(1))) / \(target)")
-                                    .font(.callout.weight(.semibold)).monospacedDigit().foregroundStyle(Brand.subtext)
-                            }
                         }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    Spacer(minLength: 0)
-                    if coach.sprintDone {
+                    if !cardOpen, coach.blockStartedAt != nil {
+                        // Folded and running: status next to the title, the clock on the right.
+                        if coach.sprintDone { pill("Complete", Brand.blue) } else { pill("Active", .green) }
+                        Spacer(minLength: 0)
+                        if let start = coach.blockStartedAt {
+                            let total = CoachModel.blockLength
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(Self.clock(min(now.timeIntervalSince(start), total))).font(.title2.weight(.bold)).monospacedDigit()
+                                Text("/ " + Self.clock(total)).font(.callout).foregroundStyle(Brand.muted).monospacedDigit()
+                            }
+                        }
+                    }
+                    if cardOpen || coach.blockStartedAt == nil { Spacer(minLength: 0) }
+                    if cardOpen, coach.sprintDone {
                         pill("Complete", Brand.blue)
-                    } else if coach.blockStartedAt != nil {
+                    } else if cardOpen, coach.blockStartedAt != nil {
                         pill("Active", .green)
                     }
                 }
                 if !cardOpen {
-                    EmptyView()
+                    if let start = coach.blockStartedAt { foldedActive(start: start, now: now) } else { foldedSetup }
                 } else if coach.sprintDone, let start = coach.blockStartedAt {
                     complete(start: start)
                 } else if let start = coach.blockStartedAt {
@@ -53,6 +60,45 @@ struct DailyGoalCard: View {
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .brandCard(radius: 14)
+        }
+    }
+
+    // MARK: Folded
+
+    /// Not started, folded: the length and the target in one small row.
+    private var foldedSetup: some View {
+        HStack(spacing: 8) {
+            ForEach([20, 30, 50], id: \.self) { m in
+                Button { minutes = m; target = m } label: {
+                    Text("\(m)m").font(.caption.weight(.semibold))
+                        .foregroundStyle(minutes == m ? Brand.text : Brand.subtext)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(minutes == m ? Brand.quiet : Color.clear, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 8)
+            stepButton("minus") { target = max(5, target - 5) }.controlSize(.small)
+            Text("\(target) dials").font(.callout.weight(.semibold)).monospacedDigit()
+            stepButton("plus") { target = min(200, target + 5) }.controlSize(.small)
+        }
+    }
+
+    /// Running, folded: the bar, dials and pace.
+    private func foldedActive(start: Date, now: Date) -> some View {
+        let total = CoachModel.blockLength
+        let elapsed = min(max(now.timeIntervalSince(start), 0), total)
+        let done = touchpoints.dials(from: start, to: now.addingTimeInterval(1))
+        let ahead = Int((Double(done) - Double(target) * elapsed / total).rounded())
+        let hit = done >= target
+        return VStack(spacing: 8) {
+            ProgressView(value: min(Double(done) / Double(max(target, 1)), 1)).tint(Brand.blue)
+            HStack {
+                Text("\(done) / \(target) dials").font(.callout).foregroundStyle(Brand.subtext).monospacedDigit()
+                Spacer()
+                Text(hit ? "Target hit!" : ahead > 0 ? "\(ahead) ahead of pace" : ahead < 0 ? "\(-ahead) behind pace" : "On pace")
+                    .font(.callout).foregroundStyle(hit || ahead > 0 ? Color.green : ahead < 0 ? Color.orange : Brand.subtext)
+            }
         }
     }
 
