@@ -45,20 +45,43 @@ enum Tour {
     /// Every part of the screen a new rep will wonder about, in the order they use it.
     /// One short idea per step, in plain words.
     static let steps: [TourStep] = [
-        TourStep(spot: .gear, part: "Quick tour", title: "Set up first",
-                 text: "Click the gear, then Set up. Do each step once. Voicemail drop is in the gear menu too.",
-                 corner: 20, pad: 8),
-        TourStep(spot: .segment, part: "Quick tour", title: "Pick what to say",
-                 text: "Pick your script here. Who to call is the Salesforce list above it.",
-                 corner: 10, pad: 8),
-        TourStep(spot: .line, part: "Quick tour", title: "Say this",
-                 text: "Read the big line out loud. It changes when they talk.",
-                 corner: 16, pad: 4),
-        TourStep(spot: .call, part: "Quick tour", title: "The app does the rest",
-                 text: "Check Auto dial. It calls, redials, hangs up and moves to the next person. Press the space bar to pause."),
-        TourStep(spot: .followUp, part: "Quick tour", title: "After the call",
-                 text: "Texts send by themselves. LinkedIn and your outcome buttons show here.",
+        // 1. Get set up (once)
+        TourStep(spot: .gear, part: "Get set up", title: "Settings, then Set up",
+                 text: "Click Settings, then Set up. Upload the keys file your team lead sent, sign in to Salesforce and Aircall, and allow the mic. You only do this once. Voicemail drop is here too: record one message and the app leaves it for you.",
+                 corner: 10, pad: 6),
+        TourStep(spot: .gear, part: "Get set up", title: "Updates come to you",
+                 text: "When a new version is ready, a green dot shows on Settings. Open Settings and click Install. It takes about 2 minutes and the app reopens by itself.",
+                 corner: 10, pad: 6),
+        // 2. Who to call and what to say
+        TourStep(spot: .list, part: "Pick who and what", title: "Call List: who to call",
+                 text: "Pick a Salesforce list view of Leads or Contacts. It opens in Chrome and the app calls down it, top to bottom.",
+                 corner: 10, pad: 6),
+        TourStep(spot: .segment, part: "Pick who and what", title: "Script: what to say",
+                 text: "Pick a script. No script yet? Open this menu and click Write a new script with Claude. It reads who's on your list and writes everything in 1 to 3 minutes. Edit Script changes it any time.",
+                 corner: 10, pad: 6),
+        TourStep(spot: .phone, part: "Pick who and what", title: "Your number and Options",
+                 text: "Calls go out from this Aircall number. Options holds Auto Dial (it calls the next person by itself), Call Twice, Mobile Numbers Only, the number texts go out from, and time zones (East Coast first, or one zone only).",
+                 corner: 10, pad: 6),
+        // 3. Make calls
+        TourStep(spot: .call, part: "Make calls", title: "START CALLING",
+                 text: "Press the green button. With Auto Dial on, the app calls, redials, hangs up and moves on by itself, and the button turns into a red STOP CALLING. Next Person skips someone. During a call, END CALL is here.",
+                 corner: 10, pad: 6),
+        TourStep(spot: .line, part: "Make calls", title: "Say what's on the card",
+                 text: "The card shows a short thought to say, from your script. Command-Shift-L shows the full line. The space bar gets a fresh line. The arrow by the title folds the card.",
+                 corner: 14, pad: 4),
+        TourStep(spot: .script, part: "Make calls", title: "Follow the script",
+                 text: "Intro, Qualify, Pitch, Close, Confirm: the step the call is on is outlined. Previous and Next let you read any step. View Full Script shows the whole thing.",
+                 corner: 10, pad: 4),
+        TourStep(spot: .followUp, part: "Make calls", title: "After the call",
+                 text: "Voicemails get a text and a LinkedIn request, sent by themselves. Pick how the call went here so Salesforce stays up to date.",
                  corner: 14),
+        // 4. Track progress
+        TourStep(spot: .goal, part: "Track progress", title: "Call Block",
+                 text: "Click Start Block for 50 minutes of calling, then a 10 minute break. The goal is 50 dials. Each block today gets a ring.",
+                 corner: 10, pad: 4),
+        TourStep(spot: .numbers, part: "Track progress", title: "My Activity",
+                 text: "Dials, human answers, conversations and meetings, for today, this week or more. More details shows voicemails, texts and LinkedIn.",
+                 corner: 10, pad: 4),
     ]
 
     /// "MAKE A CALL · 2 OF 5": where this step is inside its part.
@@ -134,7 +157,7 @@ struct TourOverlay: View {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().frame(width: 64, height: 64)
                 Text("Welcome").font(.title2.weight(.semibold))
-                Text("This app dials for you, listens to the call, and shows you what to say next.\n\nHere's a 1 minute tour.")
+                Text("This app dials for you, listens to the call, and shows you what to say next.\n\nHere's a 2 minute tour: get set up, pick who to call and what to say, make calls, and track your progress.")
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)

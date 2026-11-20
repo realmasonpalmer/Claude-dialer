@@ -645,7 +645,7 @@ struct CoachView: View {
     /// The walkthrough is on its "Stay up to date" step: show a sample bar if there's no real update.
     private var tourShowsUpdate: Bool {
         guard let step = tourStep, step >= 1, step <= Tour.steps.count else { return false }
-        return Tour.steps[step - 1].spot == .update
+        return Tour.steps[step - 1].title.hasPrefix("Updates")
     }
 
     @ViewBuilder private var updateBar: some View {
