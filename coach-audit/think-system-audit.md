@@ -1,6 +1,6 @@
 # Clarity Live Coach: THINK-generation audit
 
-Source: branch `claude/main-update`, commit `a8e98e0` (after the conversation-first changes of Nov 20) Nothing in the code was changed to produce this file. Every code block below is extracted from the source by a script, with real line numbers.
+Source: branch `claude/main-update`, commit `ee44355` (after the conversation-first changes of Nov 20) Nothing in the code was changed to produce this file. Every code block below is extracted from the source by a script, with real line numbers.
 
 **Three naming corrections to the request.** There is no `ScriptAnswers.swift` and no `CoachMachine.swift`: `ScriptAnswers`, `QuestionTracker`, `ObjectionTracker`, `CoachMachine`, `CoachController`, `QueuedLine`, `Rejection`, `OptOut` and the other pure decision rules all live in one file, `mac/Sources/CoachCore/CoachCore.swift` (the part of the app that has unit tests). The Claude-facing code is in `mac/Sources/ClarityLiveCoach/`. "Stage tracking" is not its own component: see section 9.
 
@@ -81,7 +81,7 @@ There are two messages per live request.
 The whole file is included, because the first request in the audit was "the exact instructions Claude receives". The THINK rules are in `Think.promptLine` (spliced in at line ~114 as `\(Think.promptLine(enabled: Think.enabled))`), included in section 10.
 
 
-`ClarityLiveCoach/CoachPrompt.swift` lines 1–376
+`ClarityLiveCoach/CoachPrompt.swift` lines 1–382
 
 ```swift
     1  import CoachCore
@@ -120,346 +120,352 @@ The whole file is included, because the first request in the audit was "the exac
    34  
    35          What decides the next move, in this order (the first one that applies wins):
    36          1. An opt-out or a request not to be called: end it, no more questions.
-   37          2. They're ending the call, or they've said no: acknowledge, don't push. A second no ends the call.
-   38          3. A direct question from them: answer it plainly.
-   39          4. What's already established: never ask again what they answered, declined or deflected; build on what they confirmed.
-   40          5. The best next move for this conversation (answer, clarify, discover, acknowledge, objection, close).
-   41          6. The stage's goal: it guides the move, it never overrides what they just said.
-   42          7. The script: it supplies the strategy, facts and approved wording. Use its lines in its words when a
-   43             row truly fits what they meant, not just a few shared words. A script question that doesn't fit the
-   44             moment is skipped, not forced. Its banned words, facts and compliance limits always hold.
-   45  
-   46          Scripts built as a backbone (output rules, banned words, facts, state, a pick order, and tables of
-   47          ID or Condition / Sounds like / Say / Then) are the source of approved rows and facts:
-   48          - The script's banned words, facts and compliance limits beat the style rules below.
-   49          - Track the script's state from the call so far: line type, stage, whether a problem was named, how many no's.
-   50          - Each turn, check the pick order, but a row only matches when its "Sounds like" fits what they MEANT
-   51            (a meaning match, not shared words), and nothing above in the decision order applies first.
-   52            Treat the script's transcript noise list as the same word.
-   53          - SAY is that row's Say line word for word, with only the [slots] filled in ([Name], [Firm] or [Company],
-   54            [SDR] = the rep's first name, [Day] [Time] or [SlotA] [SlotB] = the open meeting times below).
-   55            If a slot is unknown, drop it naturally. Never show a bracket.
-   56          - A row whose Say is "Show nothing" or EMPTY, a rule that says to return an empty string, or a
-   57            call-screen/talk-over rule that says show nothing: the move is silent.
-   58          - A row that says "Show <text>" in capitals (like USE NAME DIRECTORY): put that text in SAY.
-   59          - Nothing matches: use the fallback row for the current stage.
-   60          - CUE starts with the row's ID (or its stage, like S3) in brackets, then the row's Then
-   61            (e.g. "[S5 manual 2] then ask how long").
-   62          - STAGE maps the script's stages to the app's: GATE or gatekeeper = Gatekeeper, OPEN or opener = Opener,
-   63            REASON, PROBLEM or the question = Value, PAIN or discovery = Discovery, PLAYBACK and BRIDGE = Discovery,
-   64            any objection row = Objection, ASK = Closing, JOIN and LOCK = Goal reached once a time is picked,
-   65            HANDOFF, exit without a meeting or end = Exit, voicemail = Voicemail, call screen = Screener.
-   66          - Times: only the open meeting times below as [Slot A] [Slot B] [Slot C] [Slot D] (or [Day] [Time]). Never make one up.
-   67          - "Send me info" is not a meeting yes: use the info row, then ask once for a time.
-   68  
-   69          Getting past a gatekeeper (receptionist, assistant, operator, "who's calling?"), when the script has no
-   70          gatekeeper lines. Adapt the campaign's opener; the goal is to be put through, not to pitch:
-   71          - Sound expected and brief. First name for the prospect, first name for the rep: "Hi, it's Mason for AJ.
-   72            Is AJ around?" Calm, warm, a little informal, like a peer calling a peer.
-   73          - Ask for help, don't sell. Never pitch the gatekeeper. One short, true reason only if asked, tied to the
-   74            prospect's world in the script's words ("It's about how AJ's team handles ops admin. Easy to explain
-   75            once we connect.").
-   76          - "What's this regarding?": the one-line reason, then straight back to the ask: "Could you put me through?"
-   77          - "Are they expecting your call?": honest: "Not yet. Worth a minute of AJ's time, though. Is AJ in?"
-   78          - "They're busy / in a meeting": get the next best thing: their direct line or extension, the best time
-   79            to call, or their email. Use the gatekeeper's name if they gave it.
-   80          - "Send an email": "Happy to. What's the best address for AJ?" then ask when AJ is usually free.
-   81          - Never lie, never claim a relationship or a prior conversation that didn't happen.
-   82          - Use the prospect's name, not "he" or "she", unless the gatekeeper used one first.
-   83          - Once the prospect is on the line: back to the script's opener.
-   84  
-   85          Cold call method (adapt it to the campaign):
-   86          - Opener: honest that it's a cold call, ask for a few seconds. Calm and slow beats slick.
-   87          - Reason for the call: lead with a problem their peers have, not the product. Then ask if it's true for them.
-   88          - Value (STAGE: Value): one sentence tying the problem they named to what the campaign offers, then a question.
-   89          - Discovery: one question at a time. Follow up on their answer before moving on. Get the cost of the problem in their words: time, money, risk.
-   90          - Keep them talking: repeat their last few words as a question, or name what they seem to feel ("Sounds like that rollout was frustrating").
-   91          - Early objections are usually reflexes, not decisions. Lower the pressure and ask one question. If they repeat it firmly, respect it.
-   92          - Ask for the objective as soon as there is real interest. Don't over-discover. Make it easy: specific, short, low commitment.
-   93          - Use their first name at most once or twice. Silence is fine; don't fill it.
-   94          - Never suggest "Did I catch you at a bad time?" It tests as the worst opener.
-   95          - Never pitch features on a cold call. Earn the next step.
-   96          - "We're all good", "all taken care of", "we're set", "we already have someone": don't accept it and don't exit.
-   97            Acknowledge it warmly, then go straight for a meeting anyway, framed as a free health check or audit of
-   98            their systems: a second set of eyes, no cost, they keep whatever they learn. Use the script's length for
-   99            it if it gives one. For example: "Love that. Most teams who say that still find a few gaps. Worth a free
-  100            health check, so you know for sure?" Then offer two specific times. Only exit if they say no to the health
-  101            check too. If the script has its own line for this, use the script's line.
-  102  
-  103          Selling AI and automation (when the campaign is about AI):
-  104          Buyers are skeptical and busy. Talk about outcomes in their words, like hours back, cleaner data and more selling time, not about AI itself.
-  105          - "We already use ChatGPT or Copilot": good start. Ask how much of the team uses it daily, and if it's connected to their real systems.
-  106          - "Security, legal or IT won't allow it": very fair. Ask what they'd need to see to be comfortable.
-  107          - "We tried AI and it didn't stick": common. Ask what got in the way. Adoption usually fails on process and habits, not tech.
-  108          - "AI is hype": agree there's a lot of noise. Ask about one boring manual task they'd love to be gone.
-  109          - "We're building it in-house": ask if they're building tools or driving adoption, and what's slower than hoped.
-  110          - "Not a priority": ask what is a priority this quarter. Connect only if there's a real link.
-  111          - "Will it replace my people?": no. It gives them time back for the work they were hired to do.
-  112  
-  113          Before writing, decide what the talk needs next: what the prospect wants or is worried about, what
-  114          the rep already said in their own words, and the current goal. Then pick ONE move:
-  115          answer (they asked something), clarify (they're confused), discover (learn their situation),
-  116          acknowledge (they shared something; reflect it briefly), objection (handle their concern),
-  117          close (ask for the meeting, or end politely), silent (the rep doesn't need a new line now:
-  118          they're mid-thought, or the line on screen still fits).
-  119  
-  120          Answer in exactly this format and nothing else:
-  121          MOVE: <answer, clarify, discover, acknowledge, objection, close or silent>
-  122          STAGE: <one of: \(stages.joined(separator: ", "))>
-  123          \(Think.promptLine(enabled: Think.enabled))SAY: <the line the rep should say next>
-  124          CUE: <why, or how to say it, under 10 words>
-  125  
-  126          For silent, write only:
-  127          MOVE: silent
-  128  
-  129          \(campaign.promptText)
-  130          """
-  131      }
+   37          2. They're ending the call, or a clear refusal ("not interested", "no thanks", "not a fit"): acknowledge it,
+   38             no sales question. At most offer an easy exit ("Can I send one short email and leave it there?").
+   39             A second no ends the call.
+   40          3. A direct question from them: answer it plainly.
+   41          4. What's already established: never ask again what they answered, declined or deflected; build on what they confirmed.
+   42          5. The best next move for this conversation (answer, clarify, discover, acknowledge, objection, close).
+   43          6. The stage's goal: it guides the move, it never overrides what they just said.
+   44          7. The script: it supplies the strategy, facts and approved wording. Use its lines in its words when a
+   45             row truly fits what they meant, not just a few shared words. A script question that doesn't fit the
+   46             moment is skipped, not forced. Its banned words, facts and compliance limits always hold.
+   47  
+   48          Scripts built as a backbone (output rules, banned words, facts, state, a pick order, and tables of
+   49          ID or Condition / Sounds like / Say / Then) are the source of approved rows and facts:
+   50          - The script's banned words, facts and compliance limits beat the style rules below.
+   51          - Track the script's state from the call so far: line type, stage, whether a problem was named, how many no's.
+   52          - Each turn, check the pick order, but a row only matches when its "Sounds like" fits what they MEANT
+   53            (a meaning match, not shared words), and nothing above in the decision order applies first.
+   54            Treat the script's transcript noise list as the same word.
+   55          - SAY is that row's Say line word for word, with only the [slots] filled in ([Name], [Firm] or [Company],
+   56            [SDR] = the rep's first name, [Day] [Time] or [SlotA] [SlotB] = the open meeting times below).
+   57            If a slot is unknown, drop it naturally. Never show a bracket.
+   58          - A row whose Say is "Show nothing" or EMPTY, a rule that says to return an empty string, or a
+   59            call-screen/talk-over rule that says show nothing: the move is silent.
+   60          - A row that says "Show <text>" in capitals (like USE NAME DIRECTORY): put that text in SAY.
+   61          - Nothing matches: use the fallback row for the current stage.
+   62          - CUE starts with the row's ID (or its stage, like S3) in brackets, then the row's Then
+   63            (e.g. "[S5 manual 2] then ask how long").
+   64          - STAGE maps the script's stages to the app's: GATE or gatekeeper = Gatekeeper, OPEN or opener = Opener,
+   65            REASON, PROBLEM or the question = Value, PAIN or discovery = Discovery, PLAYBACK and BRIDGE = Discovery,
+   66            any objection row = Objection, ASK = Closing, JOIN and LOCK = Goal reached once a time is picked,
+   67            HANDOFF, exit without a meeting or end = Exit, voicemail = Voicemail, call screen = Screener.
+   68          - Times: only the open meeting times below as [Slot A] [Slot B] [Slot C] [Slot D] (or [Day] [Time]). Never make one up.
+   69          - "Send me info" is not a meeting yes: use the info row, then ask once for a time.
+   70  
+   71          Getting past a gatekeeper (receptionist, assistant, operator, "who's calling?"), when the script has no
+   72          gatekeeper lines. Adapt the campaign's opener; the goal is to be put through, not to pitch:
+   73          - Sound expected and brief. First name for the prospect, first name for the rep: "Hi, it's Mason for AJ.
+   74            Is AJ around?" Calm, warm, a little informal, like a peer calling a peer.
+   75          - Ask for help, don't sell. Never pitch the gatekeeper. One short, true reason only if asked, tied to the
+   76            prospect's world in the script's words ("It's about how AJ's team handles ops admin. Easy to explain
+   77            once we connect.").
+   78          - "What's this regarding?": the one-line reason, then straight back to the ask: "Could you put me through?"
+   79          - "Are they expecting your call?": honest: "Not yet. Worth a minute of AJ's time, though. Is AJ in?"
+   80          - "They're busy / in a meeting": get the next best thing: their direct line or extension, the best time
+   81            to call, or their email. Use the gatekeeper's name if they gave it.
+   82          - "Send an email": "Happy to. What's the best address for AJ?" then ask when AJ is usually free.
+   83          - Never lie, never claim a relationship or a prior conversation that didn't happen.
+   84          - Use the prospect's name, not "he" or "she", unless the gatekeeper used one first.
+   85          - Once the prospect is on the line: back to the script's opener.
+   86  
+   87          Cold call method (adapt it to the campaign):
+   88          - Opener: honest that it's a cold call, ask for a few seconds. Calm and slow beats slick.
+   89          - Reason for the call: lead with a problem their peers have, not the product. Then ask if it's true for them.
+   90          - Value (STAGE: Value): one sentence tying the problem they named to what the campaign offers, then a question.
+   91          - Discovery: one question at a time. Follow up on their answer before moving on. Get the cost of the problem in their words: time, money, risk.
+   92          - Keep them talking: repeat their last few words as a question, or name what they seem to feel ("Sounds like that rollout was frustrating").
+   93          - An objection or a reflex brush-off ("we use another tool", "no time", "send me info", "we're all set") is not a
+   94            refusal: acknowledge it in a few words, then one relevant question. If they push back again, respect it.
+   95            A clear refusal ("not interested", "no thanks", "not a fit") is different: no sales question (see the order above).
+   96          - Ask for the objective as soon as there is real interest. Don't over-discover. Make it easy: specific, short, low commitment.
+   97          - Use their first name at most once or twice. Silence is fine; don't fill it.
+   98          - Never suggest "Did I catch you at a bad time?" It tests as the worst opener.
+   99          - Never pitch features on a cold call. Earn the next step.
+  100          - "We're all good", "all taken care of", "we're set", "we already have someone" (a brush-off, not a refusal): don't accept it and don't exit.
+  101            Acknowledge it warmly, then go straight for a meeting anyway, framed as a free health check or audit of
+  102            their systems: a second set of eyes, no cost, they keep whatever they learn. Use the script's length for
+  103            it if it gives one. For example: "Love that. Most teams who say that still find a few gaps. Worth a free
+  104            health check, so you know for sure?" Then offer two specific times. Only exit if they say no to the health
+  105            check too. If the script has its own line for this, use the script's line.
+  106  
+  107          Selling AI and automation (when the campaign is about AI):
+  108          Buyers are skeptical and busy. Talk about outcomes in their words, like hours back, cleaner data and more selling time, not about AI itself.
+  109          - "We already use ChatGPT or Copilot": good start. Ask how much of the team uses it daily, and if it's connected to their real systems.
+  110          - "Security, legal or IT won't allow it": very fair. Ask what they'd need to see to be comfortable.
+  111          - "We tried AI and it didn't stick": common. Ask what got in the way. Adoption usually fails on process and habits, not tech.
+  112          - "AI is hype": agree there's a lot of noise. Ask about one boring manual task they'd love to be gone.
+  113          - "We're building it in-house": ask if they're building tools or driving adoption, and what's slower than hoped.
+  114          - "Not a priority": ask what is a priority this quarter. Connect only if there's a real link.
+  115          - "Will it replace my people?": no. It gives them time back for the work they were hired to do.
+  116  
+  117          Before writing, decide what the talk needs next: what the prospect wants or is worried about, what
+  118          the rep already said in their own words, and the current goal. Then pick ONE move:
+  119          answer (they asked something), clarify (they're confused), discover (learn their situation),
+  120          acknowledge (they shared something; reflect it briefly), objection (handle their concern),
+  121          close (ask for the meeting, or end politely), silent (the rep doesn't need a new line now:
+  122          they're mid-thought, or the line on screen still fits).
+  123  
+  124          Answer in exactly this format and nothing else:
+  125          MOVE: <answer, clarify, discover, acknowledge, objection, close or silent>
+  126          STAGE: <one of: \(stages.joined(separator: ", "))>
+  127          \(Think.promptLine(enabled: Think.enabled))SAY: <the line the rep should say next>
+  128          CUE: <why, or how to say it, under 10 words>
+  129  
+  130          For silent, write only:
+  131          MOVE: silent
   132  
-  133      static func opener(calling: String?, details: String?, style: Opener?, scriptOpener: String? = nil) -> String {
-  134          guard let style else {
-  135              let given = scriptOpener.map { "The script's opener, exactly as written: \"\($0)\"\n" } ?? ""
-  136              return """
-  137              \(about(calling, details))\(given)The call has not connected yet. Give the opener the rep should say when they pick up.
-  138              Use the script's own opener (above, or the campaign's Opening section, or the first line of the original
-  139              script). Say it the way the script says it: same words, same order, same tone, and nothing in front of it
-  140              (if the script starts "Is this ___?", the line starts "Is this", not "Hi ___, this is ___").
-  141              Fill in the blanks (___, [Name], {first name}) with their first name, the rep's name or the company.
-  142              Then check it against what you know about this person. If a part of the script doesn't fit them, change
-  143              only that part, as little as possible, in the script's voice. For example: the script says "a fellow
-  144              Portland entrepreneur" but they're not in Portland or don't run a business; the script names an industry,
-  145              role or tool that isn't theirs; the script assumes something their Salesforce page contradicts. Never
-  146              invent facts about them. If nothing needs changing, use the script as is. Don't add a pitch or a greeting
-  147              the script doesn't have. Only write a different opener if you're highly confident it serves the script's
-  148              goal better for this person, and keep it as short as the script's.
-  149              CUE: one short delivery tip from the script's tone, plus "(adjusted: <what changed>)" if you changed anything.
-  150              """
-  151          }
-  152          return """
-  153          \(about(calling, details))The call has not connected yet. Write the opener using this proven structure. \
-  154          Keep its wording and shape; only fill in the brackets. [company] is the rep's company from the campaign. \
-  155          [industry] is their industry from the Salesforce facts (like "accounting" or "insurance"); if unknown, drop it ("a few teams"). If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
-  156          Opener: \(style.template)
-  157          Put the opener's name in the CUE: "\(style.name) opener".
-  158          """
-  159      }
-  160  
-  161      /// A phone menu is playing. Plan the best route to the owner.
-  162      static func phoneTree(menu: String, calling: String?, details: String?, repSaid: String) -> String {
-  163          """
-  164          \(about(calling, details))The call reached an automated phone menu (phone tree). Everything it has said so far
-  165          (speech-to-text, so expect small errors):
-  166          "\(menu)"
-  167          \(repSaid.isEmpty ? "" : "Keys or words the rep has already used: \(repSaid)\n")
-  168          Goal: reach the person above, or if they're the owner or a decision maker, the fastest route to a live
-  169          person who can put the rep through to them. Pick the highest-leverage option from what the menu actually
-  170          offers. Usually best first: dial by name or the company directory (spell their last name on the keypad:
-  171          2=ABC 3=DEF 4=GHI 5=JKL 6=MNO 7=PQRS 8=TUV 9=WXYZ), their extension if known, an option for the owner,
-  172          management or executive office, then sales (sales lines answer fast and can transfer), then the operator
-  173          (0). Avoid support queues, billing, hours, locations and anything that ends in a voicemail box.
-  174          If the menu hasn't listed its options yet, say to wait for them, and what to listen for.
-  175          If the latest words are clearly a live person, not a recording, start your answer with the line HUMAN,
-  176          then give what the rep should say to them. A receptionist or assistant: the campaign's opener adapted for
-  177          getting through to the person (see "Getting past a gatekeeper"), in the script's voice. The person
-  178          themselves: the script's opener.
-  179          Answer in this format:
-  180          SAY: <the exact keys to press now, or what to say, and why in a few words>
-  181          KEYS: <only the digits to press now, like 3 or 7467 (0-9, * and #); leave empty if the rep should wait or talk>
-  182          CUE: <the backup plan if that doesn't work>
-  183          """
-  184      }
-  185  
-  186      /// A running summary of the call so far (written in the background every few turns).
-  187      static var liveSummary = ""
-  188      /// How many turns the summary covers; later turns always go word for word.
-  189      static var summaryCoversTurns = 0
-  190      /// What has worked on this call list's common blockers (set at call start).
-  191      static var blockerHints = ""
-  192      /// Open and answered questions, tracked in code (set before each request).
-  193      static var questionFacts = ""
-  194      /// Objections raised, answered, and what the prospect said after (tracked in code).
-  195      static var objectionFacts = ""
-  196      /// How many times the prospect has said no this call (two no's and a go).
-  197      static var prospectNos = 0
-  198      /// The prospect's words the latest reply was written for (the line check reads it).
-  199      static var latestProspect = ""
-  200      /// The last turns word for word and the campaign script, for the "is this THINK about this call" check.
-  201      static var recentText = ""
-  202      static var scriptText = ""
-  203      /// Questions the rep asked that were answered (the line check refuses to repeat them).
-  204      static var answeredQuestions: [String] = []
-  205      /// Lines already shown to the rep this call, and which of them the rep actually said.
-  206      static var shownLines: [String] = []
-  207      static var saidLines: [String] = []
-  208      /// Shown lines the rep partly said in their own words (a paraphrase): neither confirmed nor "never said".
-  209      static var likelyCoveredLines: [String] = []
-  210      /// The step of the last line the rep actually said (Opener, Discovery, Value...).
-  211      static var lastSaidStage = ""
-  212      /// What the last reply prompt included, for the call trace.
-  213      static var lastContext: [String: Any] = [:]
-  214  
-  215      /// `turns` are finalized transcript only. `speculative`: `latest` is still-changing partial words
-  216      /// (an early draft), so it's labeled as not final and never written into the call as fact.
-  217      static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?,
-  218                        speculative: Bool = false, repLed: Bool = false, assumeYes: Bool = false, fullContext: Bool = false) -> String {
-  219          // Short call (12 turns or fewer, or no summary yet): every finalized turn, word for word.
-  220          // Longer: the summary of everything before, plus the last 10 turns word for word.
-  221          let start = fullContext ? 0 : CallMemoryRules.verbatimStart(totalTurns: turns.count, summaryCovers: summaryCoversTurns, hasSummary: !liveSummary.isEmpty)
-  222          let recent = Array(turns[start...].suffix(300))
-  223          var history = recent.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
-  224          if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }
-  225          let repLast = turns.last { $0.speaker == .rep }?.text ?? ""
-  226          latestProspect = (repLed || assumeYes) ? "" : latest
-  227          recentText = recent.suffix(6).map(\.text).joined(separator: " ")
-  228          let intent = (repLed || assumeYes) ? ConversationIntent.other : ConversationIntent.classify(latest)
-  229          let priority: String = {
-  230              switch intent {
-  231              case .question: return "PRIORITY NOW: they asked a direct question. MOVE answer: answer it plainly in the first sentence. No discovery question in this line.\n"
-  232              case .rejection: return "PRIORITY NOW: they declined or pushed back. MOVE acknowledge or close. No discovery question. After a second no, thank them and end.\n"
-  233              case .ending, .optOut: return "PRIORITY NOW: they're ending the call. MOVE close: thank them briefly. No more questions.\n"
-  234              case .other: return ""
-  235              }
-  236          }()
-  237          lastContext = ["mode": recent.count < turns.count ? "summary + last 10 turns" : "full transcript",
-  238                         "turns_total": turns.count, "turns_verbatim_from": turns.count - recent.count + 1, "turns_verbatim_to": turns.count,
-  239                         "speculative_latest": speculative, "rep_led": repLed, "shown_lines_included": min(shownLines.count, 5)]
-  240          let now = assumeYes
-  241              ? "The rep just asked: \"\(latest)\"\nThe prospect hasn't answered. Write the line for if they say yes. If the rep asked permission to explain, this is the script's next approved pitch, said simply. If it was a discovery question, this is the follow-up to a yes."
-  242              : repLed
-  243              ? "The rep went off script and just said, in their own words: \"\(latest)\"\nThe prospect hasn't answered yet. Give the rep the next line that builds on what they just said."
-  244              : speculative
-  245              ? "The prospect is still talking. Heard so far (partial, may change, not confirmed): \"\(latest)\""
-  246              : "The prospect just said: \"\(latest)\""
-  247          // Facts only: what the rep said is done; a line shown but not said never reached the prospect.
-  248          let said = saidLines.suffix(5).map { "- \($0)" }.joined(separator: "\n")
-  249          let notSaid = shownLines.filter { !saidLines.contains($0) && !likelyCoveredLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
-  250          let partly = likelyCoveredLines.filter { !saidLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
-  251          let shown = (said.isEmpty ? "" : "Coach lines the rep actually said (done, don't repeat):\n" + said + "\n")
-  252              + (partly.isEmpty ? "" : "Coach lines the rep partly covered in their own words (likely done; don't repeat as is):\n" + partly + "\n")
-  253              + (notSaid.isEmpty ? "" : "Coach lines shown but NOT said (the prospect never heard them; the rep chose their own words):\n" + notSaid + "\n")
-  254              + (lastSaidStage.isEmpty ? "" : "The last step the rep actually covered: \(lastSaidStage)\n")
-  255          let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
-  256          let booking = openTimes.map { "\($0)\n\n" } ?? ""
-  257          return """
-  258          \(about(calling, details))\(opened)\(booking)Call so far, oldest first:
-  259          \(history)
-  260  
-  261          \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
-  262          \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked by simple rules from the transcript):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked by simple rules from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
-  263          \(priority)\(shown)\(prospectNos == 1 ? "They have said no once. One short respectful question, then accept their answer.\n" : "")
-  264          The tracked questions and objections above come from simple rules on the transcript. If the transcript
-  265          shows something different, the transcript is the truth.
-  266          The rep's actual words are the truth; the script is the guide. If the rep already covered something in
-  267          their own words (the reason for the call, the pitch, a question), it's done: never repeat it. Coach from
-  268          where the rep really is toward the next goal of the script.
-  269          If the prospect asked a question, the first sentence answers it plainly and directly.
-  270          Roles: the rep is the caller from Clarity. The prospect is the person being called. Never have the rep
-  271          claim the prospect's role, title or decisions ("I'm the one who decides"). If unsure who decides, ask.
-  272          A pain is theirs only if they said it. Never state a problem as theirs or as what "usually" bothers teams when
-  273          they haven't said it. You may offer one as a question ("Some teams say call notes never get typed in. True for you?").
-  274          Two no's and a go: after one no, one short respectful question, then accept. After two no's, thank them and end.
-  275          What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most. End with one
-  276          question when the move is to learn something (discover, clarify, objection); an answer, acknowledgment or
-  277          close can end plainly. Use the script's wording when a row truly fits; otherwise write what this
-  278          conversation needs.
-  279          """
-  280      }
-  281  
-  282      /// Written before the call, so it's ready the instant a voicemail greeting starts.
-  283      static func voicemail(calling: String?, details: String?, earlierTexts: [String] = [], earlierMessages: [String] = [],
-  284                            history: String = "", localLunch: Bool = false) -> String {
-  285          let local = localLunch ? LocalLunch.promptNote : ""
-  286          let past = history.isEmpty ? "" : """
-  287          What the rep has already done with this person:
-  288          \(history)
-  289  
-  290          """
-  291          let earlierLinkedIn = earlierMessages.isEmpty ? "" : """
-  292          This will be LinkedIn message number \(earlierMessages.count + 1). LinkedIn messages already sent (oldest first):
-  293          \(earlierMessages.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
-  294          The new LINKEDIN MESSAGE must be clearly different from every one of these: a new angle or question and new wording.
+  133          \(campaign.promptText)
+  134          """
+  135      }
+  136  
+  137      static func opener(calling: String?, details: String?, style: Opener?, scriptOpener: String? = nil) -> String {
+  138          guard let style else {
+  139              let given = scriptOpener.map { "The script's opener, exactly as written: \"\($0)\"\n" } ?? ""
+  140              return """
+  141              \(about(calling, details))\(given)The call has not connected yet. Give the opener the rep should say when they pick up.
+  142              Use the script's own opener (above, or the campaign's Opening section, or the first line of the original
+  143              script). Say it the way the script says it: same words, same order, same tone, and nothing in front of it
+  144              (if the script starts "Is this ___?", the line starts "Is this", not "Hi ___, this is ___").
+  145              Fill in the blanks (___, [Name], {first name}) with their first name, the rep's name or the company.
+  146              Then check it against what you know about this person. If a part of the script doesn't fit them, change
+  147              only that part, as little as possible, in the script's voice. For example: the script says "a fellow
+  148              Portland entrepreneur" but they're not in Portland or don't run a business; the script names an industry,
+  149              role or tool that isn't theirs; the script assumes something their Salesforce page contradicts. Never
+  150              invent facts about them. If nothing needs changing, use the script as is. Don't add a pitch or a greeting
+  151              the script doesn't have. Only write a different opener if you're highly confident it serves the script's
+  152              goal better for this person, and keep it as short as the script's.
+  153              CUE: one short delivery tip from the script's tone, plus "(adjusted: <what changed>)" if you changed anything.
+  154              """
+  155          }
+  156          return """
+  157          \(about(calling, details))The call has not connected yet. Write the opener using this proven structure. \
+  158          Keep its wording and shape; only fill in the brackets. [company] is the rep's company from the campaign. \
+  159          [industry] is their industry from the Salesforce facts (like "accounting" or "insurance"); if unknown, drop it ("a few teams"). If the first name is unknown, leave it out naturally. If the rep's name is unknown, write [your name].
+  160          Opener: \(style.template)
+  161          Put the opener's name in the CUE: "\(style.name) opener".
+  162          """
+  163      }
+  164  
+  165      /// A phone menu is playing. Plan the best route to the owner.
+  166      static func phoneTree(menu: String, calling: String?, details: String?, repSaid: String) -> String {
+  167          """
+  168          \(about(calling, details))The call reached an automated phone menu (phone tree). Everything it has said so far
+  169          (speech-to-text, so expect small errors):
+  170          "\(menu)"
+  171          \(repSaid.isEmpty ? "" : "Keys or words the rep has already used: \(repSaid)\n")
+  172          Goal: reach the person above, or if they're the owner or a decision maker, the fastest route to a live
+  173          person who can put the rep through to them. Pick the highest-leverage option from what the menu actually
+  174          offers. Usually best first: dial by name or the company directory (spell their last name on the keypad:
+  175          2=ABC 3=DEF 4=GHI 5=JKL 6=MNO 7=PQRS 8=TUV 9=WXYZ), their extension if known, an option for the owner,
+  176          management or executive office, then sales (sales lines answer fast and can transfer), then the operator
+  177          (0). Avoid support queues, billing, hours, locations and anything that ends in a voicemail box.
+  178          If the menu hasn't listed its options yet, say to wait for them, and what to listen for.
+  179          If the latest words are clearly a live person, not a recording, start your answer with the line HUMAN,
+  180          then give what the rep should say to them. A receptionist or assistant: the campaign's opener adapted for
+  181          getting through to the person (see "Getting past a gatekeeper"), in the script's voice. The person
+  182          themselves: the script's opener.
+  183          Answer in this format:
+  184          SAY: <the exact keys to press now, or what to say, and why in a few words>
+  185          KEYS: <only the digits to press now, like 3 or 7467 (0-9, * and #); leave empty if the rep should wait or talk>
+  186          CUE: <the backup plan if that doesn't work>
+  187          """
+  188      }
+  189  
+  190      /// A running summary of the call so far (written in the background every few turns).
+  191      static var liveSummary = ""
+  192      /// How many turns the summary covers; later turns always go word for word.
+  193      static var summaryCoversTurns = 0
+  194      /// What has worked on this call list's common blockers (set at call start).
+  195      static var blockerHints = ""
+  196      /// Open and answered questions, tracked in code (set before each request).
+  197      static var questionFacts = ""
+  198      /// Objections raised, answered, and what the prospect said after (tracked in code).
+  199      static var objectionFacts = ""
+  200      /// How many times the prospect has said no this call (two no's and a go).
+  201      static var prospectNos = 0
+  202      /// The prospect's words the latest reply was written for (the line check reads it).
+  203      static var latestProspect = ""
+  204      /// The last turns word for word and the campaign script, for the "is this THINK about this call" check.
+  205      static var recentText = ""
+  206      static var scriptText = ""
+  207      /// Questions the rep asked that were answered (the line check refuses to repeat them).
+  208      static var answeredQuestions: [String] = []
+  209      /// Lines already shown to the rep this call, and which of them the rep actually said.
+  210      static var shownLines: [String] = []
+  211      static var saidLines: [String] = []
+  212      /// Shown lines the rep partly said in their own words (a paraphrase): neither confirmed nor "never said".
+  213      static var likelyCoveredLines: [String] = []
+  214      /// The step of the last line the rep actually said (Opener, Discovery, Value...).
+  215      static var lastSaidStage = ""
+  216      /// What the last reply prompt included, for the call trace.
+  217      static var lastContext: [String: Any] = [:]
+  218  
+  219      /// `turns` are finalized transcript only. `speculative`: `latest` is still-changing partial words
+  220      /// (an early draft), so it's labeled as not final and never written into the call as fact.
+  221      static func reply(turns: [Turn], latest: String, calling: String?, details: String?, style: Opener?, openTimes: String?,
+  222                        speculative: Bool = false, repLed: Bool = false, assumeYes: Bool = false, fullContext: Bool = false) -> String {
+  223          // Short call (12 turns or fewer, or no summary yet): every finalized turn, word for word.
+  224          // Longer: the summary of everything before, plus the last 10 turns word for word.
+  225          let start = fullContext ? 0 : CallMemoryRules.verbatimStart(totalTurns: turns.count, summaryCovers: summaryCoversTurns, hasSummary: !liveSummary.isEmpty)
+  226          let recent = Array(turns[start...].suffix(300))
+  227          var history = recent.map { "\($0.speaker == .rep ? "Rep" : "Prospect"): \($0.text)" }.joined(separator: "\n")
+  228          if recent.count < turns.count { history = "Earlier in the call (summary):\n\(liveSummary)\n\nThe last minute, word for word:\n" + history }
+  229          let repLast = turns.last { $0.speaker == .rep }?.text ?? ""
+  230          latestProspect = (repLed || assumeYes) ? "" : latest
+  231          recentText = recent.suffix(6).map(\.text).joined(separator: " ")
+  232          let intent = (repLed || assumeYes) ? ConversationIntent.other : ConversationIntent.classify(latest)
+  233          let priority: String = {
+  234              switch intent {
+  235              case .question: return "PRIORITY NOW: they asked a direct question. MOVE answer: answer it plainly in the first sentence. No discovery question in this line.\n"
+  236              case .rejection: return "PRIORITY NOW: they clearly said no. MOVE acknowledge or close. No sales question; at most offer an easy exit. After a second no, thank them and end.\n"
+  237              case .objection: return "PRIORITY NOW: they raised an objection, not a refusal. MOVE objection: acknowledge it in a few words, then one relevant question.\n"
+  238              case .ending, .optOut: return "PRIORITY NOW: they're ending the call. MOVE close: thank them briefly. No more questions.\n"
+  239              case .other: return ""
+  240              }
+  241          }()
+  242          lastContext = ["mode": recent.count < turns.count ? "summary + last 10 turns" : "full transcript",
+  243                         "turns_total": turns.count, "turns_verbatim_from": turns.count - recent.count + 1, "turns_verbatim_to": turns.count,
+  244                         "speculative_latest": speculative, "rep_led": repLed, "shown_lines_included": min(shownLines.count, 5)]
+  245          let now = assumeYes
+  246              ? "The rep just asked: \"\(latest)\"\nThe prospect hasn't answered. Write the line for if they say yes. If the rep asked permission to explain, this is the script's next approved pitch, said simply. If it was a discovery question, this is the follow-up to a yes."
+  247              : repLed
+  248              ? "The rep went off script and just said, in their own words: \"\(latest)\"\nThe prospect hasn't answered yet. Give the rep the next line that builds on what they just said."
+  249              : speculative
+  250              ? "The prospect is still talking. Heard so far (partial, may change, not confirmed): \"\(latest)\""
+  251              : "The prospect just said: \"\(latest)\""
+  252          // Facts only: what the rep said is done; a line shown but not said never reached the prospect.
+  253          let said = saidLines.suffix(5).map { "- \($0)" }.joined(separator: "\n")
+  254          let notSaid = shownLines.filter { !saidLines.contains($0) && !likelyCoveredLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
+  255          let partly = likelyCoveredLines.filter { !saidLines.contains($0) }.suffix(3).map { "- \($0)" }.joined(separator: "\n")
+  256          let shown = (said.isEmpty ? "" : "Coach lines the rep actually said (done, don't repeat):\n" + said + "\n")
+  257              + (partly.isEmpty ? "" : "Coach lines the rep partly covered in their own words (likely done; don't repeat as is):\n" + partly + "\n")
+  258              + (notSaid.isEmpty ? "" : "Coach lines shown but NOT said (the prospect never heard them; the rep chose their own words):\n" + notSaid + "\n")
+  259              + (lastSaidStage.isEmpty ? "" : "The last step the rep actually covered: \(lastSaidStage)\n")
+  260          let opened = style.map { "The rep opened with the \"\($0.name)\" opener: \($0.template)\nGood follow-up for it: \($0.followUp)\n\n" } ?? ""
+  261          let booking = openTimes.map { "\($0)\n\n" } ?? ""
+  262          return """
+  263          \(about(calling, details))\(opened)\(booking)Call so far, oldest first:
+  264          \(history)
+  265  
+  266          \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
+  267          \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked by simple rules from the transcript):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked by simple rules from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
+  268          \(priority)\(shown)\(prospectNos == 1 ? "They have clearly said no once. No more sales questions: acknowledge it, at most offer an easy exit.\n" : "")
+  269          The tracked questions and objections above come from simple rules on the transcript. If the transcript
+  270          shows something different, the transcript is the truth.
+  271          The rep's actual words are the truth; the script is the guide. If the rep already covered something in
+  272          their own words (the reason for the call, the pitch, a question), it's done: never repeat it. Coach from
+  273          where the rep really is toward the next goal of the script.
+  274          If the prospect asked a question, the first sentence answers it plainly and directly.
+  275          Roles: the rep is the caller from Clarity. The prospect is the person being called. Never have the rep
+  276          claim the prospect's role, title or decisions ("I'm the one who decides"). If unsure who decides, ask.
+  277          A pain is theirs only if they said it. Never state a problem as theirs or as what "usually" bothers teams when
+  278          they haven't said it. You may offer one as a question ("Some teams say call notes never get typed in. True for you?").
+  279          A clear no: acknowledge it, no sales question, at most offer an easy exit. A second no: thank them and end.
+  280          An objection is not a no: acknowledge it, then one relevant question.
+  281          What should the rep say next? SAY is 1 to 2 short sentences, \(LineBudget.promptMax) words at most. End with one
+  282          question when the move is to learn something (discover, clarify, objection); an answer, acknowledgment or
+  283          close can end plainly. Use the script's wording when a row truly fits; otherwise write what this
+  284          conversation needs.
+  285          """
+  286      }
+  287  
+  288      /// Written before the call, so it's ready the instant a voicemail greeting starts.
+  289      static func voicemail(calling: String?, details: String?, earlierTexts: [String] = [], earlierMessages: [String] = [],
+  290                            history: String = "", localLunch: Bool = false) -> String {
+  291          let local = localLunch ? LocalLunch.promptNote : ""
+  292          let past = history.isEmpty ? "" : """
+  293          What the rep has already done with this person:
+  294          \(history)
   295  
   296          """
-  297          let earlier = earlierTexts.isEmpty ? "" : """
-  298          This will be text number \(earlierTexts.count + 1) to this person. Texts already sent (oldest first):
-  299          \(earlierTexts.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
-  300          The new TEXT must be clearly different from every one of these: a new angle or question and new wording.
-  301          Don't reuse their opening words. Keep it short and friendly; later texts can be lighter (for example,
-  302          a quick "should I stop reaching out?" by the 4th or 5th text).
-  303  
-  304          """
-  305          return """
-  306          \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)\(local)If this call goes to voicemail, what should the rep say after the beep?
-  307          One voice for everything you write here. The voicemail, TEXT, LINKEDIN and LINKEDIN MESSAGE all come from
-  308          the campaign above: its opening, its angle, its offer, its tone, and any voicemail, text or LinkedIn wording
-  309          it gives. Follow the campaign over the defaults below whenever they differ.
-  310          Templates come first: if the campaign or its script has a voicemail script, the voicemail is that script
-  311          word for word, with only the blanks and placeholders filled in. If the campaign or its script has a text message template (a missed call text, a text
-  312          after a voicemail, or any text the rep sends), the TEXT line must be that template word for word, with only
-  313          the name, rep and company placeholders filled in (for a later text, use the script's matching follow-up
-  314          template if it has one). Same for LinkedIn: a connection note or request template goes in LINKEDIN word for
-  315          word, a LinkedIn message template goes in LINKEDIN MESSAGE, and with no LinkedIn template, use the text
-  316          template there too. Only write your own when the campaign has no template. Write the voicemail first, then
-  317          make every TEXT and LinkedIn line sound like the same person who just left that voicemail: the same way the
-  318          rep introduces themselves (if the voicemail says something like "a fellow Portland entrepreneur", so do the
-  319          text and LinkedIn note), the same reason for reaching out, the same warmth and plainness. Never switch to
-  320          a different pitch or a more formal, salesy tone in the written follow-ups.
-  321          Voicemail: under 20 seconds, about 40 words. In this order: their first name; the rep's name and how the
-  322          campaign introduces them; one reason tied to the campaign's angle and to something specific about them,
-  323          their role or their company (from the Salesforce facts, or a common pain for their title if there are none);
-  324          then one closing line that fits the history above:
-  325          - No text sent yet: "I'll send you a quick text so you have my number."
-  326          - A text was already sent: don't promise a first text again. Mention it instead, for example
-  327            "I sent you a text the other day, so you have my number" (use the real timing: today, yesterday, a few days ago).
-  328          - A LinkedIn connection request or message was already sent: you can mention it, for example
-  329            "I also sent you a connection request on LinkedIn" (pick the one or two most recent touches, not a list).
-  330          - Voicemails were already left: don't repeat them. New angle and new wording, and it can be shorter and lighter.
-  331          The TEXT, LINKEDIN and LINKEDIN MESSAGE lines below follow the same history: e.g. the text can say
-  332          "left you a voicemail" or "sent you a note on LinkedIn" when that's true.
-  333          No pitch, no hype, no email.
-  334          CUE: one short delivery tip. STAGE: Voicemail.
-  335          Then add three more lines:
-  336          TEXT: <the text message to send right after. Under 40 words. Sounds like a real person texting, not marketing,
-  337          and like the voicemail above. The rep introduces themselves the same way as in the voicemail, then the same
-  338          reason for reaching out (the campaign's angle, tied to their role or company),
-  339          then one easy yes/no question about THEIR situation (e.g. "Is that still a headache for your team?"),
-  340          then one short line saying what happens next, so they know they'll hear from the rep again. Make it true to
-  341          the history: calls left = "I'll try you again tomorrow if I don't hear back." or "I'll send you a note on
-  342          LinkedIn too."; last call = "I won't keep calling. Reach out anytime." Vary the wording each time.>
-  343          LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Same voice and intro as the voicemail.
-  344          Says the rep just tried calling, gives the same reason, no pitch, no links, no emojis.>
-  345          LINKEDIN MESSAGE: <a LinkedIn direct message, for when they're already connected. Under 400 characters.
-  346          Same voice and intro as the voicemail. Says the rep just tried calling, gives the same reason, one easy
-  347          question. No links, no emojis.>
-  348          Rules for the voicemail, TEXT and both LinkedIn lines:
-  349          - Never name anyone they haven't met (no "Oliver", no "my partner", no "our team lead"). They only know the rep.
-  350          - Don't ask for a meeting, a call length or a day in a first touch. Ask about their situation instead.
-  351            Only after earlier texts or voicemails (see the history) can a later one offer a short call, and then as
-  352            a simple question ("Worth a quick chat?"), still without naming anyone else.
-  353          - One idea per message. No jargon, no "quick look at yours", no hype.
-  354          Never copy wording from these instructions; the words come from the campaign.
-  355          """
-  356      }
-  357  
-  358      /// The Salesforce record the rep had open: the tab title and, if allowed, the page's text.
-  359      private static func about(_ calling: String?, _ details: String? = nil) -> String {
-  360          var lines: [String] = []
-  361          let rep = Prefs.repName
-  362          if !rep.isEmpty {
-  363              lines.append("The rep's first name is \(rep).")
-  364          }
-  365          if let calling {
-  366              lines.append("Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person.")
-  367          }
-  368          if let details {
-  369              lines.append("Text from their Salesforce page. It includes menus and clutter; use only facts about this person and their company, and never guess:\n\(details)")
-  370          } else if calling != nil {
-  371              lines.append("Assume nothing else about them.")
-  372          }
-  373          return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n\n"
-  374      }
-  375  }
-  376  
+  297          let earlierLinkedIn = earlierMessages.isEmpty ? "" : """
+  298          This will be LinkedIn message number \(earlierMessages.count + 1). LinkedIn messages already sent (oldest first):
+  299          \(earlierMessages.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
+  300          The new LINKEDIN MESSAGE must be clearly different from every one of these: a new angle or question and new wording.
+  301  
+  302          """
+  303          let earlier = earlierTexts.isEmpty ? "" : """
+  304          This will be text number \(earlierTexts.count + 1) to this person. Texts already sent (oldest first):
+  305          \(earlierTexts.suffix(6).map { "- \($0)" }.joined(separator: "\n"))
+  306          The new TEXT must be clearly different from every one of these: a new angle or question and new wording.
+  307          Don't reuse their opening words. Keep it short and friendly; later texts can be lighter (for example,
+  308          a quick "should I stop reaching out?" by the 4th or 5th text).
+  309  
+  310          """
+  311          return """
+  312          \(about(calling, details))\(past)\(earlier)\(earlierLinkedIn)\(local)If this call goes to voicemail, what should the rep say after the beep?
+  313          One voice for everything you write here. The voicemail, TEXT, LINKEDIN and LINKEDIN MESSAGE all come from
+  314          the campaign above: its opening, its angle, its offer, its tone, and any voicemail, text or LinkedIn wording
+  315          it gives. Follow the campaign over the defaults below whenever they differ.
+  316          Templates come first: if the campaign or its script has a voicemail script, the voicemail is that script
+  317          word for word, with only the blanks and placeholders filled in. If the campaign or its script has a text message template (a missed call text, a text
+  318          after a voicemail, or any text the rep sends), the TEXT line must be that template word for word, with only
+  319          the name, rep and company placeholders filled in (for a later text, use the script's matching follow-up
+  320          template if it has one). Same for LinkedIn: a connection note or request template goes in LINKEDIN word for
+  321          word, a LinkedIn message template goes in LINKEDIN MESSAGE, and with no LinkedIn template, use the text
+  322          template there too. Only write your own when the campaign has no template. Write the voicemail first, then
+  323          make every TEXT and LinkedIn line sound like the same person who just left that voicemail: the same way the
+  324          rep introduces themselves (if the voicemail says something like "a fellow Portland entrepreneur", so do the
+  325          text and LinkedIn note), the same reason for reaching out, the same warmth and plainness. Never switch to
+  326          a different pitch or a more formal, salesy tone in the written follow-ups.
+  327          Voicemail: under 20 seconds, about 40 words. In this order: their first name; the rep's name and how the
+  328          campaign introduces them; one reason tied to the campaign's angle and to something specific about them,
+  329          their role or their company (from the Salesforce facts, or a common pain for their title if there are none);
+  330          then one closing line that fits the history above:
+  331          - No text sent yet: "I'll send you a quick text so you have my number."
+  332          - A text was already sent: don't promise a first text again. Mention it instead, for example
+  333            "I sent you a text the other day, so you have my number" (use the real timing: today, yesterday, a few days ago).
+  334          - A LinkedIn connection request or message was already sent: you can mention it, for example
+  335            "I also sent you a connection request on LinkedIn" (pick the one or two most recent touches, not a list).
+  336          - Voicemails were already left: don't repeat them. New angle and new wording, and it can be shorter and lighter.
+  337          The TEXT, LINKEDIN and LINKEDIN MESSAGE lines below follow the same history: e.g. the text can say
+  338          "left you a voicemail" or "sent you a note on LinkedIn" when that's true.
+  339          No pitch, no hype, no email.
+  340          CUE: one short delivery tip. STAGE: Voicemail.
+  341          Then add three more lines:
+  342          TEXT: <the text message to send right after. Under 40 words. Sounds like a real person texting, not marketing,
+  343          and like the voicemail above. The rep introduces themselves the same way as in the voicemail, then the same
+  344          reason for reaching out (the campaign's angle, tied to their role or company),
+  345          then one easy yes/no question about THEIR situation (e.g. "Is that still a headache for your team?"),
+  346          then one short line saying what happens next, so they know they'll hear from the rep again. Make it true to
+  347          the history: calls left = "I'll try you again tomorrow if I don't hear back." or "I'll send you a note on
+  348          LinkedIn too."; last call = "I won't keep calling. Reach out anytime." Vary the wording each time.>
+  349          LINKEDIN: <a LinkedIn connection request note. Under 200 characters. Same voice and intro as the voicemail.
+  350          Says the rep just tried calling, gives the same reason, no pitch, no links, no emojis.>
+  351          LINKEDIN MESSAGE: <a LinkedIn direct message, for when they're already connected. Under 400 characters.
+  352          Same voice and intro as the voicemail. Says the rep just tried calling, gives the same reason, one easy
+  353          question. No links, no emojis.>
+  354          Rules for the voicemail, TEXT and both LinkedIn lines:
+  355          - Never name anyone they haven't met (no "Oliver", no "my partner", no "our team lead"). They only know the rep.
+  356          - Don't ask for a meeting, a call length or a day in a first touch. Ask about their situation instead.
+  357            Only after earlier texts or voicemails (see the history) can a later one offer a short call, and then as
+  358            a simple question ("Worth a quick chat?"), still without naming anyone else.
+  359          - One idea per message. No jargon, no "quick look at yours", no hype.
+  360          Never copy wording from these instructions; the words come from the campaign.
+  361          """
+  362      }
+  363  
+  364      /// The Salesforce record the rep had open: the tab title and, if allowed, the page's text.
+  365      private static func about(_ calling: String?, _ details: String? = nil) -> String {
+  366          var lines: [String] = []
+  367          let rep = Prefs.repName
+  368          if !rep.isEmpty {
+  369              lines.append("The rep's first name is \(rep).")
+  370          }
+  371          if let calling {
+  372              lines.append("Salesforce record open in the rep's browser: \(calling). Use the first name if it's a person.")
+  373          }
+  374          if let details {
+  375              lines.append("Text from their Salesforce page. It includes menus and clutter; use only facts about this person and their company, and never guess:\n\(details)")
+  376          } else if calling != nil {
+  377              lines.append("Assume nothing else about them.")
+  378          }
+  379          return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n\n"
+  380      }
+  381  }
+  382  
 ```
 
 ### 2.2 Where the pieces of the user message come from
@@ -964,8 +970,8 @@ Functions in the order a line passes through them. Line numbers are in each exce
   624          if s.move == "discover", intent == .question {
   625              p.append("they asked a direct question: answer it plainly first (MOVE answer), no discovery question")
   626          }
-  627          if s.move == "discover", intent == .rejection {
-  628              p.append("they declined: acknowledge it, no more discovery (MOVE acknowledge or close)")
+  627          if ["discover", "clarify", "objection"].contains(s.move), intent == .rejection {
+  628              p.append("they declined: a clear no gets no sales question (MOVE acknowledge or close)")
   629          }
   630          // THINK is the coaching: a normal live line needs a useful one, checked against this conversation.
   631          if Think.enabled, s.rowTag == nil, !s.nudge, !s.skip {
@@ -981,61 +987,62 @@ Functions in the order a line passes through them. Line numbers are in each exce
 
 ### 4.5 `fixLine`: repair (code fix, one retry on the call's model, then trim or drop)
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 641–692
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 651–703
 
 ```swift
-  641      /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
-  642      func fixLine(_ bad: Suggestion, system: String, user: String, key: String, id: Int = 0) async -> Suggestion {
-  643          var problems = Self.lineProblems(bad)
-  644          ActivityLog.add("Line check: failed (\(problems.joined(separator: "; "))): \(bad.say)")
-  645          CallTrace.event("check.fail", ["line": bad.say, "problems": problems], req: id)
-  646          // Formatting only (an abbreviation like CRM, an em dash): fix it in code, no second request.
-  647          if problems.allSatisfy({ $0.hasPrefix("abbreviation") || $0 == "em dash" || $0 == "more than one question" }),
-  648             let fixed = LineRepair.fix(bad.say) {
-  649              var s = bad
-  650              s.say = fixed
-  651              // Spelled-out words add syllables: allow half a grade of slack on a repaired line (M6).
-  652              let left = Self.lineProblems(s).filter { !($0.hasPrefix("reading level") && ReadingLevel.grade(fixed) <= ReadingLevel.checkMax + 0.5) }
-  653              if left.isEmpty {
-  654                  ActivityLog.add("Line check: fixed in code (no extra request)")
-  655                  CallTrace.event("check.fixed_locally", ["from": bad.say, "line": fixed], req: id)
-  656                  return s
-  657              }
-  658          }
-  659          for model in [LiveCoach.callModel] { // one retry at most, on this call's model (H4)
-  660              var text = ""
-  661              let retry = user + "\n\nYour last answer broke these rules: \(problems.joined(separator: "; ")). THINK was: \"\(bad.think)\". SAY was: \"\(bad.say)\". Write MOVE, STAGE, THINK, SAY and CUE again."
-  662              CallTrace.event("claude.retry.request", ["model": model, "user_message": retry], req: id)
-  663              let t0 = Date()
-  664              ActivityLog.add("Line check: asking \(ClaudeClient.displayName(model)) to fix it")
-  665              try? await LiveCoach.client(key, model: model).stream(system: system, user: retry) { text = $0 }
-  666              var s = Suggestion.parse(text)
-  667              s.sayComplete = true
-  668              let left = s.skip ? [] : Self.lineProblems(s)
-  669              CallTrace.event("claude.retry.done", ["model": model, "ms": Int(Date().timeIntervalSince(t0) * 1000), "output": text,
-  670                                                    "passed": !s.say.isEmpty && left.isEmpty, "problems": left], req: id)
-  671              if s.skip || (!s.say.isEmpty && Self.lineProblems(s).isEmpty) {
-  672                  ActivityLog.add("Line check: fixed by \(model.contains("haiku") ? "Haiku" : "Sonnet")")
-  673                  CallTrace.event("check.fixed", ["model": model, "line": s.say], req: id)
-  674                  return s
-  675              }
-  676              if !s.say.isEmpty { problems = Self.lineProblems(s) }
-  677          }
-  678          // A wrong move or a role mix-up can't be trimmed into a right one: show nothing new instead.
-  679          if Self.lineProblems(bad).contains(where: { $0.hasPrefix("the rep claims") || $0.hasPrefix("they asked a direct") || $0.hasPrefix("they declined") }) {
-  680              var quiet = bad
-  681              quiet.skip = true
-  682              quiet.move = "silent"
-  683              ActivityLog.add("Line check: dropped (wrong move for the conversation): \(bad.say)")
-  684              CallTrace.event("check.dropped", ["line": bad.say, "problems": Self.lineProblems(bad)], req: id)
-  685              return quiet
-  686          }
-  687          var s = bad
-  688          s.say = LiveCoach.sanitize(bad.say)
-  689          ActivityLog.add("Line check: trimmed to fit: \(s.say)")
-  690          CallTrace.event("check.trimmed", ["line": s.say, "from": bad.say], req: id)
-  691          return s
-  692      }
+  651      /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
+  652      func fixLine(_ bad: Suggestion, system: String, user: String, key: String, id: Int = 0) async -> Suggestion {
+  653          var problems = Self.lineProblems(bad)
+  654          ActivityLog.add("Line check: failed (\(problems.joined(separator: "; "))): \(bad.say)")
+  655          CallTrace.event("check.fail", ["line": bad.say, "problems": problems], req: id)
+  656          // Formatting only (an abbreviation like CRM, an em dash): fix it in code, no second request.
+  657          if problems.allSatisfy({ $0.hasPrefix("abbreviation") || $0 == "em dash" || $0 == "more than one question" }),
+  658             let fixed = LineRepair.fix(bad.say) {
+  659              var s = bad
+  660              s.say = fixed
+  661              // Spelled-out words add syllables: allow half a grade of slack on a repaired line (M6).
+  662              let left = Self.lineProblems(s).filter { !($0.hasPrefix("reading level") && ReadingLevel.grade(fixed) <= ReadingLevel.checkMax + 0.5) }
+  663              if left.isEmpty {
+  664                  ActivityLog.add("Line check: fixed in code (no extra request)")
+  665                  CallTrace.event("check.fixed_locally", ["from": bad.say, "line": fixed], req: id)
+  666                  return s
+  667              }
+  668          }
+  669          for model in [LiveCoach.callModel] { // one retry at most, on this call's model (H4)
+  670              var text = ""
+  671              let retry = user + "\n\nYour last answer broke these rules: \(problems.joined(separator: "; ")). THINK was: \"\(bad.think)\". SAY was: \"\(bad.say)\". Write MOVE, STAGE, THINK, SAY and CUE again."
+  672              CallTrace.event("claude.retry.request", ["model": model, "user_message": retry], req: id)
+  673              let t0 = Date()
+  674              ActivityLog.add("Line check: asking \(ClaudeClient.displayName(model)) to fix it")
+  675              try? await LiveCoach.client(key, model: model).stream(system: system, user: retry) { text = $0 }
+  676              var s = Suggestion.parse(text)
+  677              s.sayComplete = true
+  678              let left = s.skip ? [] : Self.lineProblems(s)
+  679              CallTrace.event("claude.retry.done", ["model": model, "ms": Int(Date().timeIntervalSince(t0) * 1000), "output": text,
+  680                                                    "passed": !s.say.isEmpty && left.isEmpty, "problems": left], req: id)
+  681              if s.skip || (!s.say.isEmpty && Self.lineProblems(s).isEmpty) {
+  682                  ActivityLog.add("Line check: fixed by \(model.contains("haiku") ? "Haiku" : "Sonnet")")
+  683                  CallTrace.event("check.fixed", ["model": model, "line": s.say], req: id)
+  684                  return s
+  685              }
+  686              if !s.say.isEmpty { problems = Self.lineProblems(s) }
+  687          }
+  688          // Final check. Formatting (length, an abbreviation, the question mark) can be trimmed safely. A wrong move,
+  689          // a role mix-up, or a THINK that doesn't fit the conversation can't: show nothing new instead.
+  690          if Self.lineProblems(bad).contains(where: Self.isSerious) {
+  691              var quiet = bad
+  692              quiet.skip = true
+  693              quiet.move = "silent"
+  694              ActivityLog.add("Line check: dropped (wrong move for the conversation): \(bad.say)")
+  695              CallTrace.event("check.dropped", ["line": bad.say, "problems": Self.lineProblems(bad)], req: id)
+  696              return quiet
+  697          }
+  698          var s = bad
+  699          s.say = LiveCoach.sanitize(bad.say)
+  700          ActivityLog.add("Line check: trimmed to fit: \(s.say)")
+  701          CallTrace.event("check.trimmed", ["line": s.say, "from": bad.say], req: id)
+  702          return s
+  703      }
 ```
 
 ### 4.6 `Guardrail.problems`: house rules applied to every line
@@ -1090,435 +1097,435 @@ Functions in the order a line passes through them. Line numbers are in each exce
   329  }
 ```
 
-`CoachCore/CoachCore.swift` lines 782–833
+`CoachCore/CoachCore.swift` lines 792–843
 
 ```swift
-  782  /// Small, safe fixes done in code, so a line isn't sent back to Claude (about a second) for formatting.
-  783  public enum LineRepair {
-  784      public static let abbreviations: [String: String] = [
-  785          "CRM": "customer system", "ROI": "return", "SDR": "rep", "SDRs": "reps", "BDR": "rep", "BDRs": "reps",
-  786          "AE": "account rep", "AEs": "account reps", "KPI": "goal", "KPIs": "goals", "RevOps": "revenue team",
-  787          "SaaS": "software", "B2B": "business", "ASAP": "soon", "FYI": "just so you know",
-  788      ]
-  789  
-  790      /// The line with known abbreviations spelled out and em dashes turned to commas, or nil if an
-  791      /// all-caps word we don't know is left (that one still goes back to Claude).
-  792      public static func fix(_ line: String) -> String? {
-  793          var out = line.replacingOccurrences(of: "\u{2014}", with: ",").replacingOccurrences(of: "\u{2013}", with: ",")
-  794          out = oneQuestion(out)
-  795          for (abbr, plain) in abbreviations {
-  796              out = out.replacingOccurrences(of: "\\b\(abbr)\\b", with: plain, options: .regularExpression)
-  797          }
-  798          let leftover = out.split(whereSeparator: { !$0.isLetter }).filter { $0.count >= 2 && $0.allSatisfy(\.isUppercase) && $0 != "AI" }
-  799          return leftover.isEmpty ? out : nil
-  800      }
-  801  
-  802      /// "Makes sense? How many reps?" -> "Makes sense. How many reps?": only the last question keeps its "?" (H4).
-  803      public static func oneQuestion(_ line: String) -> String {
-  804          guard let last = line.lastIndex(of: "?") else { return line }
-  805          var out = ""
-  806          for (i, ch) in zip(line.indices, line) { out.append(ch == "?" && i != last ? "." : ch) }
-  807          return out
-  808      }
-  809  
-  810      /// Fit a long line to `max` words without leaving a fragment (M7): keep the trailing question if it
-  811      /// fits, else whole sentences from the start, else the first `max` words.
-  812      public static func trimToFit(_ line: String, max: Int) -> String {
-  813          let words = line.split(separator: " ")
-  814          guard words.count > max else { return line }
-  815          let sentences = line.split(omittingEmptySubsequences: true, whereSeparator: { ".!?".contains($0) })
-  816          var ends: [String] = []
-  817          var rest = Substring(line)
-  818          for s in sentences {
-  819              guard let r = rest.range(of: s) else { break }
-  820              let after = rest[r.upperBound...]
-  821              let punct = after.prefix(while: { ".!?".contains($0) })
-  822              ends.append((s + punct).trimmingCharacters(in: .whitespaces))
-  823              rest = after.dropFirst(punct.count)
-  824          }
-  825          if let q = ends.last, q.hasSuffix("?"), q.split(separator: " ").count <= max { return q }
-  826          var kept: [String] = []
-  827          for s in ends {
-  828              if (kept + [s]).joined(separator: " ").split(separator: " ").count > max { break }
-  829              kept.append(s)
-  830          }
-  831          return kept.isEmpty ? words.prefix(max).joined(separator: " ") : kept.joined(separator: " ")
-  832      }
-  833  }
+  792  /// Small, safe fixes done in code, so a line isn't sent back to Claude (about a second) for formatting.
+  793  public enum LineRepair {
+  794      public static let abbreviations: [String: String] = [
+  795          "CRM": "customer system", "ROI": "return", "SDR": "rep", "SDRs": "reps", "BDR": "rep", "BDRs": "reps",
+  796          "AE": "account rep", "AEs": "account reps", "KPI": "goal", "KPIs": "goals", "RevOps": "revenue team",
+  797          "SaaS": "software", "B2B": "business", "ASAP": "soon", "FYI": "just so you know",
+  798      ]
+  799  
+  800      /// The line with known abbreviations spelled out and em dashes turned to commas, or nil if an
+  801      /// all-caps word we don't know is left (that one still goes back to Claude).
+  802      public static func fix(_ line: String) -> String? {
+  803          var out = line.replacingOccurrences(of: "\u{2014}", with: ",").replacingOccurrences(of: "\u{2013}", with: ",")
+  804          out = oneQuestion(out)
+  805          for (abbr, plain) in abbreviations {
+  806              out = out.replacingOccurrences(of: "\\b\(abbr)\\b", with: plain, options: .regularExpression)
+  807          }
+  808          let leftover = out.split(whereSeparator: { !$0.isLetter }).filter { $0.count >= 2 && $0.allSatisfy(\.isUppercase) && $0 != "AI" }
+  809          return leftover.isEmpty ? out : nil
+  810      }
+  811  
+  812      /// "Makes sense? How many reps?" -> "Makes sense. How many reps?": only the last question keeps its "?" (H4).
+  813      public static func oneQuestion(_ line: String) -> String {
+  814          guard let last = line.lastIndex(of: "?") else { return line }
+  815          var out = ""
+  816          for (i, ch) in zip(line.indices, line) { out.append(ch == "?" && i != last ? "." : ch) }
+  817          return out
+  818      }
+  819  
+  820      /// Fit a long line to `max` words without leaving a fragment (M7): keep the trailing question if it
+  821      /// fits, else whole sentences from the start, else the first `max` words.
+  822      public static func trimToFit(_ line: String, max: Int) -> String {
+  823          let words = line.split(separator: " ")
+  824          guard words.count > max else { return line }
+  825          let sentences = line.split(omittingEmptySubsequences: true, whereSeparator: { ".!?".contains($0) })
+  826          var ends: [String] = []
+  827          var rest = Substring(line)
+  828          for s in sentences {
+  829              guard let r = rest.range(of: s) else { break }
+  830              let after = rest[r.upperBound...]
+  831              let punct = after.prefix(while: { ".!?".contains($0) })
+  832              ends.append((s + punct).trimmingCharacters(in: .whitespaces))
+  833              rest = after.dropFirst(punct.count)
+  834          }
+  835          if let q = ends.last, q.hasSuffix("?"), q.split(separator: " ").count <= max { return q }
+  836          var kept: [String] = []
+  837          for s in ends {
+  838              if (kept + [s]).joined(separator: " ").split(separator: " ").count > max { break }
+  839              kept.append(s)
+  840          }
+  841          return kept.isEmpty ? words.prefix(max).joined(separator: " ") : kept.joined(separator: " ")
+  842      }
+  843  }
 ```
 
 ### 4.8 `offer` and `show`: from a finished line to the screen
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 694–812
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 705–823
 
 ```swift
-  694      /// Shows a suggestion, but never swaps a fresh line out from under the rep.
-  695      func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
-  696          guard id == seq, !s.skip, !s.say.isEmpty, !doNotCall else { // do not call: nothing replaces the goodbye
-  697              // MOVE: silent: keep the line if it still fits; clear it if the talk moved past it.
-  698              let movedOn: Bool = {
-  699                  guard let last = turns.last, last.speaker == .prospect else { return lineSuperseded }
-  700                  let repAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
-  701                  return lineSuperseded || repAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?")
-  702              }()
-  703              if s.move == "silent", id == seq, !doNotCall, status == .live, !suggestion.say.isEmpty,
-  704                 SilentRule.clearNow(superseded: movedOn, delivered: lineDelivered, answered: answeredAfterDelivery, signals: signals()) {
-  705                  CallTrace.event("suggestion.cleared", ["line": suggestion.say, "why": "Claude chose silent and the line was outdated"], sug: shownID)
-  706                  suggestion = Suggestion()
-  707                  lineSuperseded = false
-  708              }
-  709              if s.sayComplete || s.skip {
-  710                  let why = doNotCall ? "do not call" : id != seq ? "stale: request #\(seq) is newer" : s.move == "silent" ? "Claude chose silent: no new line needed" : s.skip ? "Claude said skip" : "empty"
-  711                  CallTrace.event("suggestion.dropped", ["line": s.say, "why": why], sug: id)
-  712              }
-  713              return
-  714          }
-  715          // Easier to read live: show the line once it's whole, not word by word (setting).
-  716          let wholeLine = Prefs.wholeLine
-  717          if wholeLine && !s.sayComplete { return }
-  718          if specBasis != nil {
-  719              if s.sayComplete, specHeld?.id != id {
-  720                  CallTrace.event("suggestion.held_early", ["line": s.say, "basis": specBasis ?? "", "why": "drafted early: waits for them to stop"], sug: id)
-  721              }
-  722              specHeld = (s, id) // started early: wait until they really stop talking
-  723              return
-  724          }
-  725          if kind == .reply, timedID != id {
-  726              timedID = id // time from "they stopped talking" to the first words of the answer
-  727              latency = max(0, Date().timeIntervalSince(confirmedAt ?? askedAt))
-  728          }
-  729          if id == shownID {
-  730              // Once a line is whole on screen, its words are frozen: a late chunk never changes it (N2).
-  731              if suggestion.sayComplete { return }
-  732              if frozenShownID == id { return }
-  733              if status == .live, signals().repSpeaking || !(interim[.rep] ?? "").isEmpty { frozenShownID = id; return } // reading it: freeze for good
-  734              if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
-  735              var s = s
-  736              s.say = fillTags(s.say, for: calling) // never show a bare [Name] or [SDR]
-  737              suggestion = s // same answer, still streaming in
-  738              note(s)
-  739              return
-  740          }
-  741          // The call is live and someone already talked: keep the opener the rep is reading.
-  742          if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect })
-  743              || signals().repSpeaking || !(interim[.rep] ?? "").isEmpty {
-  744              if s.sayComplete { CallTrace.event("suggestion.dropped", ["line": s.say, "why": "opener arrived after the talk started"], sug: id) }
-  745              return
-  746          }
-  747          // The AI thinks ahead, the screen follows the conversation: never swap the line while the rep is
-  748          // speaking. Queue it, flag the old one as outdated, and show it the moment they stop.
-  749          // A new prospect turn since the line appeared = the conversation moved on.
-  750          // Only a real reply moves the conversation on (3+ words or a question), not "uh-huh" or "yeah".
-  751          // Any answer to a question you asked counts too, even "yes" or "nope", so you never have to press Next.
-  752          let youAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
-  753          if kind == .reply, repLedIDs.contains(id), !lineSuperseded || supersededLogged != shownID {
-  754              supersededLogged = shownID
-  755              CallTrace.event("suggestion.superseded", ["line": suggestion.say, "by_request": id,
-  756                                                        "why": "the rep moved on in their own words", "delivered": lineDelivered], sug: shownID)
-  757              lineSuperseded = true
-  758          }
-  759          if kind == .reply, let last = turns.last, last.speaker == .prospect,
-  760             youAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?") {
-  761              if !lineSuperseded || supersededLogged != shownID {
-  762                  supersededLogged = shownID
-  763                  let why = youAsked ? "they answered your question" : last.text.contains("?") ? "they asked a question" : "they said something new (3+ words)"
-  764                  CallTrace.event("suggestion.superseded", ["line": suggestion.say, "by_request": id, "prospect_said": last.text,
-  765                                                            "why": why, "delivered": lineDelivered], sug: shownID)
-  766                  ActivityLog.add("Coach #\(shownID): line outdated (\(why))")
-  767              }
+  705      /// Shows a suggestion, but never swaps a fresh line out from under the rep.
+  706      func offer(_ s: Suggestion, id: Int, kind: Kind, askedAt: Date) {
+  707          guard id == seq, !s.skip, !s.say.isEmpty, !doNotCall else { // do not call: nothing replaces the goodbye
+  708              // MOVE: silent: keep the line if it still fits; clear it if the talk moved past it.
+  709              let movedOn: Bool = {
+  710                  guard let last = turns.last, last.speaker == .prospect else { return lineSuperseded }
+  711                  let repAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
+  712                  return lineSuperseded || repAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?")
+  713              }()
+  714              if s.move == "silent", id == seq, !doNotCall, status == .live, !suggestion.say.isEmpty,
+  715                 SilentRule.clearNow(superseded: movedOn, delivered: lineDelivered, answered: answeredAfterDelivery, signals: signals()) {
+  716                  CallTrace.event("suggestion.cleared", ["line": suggestion.say, "why": "Claude chose silent and the line was outdated"], sug: shownID)
+  717                  suggestion = Suggestion()
+  718                  lineSuperseded = false
+  719              }
+  720              if s.sayComplete || s.skip {
+  721                  let why = doNotCall ? "do not call" : id != seq ? "stale: request #\(seq) is newer" : s.move == "silent" ? "Claude chose silent: no new line needed" : s.skip ? "Claude said skip" : "empty"
+  722                  CallTrace.event("suggestion.dropped", ["line": s.say, "why": why], sug: id)
+  723              }
+  724              return
+  725          }
+  726          // Easier to read live: show the line once it's whole, not word by word (setting).
+  727          let wholeLine = Prefs.wholeLine
+  728          if wholeLine && !s.sayComplete { return }
+  729          if specBasis != nil {
+  730              if s.sayComplete, specHeld?.id != id {
+  731                  CallTrace.event("suggestion.held_early", ["line": s.say, "basis": specBasis ?? "", "why": "drafted early: waits for them to stop"], sug: id)
+  732              }
+  733              specHeld = (s, id) // started early: wait until they really stop talking
+  734              return
+  735          }
+  736          if kind == .reply, timedID != id {
+  737              timedID = id // time from "they stopped talking" to the first words of the answer
+  738              latency = max(0, Date().timeIntervalSince(confirmedAt ?? askedAt))
+  739          }
+  740          if id == shownID {
+  741              // Once a line is whole on screen, its words are frozen: a late chunk never changes it (N2).
+  742              if suggestion.sayComplete { return }
+  743              if frozenShownID == id { return }
+  744              if status == .live, signals().repSpeaking || !(interim[.rep] ?? "").isEmpty { frozenShownID = id; return } // reading it: freeze for good
+  745              if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
+  746              var s = s
+  747              s.say = fillTags(s.say, for: calling) // never show a bare [Name] or [SDR]
+  748              suggestion = s // same answer, still streaming in
+  749              note(s)
+  750              return
+  751          }
+  752          // The call is live and someone already talked: keep the opener the rep is reading.
+  753          if kind == .opener, status == .live, repWordsInCall > 0 || turns.contains(where: { $0.speaker == .prospect })
+  754              || signals().repSpeaking || !(interim[.rep] ?? "").isEmpty {
+  755              if s.sayComplete { CallTrace.event("suggestion.dropped", ["line": s.say, "why": "opener arrived after the talk started"], sug: id) }
+  756              return
+  757          }
+  758          // The AI thinks ahead, the screen follows the conversation: never swap the line while the rep is
+  759          // speaking. Queue it, flag the old one as outdated, and show it the moment they stop.
+  760          // A new prospect turn since the line appeared = the conversation moved on.
+  761          // Only a real reply moves the conversation on (3+ words or a question), not "uh-huh" or "yeah".
+  762          // Any answer to a question you asked counts too, even "yes" or "nope", so you never have to press Next.
+  763          let youAsked = turns.dropLast().last { $0.speaker == .rep }?.text.trimmed.hasSuffix("?") ?? false
+  764          if kind == .reply, repLedIDs.contains(id), !lineSuperseded || supersededLogged != shownID {
+  765              supersededLogged = shownID
+  766              CallTrace.event("suggestion.superseded", ["line": suggestion.say, "by_request": id,
+  767                                                        "why": "the rep moved on in their own words", "delivered": lineDelivered], sug: shownID)
   768              lineSuperseded = true
   769          }
-  770          // The rep moved past it while it was being written (asked, pivoted, or kept talking): drop it (round 2 #1).
-  771          let readingOnScript = !lineDelivered && Delivery.onLine(line: suggestion.say, spoken: recentRepChunks.joined(separator: " "))
-  772          let staleWhy = kind == .reply && id != shownID
-  773              ? QueuedLine.staleReason(ageSeconds: 0, repWordsSinceQueued: readingOnScript ? 0 : repWordsInCall - repWordsAtLastAsk,
-  774                                       repAskedSinceQueued: QueuedLine.repAskedSinceRequest(requestedAt: askedAt.timeIntervalSinceReferenceDate,
-  775                                                                                            lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate),
-  776                                       repTextSinceQueued: repTextSinceAsk)
-  777              : nil
-  778          if freshLineIDs.contains(id) { // the rep pressed space: show it now, whatever is on screen
-  779              defer { freshLineIDs.remove(id) } // still marked while show() counts it
-  780              CallTrace.event("suggestion.fresh", ["line": s.say, "why": "the rep asked for a fresh line"], sug: id)
-  781              show(s, id: id, kind: kind)
-  782              return
-  783          }
-  784          let decision = CoachController.offer(isOpenerOrVoicemail: kind == .opener || kind == .voicemail, firstLine: shownID == 0,
-  785                                               holdLine: holdLine, signals: signals(), staleReason: staleWhy)
-  786          if case .drop(let why) = decision {
-  787              CallTrace.event("suggestion.discarded", ["line": s.say, "why": "stale on arrival: \(why)", "rule": QueuedLine.ruleKind(why)], sug: id)
-  788              // Only when they talked on in their own words: after a question or a pivot, the prospect's answer comes next.
-  789              if why.hasPrefix("the rep said") { followRep(why: "the line arrived after the rep moved on") }
-  790              return
-  791          }
-  792          if decision == .show {
-  793              show(s, id: id, kind: kind)
-  794          } else {
-  795              if pending?.id != id {
-  796                  let why = holdLine ? "held by you" : repSpeaking ? "you're speaking" : "you may be reading"
-  797                  ActivityLog.add("Coach #\(id): line queued (\(why))")
-  798                  CallTrace.event("suggestion.queued", ["line": s.say, "why": why, "signals": signals().trace], sug: id)
-  799              }
-  800              if let old = pending, old.id != id {
-  801                  CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer queued line replaced it"], sug: old.id)
-  802              }
-  803              if pending?.id != id {
-  804                  pendingQueuedAt = Date()
-  805                  repWordsAtQueue = repWordsAtLastAsk // what the rep had said when this line was asked for
-  806                  // C4: a question the rep asked while this line was still being written counts too.
-  807                  repAskedSinceQueue = QueuedLine.repAskedSinceRequest(requestedAt: askedAt.timeIntervalSinceReferenceDate,
-  808                                                                       lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate)
-  809              }
-  810              pending = (id, s)
-  811          }
-  812      }
+  770          if kind == .reply, let last = turns.last, last.speaker == .prospect,
+  771             youAsked || last.text.split(separator: " ").count >= 3 || last.text.contains("?") {
+  772              if !lineSuperseded || supersededLogged != shownID {
+  773                  supersededLogged = shownID
+  774                  let why = youAsked ? "they answered your question" : last.text.contains("?") ? "they asked a question" : "they said something new (3+ words)"
+  775                  CallTrace.event("suggestion.superseded", ["line": suggestion.say, "by_request": id, "prospect_said": last.text,
+  776                                                            "why": why, "delivered": lineDelivered], sug: shownID)
+  777                  ActivityLog.add("Coach #\(shownID): line outdated (\(why))")
+  778              }
+  779              lineSuperseded = true
+  780          }
+  781          // The rep moved past it while it was being written (asked, pivoted, or kept talking): drop it (round 2 #1).
+  782          let readingOnScript = !lineDelivered && Delivery.onLine(line: suggestion.say, spoken: recentRepChunks.joined(separator: " "))
+  783          let staleWhy = kind == .reply && id != shownID
+  784              ? QueuedLine.staleReason(ageSeconds: 0, repWordsSinceQueued: readingOnScript ? 0 : repWordsInCall - repWordsAtLastAsk,
+  785                                       repAskedSinceQueued: QueuedLine.repAskedSinceRequest(requestedAt: askedAt.timeIntervalSinceReferenceDate,
+  786                                                                                            lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate),
+  787                                       repTextSinceQueued: repTextSinceAsk)
+  788              : nil
+  789          if freshLineIDs.contains(id) { // the rep pressed space: show it now, whatever is on screen
+  790              defer { freshLineIDs.remove(id) } // still marked while show() counts it
+  791              CallTrace.event("suggestion.fresh", ["line": s.say, "why": "the rep asked for a fresh line"], sug: id)
+  792              show(s, id: id, kind: kind)
+  793              return
+  794          }
+  795          let decision = CoachController.offer(isOpenerOrVoicemail: kind == .opener || kind == .voicemail, firstLine: shownID == 0,
+  796                                               holdLine: holdLine, signals: signals(), staleReason: staleWhy)
+  797          if case .drop(let why) = decision {
+  798              CallTrace.event("suggestion.discarded", ["line": s.say, "why": "stale on arrival: \(why)", "rule": QueuedLine.ruleKind(why)], sug: id)
+  799              // Only when they talked on in their own words: after a question or a pivot, the prospect's answer comes next.
+  800              if why.hasPrefix("the rep said") { followRep(why: "the line arrived after the rep moved on") }
+  801              return
+  802          }
+  803          if decision == .show {
+  804              show(s, id: id, kind: kind)
+  805          } else {
+  806              if pending?.id != id {
+  807                  let why = holdLine ? "held by you" : repSpeaking ? "you're speaking" : "you may be reading"
+  808                  ActivityLog.add("Coach #\(id): line queued (\(why))")
+  809                  CallTrace.event("suggestion.queued", ["line": s.say, "why": why, "signals": signals().trace], sug: id)
+  810              }
+  811              if let old = pending, old.id != id {
+  812                  CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer queued line replaced it"], sug: old.id)
+  813              }
+  814              if pending?.id != id {
+  815                  pendingQueuedAt = Date()
+  816                  repWordsAtQueue = repWordsAtLastAsk // what the rep had said when this line was asked for
+  817                  // C4: a question the rep asked while this line was still being written counts too.
+  818                  repAskedSinceQueue = QueuedLine.repAskedSinceRequest(requestedAt: askedAt.timeIntervalSinceReferenceDate,
+  819                                                                       lastRepQuestionAt: lastRepQuestionAt.timeIntervalSinceReferenceDate)
+  820              }
+  821              pending = (id, s)
+  822          }
+  823      }
 ```
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 858–887
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 869–898
 
 ```swift
-  858      /// Called twice a second: a queued line shows once the rep stops speaking.
-  859      func promotePendingIfReady() {
-  860          guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq) else { return }
-  861          let decision = CoachController.promote(holdLine: holdLine, signals: signals(),
-  862                                                 ageSeconds: Date().timeIntervalSince(pendingQueuedAt),
-  863                                                 repWordsSinceQueued: repWordsInCall - repWordsAtQueue,
-  864                                                 repAskedSinceQueued: repAskedSinceQueue, repTextSinceQueued: repTextSinceAsk)
-  865          guard decision != .wait else {
-  866              if blockedLoggedID != p.id { // once per queued line, not every tick
-  867                  blockedLoggedID = p.id
-  868                  CallTrace.event("promotion.blocked", ["why": holdLine ? "held by the rep" : "not safe to replace yet",
-  869                                                        "signals": signals().trace], sug: p.id)
-  870              }
-  871              return
-  872          }
-  873          // The rep's words are the source of truth: if they moved on while this waited, it's stale.
-  874          if case .drop(let why) = decision {
-  875              pending = nil
-  876              ActivityLog.add("Coach #\(p.id): queued line dropped (\(why); \(QueuedLine.ruleKind(why)) rule)")
-  877              CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)",
-  878                                                       "rule": QueuedLine.ruleKind(why)], sug: p.id)
-  879              // They asked their own question: the next move is the prospect's answer. Otherwise write the
-  880              // next line from where the rep actually is.
-  881              if !repAskedSinceQueue { followRep() }
+  869      /// Called twice a second: a queued line shows once the rep stops speaking.
+  870      func promotePendingIfReady() {
+  871          guard status == .live, let p = pending, CoachMachine.isFresh(requestID: p.id, latestID: seq) else { return }
+  872          let decision = CoachController.promote(holdLine: holdLine, signals: signals(),
+  873                                                 ageSeconds: Date().timeIntervalSince(pendingQueuedAt),
+  874                                                 repWordsSinceQueued: repWordsInCall - repWordsAtQueue,
+  875                                                 repAskedSinceQueued: repAskedSinceQueue, repTextSinceQueued: repTextSinceAsk)
+  876          guard decision != .wait else {
+  877              if blockedLoggedID != p.id { // once per queued line, not every tick
+  878                  blockedLoggedID = p.id
+  879                  CallTrace.event("promotion.blocked", ["why": holdLine ? "held by the rep" : "not safe to replace yet",
+  880                                                        "signals": signals().trace], sug: p.id)
+  881              }
   882              return
   883          }
-  884          ActivityLog.add("Coach #\(p.id): queued line shown")
-  885          CallTrace.event("suggestion.promoted", ["why": "safe to replace now (rep stopped, line read or delivered)"], sug: p.id)
-  886          show(p.suggestion, id: p.id, kind: .reply)
-  887      }
+  884          // The rep's words are the source of truth: if they moved on while this waited, it's stale.
+  885          if case .drop(let why) = decision {
+  886              pending = nil
+  887              ActivityLog.add("Coach #\(p.id): queued line dropped (\(why); \(QueuedLine.ruleKind(why)) rule)")
+  888              CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)",
+  889                                                       "rule": QueuedLine.ruleKind(why)], sug: p.id)
+  890              // They asked their own question: the next move is the prospect's answer. Otherwise write the
+  891              // next line from where the rep actually is.
+  892              if !repAskedSinceQueue { followRep() }
+  893              return
+  894          }
+  895          ActivityLog.add("Coach #\(p.id): queued line shown")
+  896          CallTrace.event("suggestion.promoted", ["why": "safe to replace now (rep stopped, line read or delivered)"], sug: p.id)
+  897          show(p.suggestion, id: p.id, kind: .reply)
+  898      }
 ```
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 1013–1088
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 1024–1099
 
 ```swift
- 1013      func show(_ s: Suggestion, id: Int, kind: Kind) {
- 1014          // After an opt-out, only the goodbye line may ever show (round 2 #3).
- 1015          if doNotCall, s.say != LiveCoach.optOutLine {
- 1016              CallTrace.event("suggestion.dropped", ["line": s.say, "why": "do not call", "kind": "\(kind)"], sug: id)
- 1017              return
- 1018          }
- 1019          if status == .live, !s.say.isEmpty {
- 1020              let ms = lastHeardThemAt.map { Int(Date().timeIntervalSince($0) * 1000) }
- 1021              ActivityLog.add("Coach line shown (\(kind)\(ms.map { ", \($0) ms after their last words" } ?? "")): \(s.say)")
- 1022          }
- 1023          var s = s
- 1024          // THINK that doesn't hold up against this conversation never reaches the card: SAY shows instead, on purpose
- 1025          // (the card says "SAY THIS"), and the reason is in the trace.
- 1026          if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, !s.think.isEmpty {
- 1027              let why = Think.problems(think: s.think, say: s.say, move: s.move, intent: ConversationIntent.classify(CoachPrompt.latestProspect),
- 1028                                       objectionKind: ObjectionTracker.detect(CoachPrompt.latestProspect),
- 1029                                       latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
- 1030                                       scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions)
- 1031              if !why.isEmpty {
- 1032                  CallTrace.event("think.fallback", ["think": s.think, "say": s.say, "problems": why], sug: id)
- 1033                  s.think = ""
- 1034              }
- 1035          } else if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, s.think.isEmpty {
- 1036              CallTrace.event("think.fallback", ["think": "", "say": s.say, "problems": ["THINK was missing"]], sug: id)
- 1037          }
- 1038          s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
- 1039          // Still an unfilled slot ([Day], [Firm] we don't know): never show it. Keep the current line (script rule).
- 1040          if status == .live, kind == .reply, TokenFill.hasOpenSlot(s.say) {
- 1041              CallTrace.event("suggestion.dropped", ["line": s.say, "why": "a [slot] couldn't be filled"], sug: id)
- 1042              ActivityLog.add("Coach: a line had a blank to fill (\(s.say)); kept the current line")
- 1043              showToast("No line with a blank in it. Say it your way, or press space for a fresh one.")
- 1044              return
- 1045          }
- 1046          if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
- 1047          if let old = pending, old.id != id {
- 1048              ActivityLog.add("Coach #\(old.id): queued line discarded (newer one shown)")
- 1049              CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer line was shown"], sug: old.id)
- 1050          }
- 1051          if status == .live, kind == .reply || kind == .opener, !s.say.isEmpty {
- 1052              CoachPrompt.shownLines.append(s.say)
- 1053              // Model test: only lines the call's model wrote (not the instant opener, script answers or a space-bar
- 1054              // Sonnet line), and a line replaced before it could be read doesn't count as ignored.
- 1055              if testLineCounted, !lineDelivered, Date().timeIntervalSince(shownAt) < 2 { callLinesShown -= 1 }
- 1056              testLineCounted = kind == .reply && !s.nudge && s.say != LiveCoach.optOutLine && !freshLineIDs.contains(id)
- 1057                  && !s.cue.hasPrefix("From your script") && !s.cue.hasPrefix("Two no")
- 1058              if testLineCounted { callLinesShown += 1 }
- 1059          }
- 1060          if status == .live {
- 1061              CallTrace.event("suggestion.shown", ["line": s.say, "think": s.think, "think_mode": Think.enabled, "cue": s.cue, "stage": s.stage, "move": s.move, "label": LineLook.label(move: s.move, exact: s.rowTag != nil), "key_part": LineLook.emphasis(s.say)?.key ?? "", "kind": "\(kind)",
- 1062                                                   "replaced": suggestion.say, "replaced_delivered": lineDelivered], sug: id)
- 1063          }
- 1064          pending = nil
- 1065          lineSuperseded = false
- 1066          if kind == .reply { repTextSinceAsk = ""; repWordsAtLastAsk = repWordsInCall } // round 2 #9
- 1067          priorLineOfferedTime = !suggestion.offered.isEmpty || GoalEvidence.mentionsTime(suggestion.say)
- 1068          // The old line: partly said in the rep's own words? Then it isn't "never said" (H1).
- 1069          if status == .live, !suggestion.say.isEmpty, !lineDelivered,
- 1070             Delivery.likelyCovered(line: suggestion.say, spoken: repSaidSinceShown),
- 1071             !CoachPrompt.likelyCoveredLines.contains(suggestion.say) {
- 1072              CoachPrompt.likelyCoveredLines.append(suggestion.say)
- 1073              CallTrace.event("delivery.likely", ["line": suggestion.say, "said": repSaidSinceShown,
- 1074                                                  "confidence": Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)], sug: shownID)
- 1075          }
- 1076          repSaidSinceShown = ""
- 1077          lineDelivered = false
- 1078          answeredAfterDelivery = false
- 1079          shownID = id
- 1080          shownAt = Date()
- 1081          repWordsSinceShown = 0
- 1082          suggestion = s
- 1083          historyIndex = nil
- 1084          if !s.say.isEmpty, s.sayComplete || kind != .reply { history.append((s: s, kind: kind)) }
- 1085          self.kind = kind
- 1086          problem = nil
- 1087          note(s)
- 1088      }
+ 1024      func show(_ s: Suggestion, id: Int, kind: Kind) {
+ 1025          // After an opt-out, only the goodbye line may ever show (round 2 #3).
+ 1026          if doNotCall, s.say != LiveCoach.optOutLine {
+ 1027              CallTrace.event("suggestion.dropped", ["line": s.say, "why": "do not call", "kind": "\(kind)"], sug: id)
+ 1028              return
+ 1029          }
+ 1030          if status == .live, !s.say.isEmpty {
+ 1031              let ms = lastHeardThemAt.map { Int(Date().timeIntervalSince($0) * 1000) }
+ 1032              ActivityLog.add("Coach line shown (\(kind)\(ms.map { ", \($0) ms after their last words" } ?? "")): \(s.say)")
+ 1033          }
+ 1034          var s = s
+ 1035          // THINK that doesn't hold up against this conversation never reaches the card: SAY shows instead, on purpose
+ 1036          // (the card says "SAY THIS"), and the reason is in the trace.
+ 1037          if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, !s.think.isEmpty {
+ 1038              let why = Think.problems(think: s.think, say: s.say, move: s.move, intent: ConversationIntent.classify(CoachPrompt.latestProspect),
+ 1039                                       objectionKind: ObjectionTracker.detect(CoachPrompt.latestProspect),
+ 1040                                       latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
+ 1041                                       scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions)
+ 1042              if !why.isEmpty {
+ 1043                  CallTrace.event("think.fallback", ["think": s.think, "say": s.say, "problems": why], sug: id)
+ 1044                  s.think = ""
+ 1045              }
+ 1046          } else if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, s.think.isEmpty {
+ 1047              CallTrace.event("think.fallback", ["think": "", "say": s.say, "problems": ["THINK was missing"]], sug: id)
+ 1048          }
+ 1049          s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
+ 1050          // Still an unfilled slot ([Day], [Firm] we don't know): never show it. Keep the current line (script rule).
+ 1051          if status == .live, kind == .reply, TokenFill.hasOpenSlot(s.say) {
+ 1052              CallTrace.event("suggestion.dropped", ["line": s.say, "why": "a [slot] couldn't be filled"], sug: id)
+ 1053              ActivityLog.add("Coach: a line had a blank to fill (\(s.say)); kept the current line")
+ 1054              showToast("No line with a blank in it. Say it your way, or press space for a fresh one.")
+ 1055              return
+ 1056          }
+ 1057          if kind == .opener, id != instantOpenerID, s.sayComplete { personalOpenerFor = calling }
+ 1058          if let old = pending, old.id != id {
+ 1059              ActivityLog.add("Coach #\(old.id): queued line discarded (newer one shown)")
+ 1060              CallTrace.event("suggestion.discarded", ["line": old.suggestion.say, "why": "a newer line was shown"], sug: old.id)
+ 1061          }
+ 1062          if status == .live, kind == .reply || kind == .opener, !s.say.isEmpty {
+ 1063              CoachPrompt.shownLines.append(s.say)
+ 1064              // Model test: only lines the call's model wrote (not the instant opener, script answers or a space-bar
+ 1065              // Sonnet line), and a line replaced before it could be read doesn't count as ignored.
+ 1066              if testLineCounted, !lineDelivered, Date().timeIntervalSince(shownAt) < 2 { callLinesShown -= 1 }
+ 1067              testLineCounted = kind == .reply && !s.nudge && s.say != LiveCoach.optOutLine && !freshLineIDs.contains(id)
+ 1068                  && !s.cue.hasPrefix("From your script") && !s.cue.hasPrefix("Two no")
+ 1069              if testLineCounted { callLinesShown += 1 }
+ 1070          }
+ 1071          if status == .live {
+ 1072              CallTrace.event("suggestion.shown", ["line": s.say, "think": s.think, "think_mode": Think.enabled, "cue": s.cue, "stage": s.stage, "move": s.move, "label": LineLook.label(move: s.move, exact: s.rowTag != nil), "key_part": LineLook.emphasis(s.say)?.key ?? "", "kind": "\(kind)",
+ 1073                                                   "replaced": suggestion.say, "replaced_delivered": lineDelivered], sug: id)
+ 1074          }
+ 1075          pending = nil
+ 1076          lineSuperseded = false
+ 1077          if kind == .reply { repTextSinceAsk = ""; repWordsAtLastAsk = repWordsInCall } // round 2 #9
+ 1078          priorLineOfferedTime = !suggestion.offered.isEmpty || GoalEvidence.mentionsTime(suggestion.say)
+ 1079          // The old line: partly said in the rep's own words? Then it isn't "never said" (H1).
+ 1080          if status == .live, !suggestion.say.isEmpty, !lineDelivered,
+ 1081             Delivery.likelyCovered(line: suggestion.say, spoken: repSaidSinceShown),
+ 1082             !CoachPrompt.likelyCoveredLines.contains(suggestion.say) {
+ 1083              CoachPrompt.likelyCoveredLines.append(suggestion.say)
+ 1084              CallTrace.event("delivery.likely", ["line": suggestion.say, "said": repSaidSinceShown,
+ 1085                                                  "confidence": Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)], sug: shownID)
+ 1086          }
+ 1087          repSaidSinceShown = ""
+ 1088          lineDelivered = false
+ 1089          answeredAfterDelivery = false
+ 1090          shownID = id
+ 1091          shownAt = Date()
+ 1092          repWordsSinceShown = 0
+ 1093          suggestion = s
+ 1094          historyIndex = nil
+ 1095          if !s.say.isEmpty, s.sayComplete || kind != .reply { history.append((s: s, kind: kind)) }
+ 1096          self.kind = kind
+ 1097          problem = nil
+ 1098          note(s)
+ 1099      }
 ```
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 1090–1115
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 1101–1126
 
 ```swift
- 1090      /// Bookkeeping for what a line tells us: stage reached, times offered, goal, voicemail.
- 1091      func note(_ s: Suggestion) {
- 1092          if status != .ready, !s.stage.isEmpty {
- 1093              stagesSeen.insert(s.stage)
- 1094              trackJourney(s.stage)
- 1095          }
- 1096          if voicemailActive, !s.textMessage.isEmpty || !s.linkedin.isEmpty || !s.linkedinMessage.isEmpty { fillFollowUp(from: s) }
- 1097          // Remember which meeting times this line offered, so the next ones are different.
- 1098          if !s.offered.isEmpty {
- 1099              let dates = s.offered.compactMap { code in codeByDate.first { $0.value == code }?.key }
- 1100              offeredTimes.formUnion(dates)
- 1101              nextOffer = pickNextPair(from: availability.offerSlots())
- 1102          }
- 1103          if s.stage == "Closing" { availability.refreshIfOlder() } // fresh times while booking
- 1104          // A closing line on screen is only a pending goal; the prospect's words confirm it (N4).
- 1105          if s.stage == "Goal reached", !goalHit {
- 1106              goalPending = true
- 1107              goalPendingTurns = 2
- 1108              // They often agree first ("Tuesday works") and the closing line follows: check their last words too.
- 1109              if let last = turns.last(where: { $0.speaker == .prospect }) { confirmGoalIfAgreed(last.text, checkingEarlierTurn: true) }
- 1110          }
- 1111          // The model's stage is a hint only: it never decides voicemail or pickups (rules do),
- 1112          // so swapping Haiku and Sonnet can't change the numbers.
- 1113          if !s.stage.isEmpty { attempt?.modelStage(s.stage) }
- 1114          if s.stage == "Voicemail", !sawVoicemail { CallTrace.event("voicemail.model_hint", ["why": "the model said Voicemail; rules decide"]) }
- 1115      }
+ 1101      /// Bookkeeping for what a line tells us: stage reached, times offered, goal, voicemail.
+ 1102      func note(_ s: Suggestion) {
+ 1103          if status != .ready, !s.stage.isEmpty {
+ 1104              stagesSeen.insert(s.stage)
+ 1105              trackJourney(s.stage)
+ 1106          }
+ 1107          if voicemailActive, !s.textMessage.isEmpty || !s.linkedin.isEmpty || !s.linkedinMessage.isEmpty { fillFollowUp(from: s) }
+ 1108          // Remember which meeting times this line offered, so the next ones are different.
+ 1109          if !s.offered.isEmpty {
+ 1110              let dates = s.offered.compactMap { code in codeByDate.first { $0.value == code }?.key }
+ 1111              offeredTimes.formUnion(dates)
+ 1112              nextOffer = pickNextPair(from: availability.offerSlots())
+ 1113          }
+ 1114          if s.stage == "Closing" { availability.refreshIfOlder() } // fresh times while booking
+ 1115          // A closing line on screen is only a pending goal; the prospect's words confirm it (N4).
+ 1116          if s.stage == "Goal reached", !goalHit {
+ 1117              goalPending = true
+ 1118              goalPendingTurns = 2
+ 1119              // They often agree first ("Tuesday works") and the closing line follows: check their last words too.
+ 1120              if let last = turns.last(where: { $0.speaker == .prospect }) { confirmGoalIfAgreed(last.text, checkingEarlierTurn: true) }
+ 1121          }
+ 1122          // The model's stage is a hint only: it never decides voicemail or pickups (rules do),
+ 1123          // so swapping Haiku and Sonnet can't change the numbers.
+ 1124          if !s.stage.isEmpty { attempt?.modelStage(s.stage) }
+ 1125          if s.stage == "Voicemail", !sawVoicemail { CallTrace.event("voicemail.model_hint", ["why": "the model said Voicemail; rules decide"]) }
+ 1126      }
 ```
 
 ### 4.9 Writing lines ahead: the yes branch and following the rep
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 921–974
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 932–985
 
 ```swift
-  921      /// The rep just asked a yes/no question: write the line for "yes" now, while they wait for the
-  922      /// answer. It's held, never shown, until the prospect actually says yes. Open questions ("What do
-  923      /// you use?") get nothing ahead: the answer comes from their real words.
-  924      func prepareYesBranch(_ text: String) {
-  925          // Keep the ready line through small talk; drop it for a new question or once the talk moved on (H3).
-  926          if yesBranch != nil {
-  927              yesBranchRepWords += text.split(separator: " ").count
-  928              if YesBranchRule.keep(afterRepSaid: text, wordsSinceQuestion: yesBranchRepWords) { return }
-  929              CallTrace.event("yes_branch.discarded", ["question": yesBranch?.question ?? "", "why": "the rep moved on or asked a new question"])
-  930          }
-  931          yesBranchTask?.cancel()
-  932          yesBranch = nil
-  933          yesBranchWanted = nil
-  934          guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
-  935                let q = RepQuestion.closedQuestion(in: text), let key = Keychain.read(.anthropic) else { return }
-  936          yesBranchRepWords = 0
-  937          yesBranchAskedAt = Date()
-  938          let user = CoachPrompt.reply(turns: turns, latest: q, calling: calling, details: recordDetails, style: callOpener,
-  939                                       openTimes: bookingText(), assumeYes: true)
-  940          let system = self.system
-  941          yesBranch = (q, Suggestion(say: "", cue: "", stage: ""), false)
-  942          CallTrace.event("yes_branch.request", ["question": q, "user_message": user])
-  943          let started = Date()
-  944          yesBranchTask = Task { [weak self] in
-  945              var text = ""
-  946              try? await LiveCoach.client(key).stream(system: system, user: user, onText: { text = $0 }, onUsage: { u in
-  947                  Task { @MainActor in CallTrace.event("claude.usage", u.merging(["yes_branch": 1]) { a, _ in a }) }
-  948              })
-  949              guard let self, !Task.isCancelled, self.yesBranch?.question == q else { return }
-  950              CallTrace.event("claude.done", ["yes_branch": true, "ms": Int(Date().timeIntervalSince(started) * 1000), "output": text])
-  951              var s = Suggestion.parse(text)
-  952              s.sayComplete = true
-  953              let problems = s.skip || s.say.isEmpty ? ["empty"] : Self.lineProblems(s)
-  954              if !problems.isEmpty, let fixed = LineRepair.fix(s.say) { s.say = fixed }
-  955              let left = s.skip || s.say.isEmpty ? ["empty"] : Self.lineProblems(s)
-  956              CallTrace.event("yes_branch.ready", ["question": q, "line": s.say, "ms": Int(Date().timeIntervalSince(started) * 1000),
-  957                                                   "passed": left.isEmpty, "problems": left])
-  958              if left.isEmpty { self.yesBranch = (q, s, true) } else { self.yesBranch = nil }
-  959              // They already said yes while this was being written: show it now, or fall back to a normal answer.
-  960              if let said = self.yesBranchWanted {
-  961                  self.yesBranchWanted = nil
-  962                  self.yesBranch = nil
-  963                  if left.isEmpty, self.status == .live, !self.doNotCall {
-  964                      CallTrace.event("yes_branch.used", ["question": q, "answer": said, "line": s.say, "late": true])
-  965                      self.markRequestStart()
-  966                      self.seq += 1
-  967                      self.offer(s, id: self.seq, kind: .reply, askedAt: Date())
-  968                  } else {
-  969                      self.ask(.reply, user: CoachPrompt.reply(turns: self.turns, latest: said, calling: self.calling,
-  970                                                               details: self.recordDetails, style: self.callOpener, openTimes: self.bookingText()))
-  971                  }
-  972              }
-  973          }
-  974      }
+  932      /// The rep just asked a yes/no question: write the line for "yes" now, while they wait for the
+  933      /// answer. It's held, never shown, until the prospect actually says yes. Open questions ("What do
+  934      /// you use?") get nothing ahead: the answer comes from their real words.
+  935      func prepareYesBranch(_ text: String) {
+  936          // Keep the ready line through small talk; drop it for a new question or once the talk moved on (H3).
+  937          if yesBranch != nil {
+  938              yesBranchRepWords += text.split(separator: " ").count
+  939              if YesBranchRule.keep(afterRepSaid: text, wordsSinceQuestion: yesBranchRepWords) { return }
+  940              CallTrace.event("yes_branch.discarded", ["question": yesBranch?.question ?? "", "why": "the rep moved on or asked a new question"])
+  941          }
+  942          yesBranchTask?.cancel()
+  943          yesBranch = nil
+  944          yesBranchWanted = nil
+  945          guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
+  946                let q = RepQuestion.closedQuestion(in: text), let key = Keychain.read(.anthropic) else { return }
+  947          yesBranchRepWords = 0
+  948          yesBranchAskedAt = Date()
+  949          let user = CoachPrompt.reply(turns: turns, latest: q, calling: calling, details: recordDetails, style: callOpener,
+  950                                       openTimes: bookingText(), assumeYes: true)
+  951          let system = self.system
+  952          yesBranch = (q, Suggestion(say: "", cue: "", stage: ""), false)
+  953          CallTrace.event("yes_branch.request", ["question": q, "user_message": user])
+  954          let started = Date()
+  955          yesBranchTask = Task { [weak self] in
+  956              var text = ""
+  957              try? await LiveCoach.client(key).stream(system: system, user: user, onText: { text = $0 }, onUsage: { u in
+  958                  Task { @MainActor in CallTrace.event("claude.usage", u.merging(["yes_branch": 1]) { a, _ in a }) }
+  959              })
+  960              guard let self, !Task.isCancelled, self.yesBranch?.question == q else { return }
+  961              CallTrace.event("claude.done", ["yes_branch": true, "ms": Int(Date().timeIntervalSince(started) * 1000), "output": text])
+  962              var s = Suggestion.parse(text)
+  963              s.sayComplete = true
+  964              let problems = s.skip || s.say.isEmpty ? ["empty"] : Self.lineProblems(s)
+  965              if !problems.isEmpty, let fixed = LineRepair.fix(s.say) { s.say = fixed }
+  966              let left = s.skip || s.say.isEmpty ? ["empty"] : Self.lineProblems(s)
+  967              CallTrace.event("yes_branch.ready", ["question": q, "line": s.say, "ms": Int(Date().timeIntervalSince(started) * 1000),
+  968                                                   "passed": left.isEmpty, "problems": left])
+  969              if left.isEmpty { self.yesBranch = (q, s, true) } else { self.yesBranch = nil }
+  970              // They already said yes while this was being written: show it now, or fall back to a normal answer.
+  971              if let said = self.yesBranchWanted {
+  972                  self.yesBranchWanted = nil
+  973                  self.yesBranch = nil
+  974                  if left.isEmpty, self.status == .live, !self.doNotCall {
+  975                      CallTrace.event("yes_branch.used", ["question": q, "answer": said, "line": s.say, "late": true])
+  976                      self.markRequestStart()
+  977                      self.seq += 1
+  978                      self.offer(s, id: self.seq, kind: .reply, askedAt: Date())
+  979                  } else {
+  980                      self.ask(.reply, user: CoachPrompt.reply(turns: self.turns, latest: said, calling: self.calling,
+  981                                                               details: self.recordDetails, style: self.callOpener, openTimes: self.bookingText()))
+  982                  }
+  983              }
+  984          }
+  985      }
 ```
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 901–919
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 912–930
 
 ```swift
-  901      /// After each thing the rep says: if they're off script, get the next line ready now, while they
-  902      /// talk, so it's waiting when they pause. A queued line they've moved past is dropped first.
-  903      func prepareWhileRepTalks(_ text: String) {
-  904          guard status == .live, !doNotCall, !voicemailActive, !screenerActive, !suggestion.say.isEmpty else { return }
-  905          let since = repWordsInCall - repWordsAtLastAsk
-  906          guard !followPausedUntilQuiet,
-  907                FollowRepLimit.allowed(repWordsSinceLastAsk: since, followsThisStretch: followsThisStretch) else { return }
-  908          guard FollowRep.shouldPrepare(repJustSaid: text, recentRepSpeech: recentRepChunks.joined(separator: " "),
-  909                                        shownLine: suggestion.say, shownLineDelivered: lineDelivered,
-  910                                        repWordsSinceLastAsk: since) else { return }
-  911          if let p = pending {
-  912              pending = nil
-  913              let why = "the rep said \(since) words of their own since"
-  914              ActivityLog.add("Coach #\(p.id): queued line dropped while you talk (\(why); heuristic rule)")
-  915              followPausedUntilQuiet = true // they're on their own roll: no more drafts until they pause
-  916              CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)", "rule": "heuristic"], sug: p.id)
-  917          }
-  918          followRep(why: "preparing ahead: the rep is off script (\(since) words since the last request)")
-  919      }
+  912      /// After each thing the rep says: if they're off script, get the next line ready now, while they
+  913      /// talk, so it's waiting when they pause. A queued line they've moved past is dropped first.
+  914      func prepareWhileRepTalks(_ text: String) {
+  915          guard status == .live, !doNotCall, !voicemailActive, !screenerActive, !suggestion.say.isEmpty else { return }
+  916          let since = repWordsInCall - repWordsAtLastAsk
+  917          guard !followPausedUntilQuiet,
+  918                FollowRepLimit.allowed(repWordsSinceLastAsk: since, followsThisStretch: followsThisStretch) else { return }
+  919          guard FollowRep.shouldPrepare(repJustSaid: text, recentRepSpeech: recentRepChunks.joined(separator: " "),
+  920                                        shownLine: suggestion.say, shownLineDelivered: lineDelivered,
+  921                                        repWordsSinceLastAsk: since) else { return }
+  922          if let p = pending {
+  923              pending = nil
+  924              let why = "the rep said \(since) words of their own since"
+  925              ActivityLog.add("Coach #\(p.id): queued line dropped while you talk (\(why); heuristic rule)")
+  926              followPausedUntilQuiet = true // they're on their own roll: no more drafts until they pause
+  927              CallTrace.event("suggestion.discarded", ["line": p.suggestion.say, "why": "stale: \(why)", "rule": "heuristic"], sug: p.id)
+  928          }
+  929          followRep(why: "preparing ahead: the rep is off script (\(since) words since the last request)")
+  930      }
 ```
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 889–899
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 900–910
 
 ```swift
-  889      /// The rep went off script and paused without asking anything: the next line builds on what they
-  890      /// actually said, not on what the script expected.
-  891      func followRep(why: String = "the rep moved on from the queued line") {
-  892          guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
-  893                let rep = turns.last, rep.speaker == .rep else { return }
-  894          CallTrace.event("follow_rep", ["rep_said": rep.text, "why": why])
-  895          followsThisStretch += 1
-  896          nextIsRepLed = true
-  897          ask(.reply, user: CoachPrompt.reply(turns: turns, latest: rep.text, calling: calling, details: recordDetails,
-  898                                              style: callOpener, openTimes: bookingText(), repLed: true))
-  899      }
+  900      /// The rep went off script and paused without asking anything: the next line builds on what they
+  901      /// actually said, not on what the script expected.
+  902      func followRep(why: String = "the rep moved on from the queued line") {
+  903          guard status == .live, !doNotCall, !voicemailActive, !screenerActive,
+  904                let rep = turns.last, rep.speaker == .rep else { return }
+  905          CallTrace.event("follow_rep", ["rep_said": rep.text, "why": why])
+  906          followsThisStretch += 1
+  907          nextIsRepLed = true
+  908          ask(.reply, user: CoachPrompt.reply(turns: turns, latest: rep.text, calling: calling, details: recordDetails,
+  909                                              style: callOpener, openTimes: bookingText(), repLed: true))
+  910      }
 ```
 
 ### 4.10 Opt-out, handled in code
@@ -1715,7 +1722,7 @@ The matched row's `Say` is shown with no AI call (`instantAnswer`). Three things
 The script is not hand-written for this table: the generated backbone script contains these tables (`ScriptSkeleton.swift`), and `Coach.swift` line 435 rebuilds `ScriptAnswers` whenever the script text changes.
 
 
-`CoachCore/CoachCore.swift` lines 412–487
+`CoachCore/CoachCore.swift` lines 412–497
 
 ```swift
   412  /// Approved answers from the script (objections, questions, blockers), matched in code: no AI wait.
@@ -1772,112 +1779,125 @@ The script is not hand-written for this table: the generated backbone script con
   463          case .optOut, .ending: return (nil, "they're ending the call: higher-priority rule")
   464          case .question: return (nil, "they asked a direct question: answer it first, not a script row")
   465          case .rejection:
-  466              // Only an objection row for this same objection may answer a no.
+  466              // A clear no gets no sales question: only a row that just acknowledges (or offers one email) may answer it.
   467              let kind = ObjectionTracker.detect(said)
   468              guard kind != nil, ObjectionTracker.detect(phrase) == kind else {
   469                  return (nil, "they declined; the matched row (\(entry.id)) isn't about that")
   470              }
-  471          case .other: break
-  472          }
-  473          // High confidence only: the phrase must be most of what they said. A short phrase inside a longer
-  474          // sentence is a word overlap, not their meaning ("I don't know" in "I don't know that I'm the right fit").
-  475          let saidWords = Delivery.words(said).count
-  476          let phraseWords = Delivery.words(phrase).count
-  477          if saidWords > 14 { return (nil, "too long to be a one-line answer to a script row") }
-  478          if saidWords > 3, Double(phraseWords) / Double(saidWords) < 0.5 {
-  479              return (nil, "\"\(phrase)\" is only a small part of what they said")
-  480          }
-  481          // The row's own line asks something already answered on this call: don't ask it again.
-  482          if let repeated = answeredQuestions.first(where: { Repeats.same($0, entry.say) }) {
-  483              return (nil, "row \(entry.id) repeats a question already answered: \"\(repeated)\"")
-  484          }
-  485          return (entry, "\"\(phrase)\" matches what they meant")
-  486      }
-  487  }
+  471              let low = entry.say.lowercased()
+  472              if entry.say.contains("?"), !low.contains("email") {
+  473                  return (nil, "they clearly declined; row \(entry.id) asks another sales question")
+  474              }
+  475          case .objection:
+  476              // An objection may get the row written for that same objection.
+  477              let kind = ObjectionTracker.detect(said)
+  478              guard kind != nil, ObjectionTracker.detect(phrase) == kind else {
+  479                  return (nil, "they raised an objection; the matched row (\(entry.id)) isn't about it")
+  480              }
+  481          case .other: break
+  482          }
+  483          // High confidence only: the phrase must be most of what they said. A short phrase inside a longer
+  484          // sentence is a word overlap, not their meaning ("I don't know" in "I don't know that I'm the right fit").
+  485          let saidWords = Delivery.words(said).count
+  486          let phraseWords = Delivery.words(phrase).count
+  487          if saidWords > 14 { return (nil, "too long to be a one-line answer to a script row") }
+  488          if saidWords > 3, Double(phraseWords) / Double(saidWords) < 0.5 {
+  489              return (nil, "\"\(phrase)\" is only a small part of what they said")
+  490          }
+  491          // The row's own line asks something already answered on this call: don't ask it again.
+  492          if let repeated = answeredQuestions.first(where: { Repeats.same($0, entry.say) }) {
+  493              return (nil, "row \(entry.id) repeats a question already answered: \"\(repeated)\"")
+  494          }
+  495          return (entry, "\"\(phrase)\" matches what they meant")
+  496      }
+  497  }
 ```
 
 ### 6.1 The intent classifier and the role check added on Nov 20
 
-`CoachCore/CoachCore.swift` lines 1207–1229
+`CoachCore/CoachCore.swift` lines 1217–1242
 
 ```swift
- 1207  /// What the prospect's turn is doing, decided in code before any line is picked. Higher-priority
- 1208  /// situations (opt-out, ending, a direct question, a no) outrank the script's stage.
- 1209  public enum ConversationIntent: String, Sendable {
- 1210      case optOut, ending, question, rejection, other
- 1211  
- 1212      static let questionStarts: Set<String> = ["what", "who", "why", "how", "where", "when", "which", "is", "are", "do",
- 1213                                               "does", "can", "could", "would", "will", "did"]
- 1214      static let greetings: Set<String> = ["hello", "hi", "hey", "yes", "yeah", "speaking", "this", "is", "it"]
- 1215  
- 1216      public static func classify(_ said: String) -> ConversationIntent {
- 1217          let t = said.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
- 1218          let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
- 1219          if OptOut.matches(said) { return .optOut }
- 1220          if ObjectionTracker.detect(said) == "ending the call" || Rejection.isSignOff(said) { return .ending }
- 1221          if Rejection.isNo(said) || ["not interested", "wrong person", "no time", "call later", "happy as is"]
- 1222              .contains(ObjectionTracker.detect(said) ?? "") { return .rejection }
- 1223          // "Hello?" is a greeting, not a question.
- 1224          if words.count <= 3, words.allSatisfy(greetings.contains) { return .other }
- 1225          if t.contains("?") || AnswerEvidence.kind(said) == .deflection { return .question }
- 1226          if let first = words.first, questionStarts.contains(first), words.count >= 3 { return .question }
- 1227          return .other
- 1228      }
- 1229  }
+ 1217  /// What the prospect's turn is doing, decided in code before any line is picked. Higher-priority
+ 1218  /// situations (opt-out, ending, a direct question, a no) outrank the script's stage.
+ 1219  public enum ConversationIntent: String, Sendable {
+ 1220      /// rejection = a clear refusal ("not interested", "no thanks", "not a fit"): no more sales questions.
+ 1221      /// objection = a concern or reflex brush-off ("we use Gong", "no time", "send me info", "we're good"):
+ 1222      /// one relevant follow-up is fine.
+ 1223      case optOut, ending, question, rejection, objection, other
+ 1224  
+ 1225      static let questionStarts: Set<String> = ["what", "who", "why", "how", "where", "when", "which", "is", "are", "do",
+ 1226                                               "does", "can", "could", "would", "will", "did"]
+ 1227      static let greetings: Set<String> = ["hello", "hi", "hey", "yes", "yeah", "speaking", "this", "is", "it"]
+ 1228  
+ 1229      public static func classify(_ said: String) -> ConversationIntent {
+ 1230          let t = said.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+ 1231          let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+ 1232          if OptOut.matches(said) { return .optOut }
+ 1233          if ObjectionTracker.detect(said) == "ending the call" || Rejection.isSignOff(said) { return .ending }
+ 1234          if Rejection.isNo(said) { return .rejection }
+ 1235          // "Hello?" is a greeting, not a question.
+ 1236          if words.count <= 3, words.allSatisfy(greetings.contains) { return .other }
+ 1237          if t.contains("?") || AnswerEvidence.kind(said) == .deflection { return .question }
+ 1238          if let first = words.first, questionStarts.contains(first), words.count >= 3 { return .question }
+ 1239          if ObjectionTracker.detect(said) != nil { return .objection }
+ 1240          return .other
+ 1241      }
+ 1242  }
 ```
 
-`CoachCore/CoachCore.swift` lines 1231–1244
+`CoachCore/CoachCore.swift` lines 1244–1257
 
 ```swift
- 1231  /// The rep is the caller. A line must never have the rep claim the prospect's role (Nov 20:
- 1232  /// "Yes, I'm the one who decides on those tools.").
- 1233  public enum RoleCheck {
- 1234      static let claims = ["i'm the one who decides", "i am the one who decides", "i'm the one that decides",
- 1235                           "i'm the decision maker", "i am the decision maker", "i'm the decision-maker",
- 1236                           "i make the decisions", "i make those decisions", "i decide on", "i'm the one who handles",
- 1237                           "i'm in charge of", "i am in charge of", "i'm the right person", "i am the right person",
- 1238                           "i'm the one in charge", "i own that", "i handle those", "i handle that"]
- 1239  
- 1240      public static func speaksAsProspect(_ line: String) -> Bool {
- 1241          let t = line.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
- 1242          return claims.contains { t.contains($0) }
- 1243      }
- 1244  }
+ 1244  /// The rep is the caller. A line must never have the rep claim the prospect's role (Nov 20:
+ 1245  /// "Yes, I'm the one who decides on those tools.").
+ 1246  public enum RoleCheck {
+ 1247      static let claims = ["i'm the one who decides", "i am the one who decides", "i'm the one that decides",
+ 1248                           "i'm the decision maker", "i am the decision maker", "i'm the decision-maker",
+ 1249                           "i make the decisions", "i make those decisions", "i decide on", "i'm the one who handles",
+ 1250                           "i'm in charge of", "i am in charge of", "i'm the right person", "i am the right person",
+ 1251                           "i'm the one in charge", "i own that", "i handle those", "i handle that"]
+ 1252  
+ 1253      public static func speaksAsProspect(_ line: String) -> Bool {
+ 1254          let t = line.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+ 1255          return claims.contains { t.contains($0) }
+ 1256      }
+ 1257  }
 ```
 
 ### 6.2 The call site
 
-`ClarityLiveCoach/CoachModel+Lines.swift` lines 829–856
+`ClarityLiveCoach/CoachModel+Lines.swift` lines 840–867
 
 ```swift
-  829      /// The approved script answer for what they said, shown with no AI wait. True if one matched.
-  830      func instantAnswer(_ said: String) -> Bool {
-  831          guard status == .live, !doNotCall else { return false }
-  832          let answers = scriptAnswers
-  833          // Only when they're answering the rep's question: otherwise a phrase match is out of context.
-  834          let repJustAsked = turns.dropLast().last { $0.speaker == .rep }?.text.contains("?") ?? false
-  835          // Never ahead of higher-priority rules: a direct question, a no or a sign-off goes to the full coach.
-  836          let (hit, why) = answers.matchInContext(said, answeredQuestions: CoachPrompt.answeredQuestions)
-  837          guard repJustAsked, let e = hit else {
-  838              CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said,
-  839                                               "intent": ConversationIntent.classify(said).rawValue,
-  840                                               "why": repJustAsked ? why : "the rep hadn't just asked a question"])
-  841              return false
-  842          }
-  843          CallTrace.event("script.match", ["searched": answers.entries.count, "matched": true, "row": e.id,
-  844                                           "phrases": e.phrases, "said": said, "answer": e.say, "why": why])
-  845          if suggestion.say == e.say || pending?.suggestion.say == e.say { return true } // already up
-  846          coachTask?.cancel() // any slower AI draft for this is stale now
-  847          thinking = false
-  848          specBasis = nil
-  849          specHeld = nil
-  850          markRequestStart()
-  851          seq += 1
-  852          ActivityLog.add("Coach #\(seq): instant answer from your script (\(e.id)), no AI")
-  853          offer(Suggestion(say: e.say, cue: "From your script: \(e.id)", stage: "Objection", sayComplete: true),
-  854                id: seq, kind: .reply, askedAt: Date())
-  855          return true
-  856      }
+  840      /// The approved script answer for what they said, shown with no AI wait. True if one matched.
+  841      func instantAnswer(_ said: String) -> Bool {
+  842          guard status == .live, !doNotCall else { return false }
+  843          let answers = scriptAnswers
+  844          // Only when they're answering the rep's question: otherwise a phrase match is out of context.
+  845          let repJustAsked = turns.dropLast().last { $0.speaker == .rep }?.text.contains("?") ?? false
+  846          // Never ahead of higher-priority rules: a direct question, a no or a sign-off goes to the full coach.
+  847          let (hit, why) = answers.matchInContext(said, answeredQuestions: CoachPrompt.answeredQuestions)
+  848          guard repJustAsked, let e = hit else {
+  849              CallTrace.event("script.match", ["searched": answers.entries.count, "matched": false, "said": said,
+  850                                               "intent": ConversationIntent.classify(said).rawValue,
+  851                                               "why": repJustAsked ? why : "the rep hadn't just asked a question"])
+  852              return false
+  853          }
+  854          CallTrace.event("script.match", ["searched": answers.entries.count, "matched": true, "row": e.id,
+  855                                           "phrases": e.phrases, "said": said, "answer": e.say, "why": why])
+  856          if suggestion.say == e.say || pending?.suggestion.say == e.say { return true } // already up
+  857          coachTask?.cancel() // any slower AI draft for this is stale now
+  858          thinking = false
+  859          specBasis = nil
+  860          specHeld = nil
+  861          markRequestStart()
+  862          seq += 1
+  863          ActivityLog.add("Coach #\(seq): instant answer from your script (\(e.id)), no AI")
+  864          offer(Suggestion(say: e.say, cue: "From your script: \(e.id)", stage: "Objection", sayComplete: true),
+  865                id: seq, kind: .reply, askedAt: Date())
+  866          return true
+  867      }
 ```
 
 `ClarityLiveCoach/Coach.swift` lines 437–443
@@ -1900,381 +1920,381 @@ Both are plain structs in `CoachCore.swift`. They are fed every **final** turn (
 * **ObjectionTracker**: detects an objection from phrase lists (`kinds`), then follows it: raised -> addressed (the rep's words matched `addressCues` or an acknowledgement) -> resolved / still open / uncertain based on the prospect's next words (`resolvedWords`, `stillOpenWords`, `uncertainWords`, `contrastWords`). `promptText` also hard-codes three instructions: "won't share" = don't ask again, "ending the call" = close politely, anything else = the status.
 
 
-`CoachCore/CoachCore.swift` lines 489–597
+`CoachCore/CoachCore.swift` lines 499–607
 
 ```swift
-  489  /// Questions asked on the call and what happened to each, tracked in code from the transcript
-  490  /// (not inferred by the model). Fed to Haiku as facts: what's still open, what's already answered.
-  491  public struct QuestionTracker: Sendable {
-  492      public enum Speaker: String, Sendable { case rep, prospect }
-  493      public enum Status: String, Sendable { case open, answered, interrupted, abandoned, uncertain }
-  494      public struct Question: Sendable, Equatable {
-  495          public let id: Int
-  496          public let asker: Speaker
-  497          public let text: String
-  498          public var status: Status
-  499          public var answer: String
-  500      }
-  501      public enum Change: Sendable, Equatable {
-  502          case asked(Question), answered(Question), interrupted(Question), abandoned(Question), uncertain(Question)
-  503      }
-  504  
-  505      public private(set) var questions: [Question] = []
-  506      private var nextID = 1
-  507      public init() {}
-  508  
-  509      private static let filler: Set<String> = ["uh", "um", "hmm", "mm", "mhm", "uh-huh", "huh"]
-  510      private static let starts = ["who", "what", "when", "where", "why", "how", "do", "does", "did", "is", "are", "can",
-  511                                   "could", "would", "will", "should", "have", "has", "any", "which"]
-  512  
-  513      /// The questions in a turn: sentences ending in "?" (or starting like a question when no punctuation came through).
-  514      public static func questions(in text: String) -> [String] {
-  515          var out: [String] = []
-  516          var current = ""
-  517          for ch in text {
-  518              current.append(ch)
-  519              if ".?!".contains(ch) {
-  520                  let s = current.trimmingCharacters(in: .whitespaces)
-  521                  if ch == "?" { out.append(s) }
-  522                  current = ""
-  523              }
-  524          }
-  525          if out.isEmpty, !text.contains("."), let first = text.lowercased().split(separator: " ").first,
-  526             starts.contains(String(first)), text.split(separator: " ").count >= 4 {
-  527              out.append(text.trimmingCharacters(in: .whitespaces))
-  528          }
-  529          return out
-  530      }
-  531  
-  532      /// One finished turn. `overlapped`: the other person was still talking when this turn started.
-  533      public mutating func add(turn text: String, from speaker: Speaker, overlapped: Bool = false) -> [Change] {
-  534          var changes: [Change] = []
-  535          let words = text.lowercased().split(separator: " ").map { String($0).trimmingCharacters(in: .punctuationCharacters) }
-  536          let substantive = words.contains { !Self.filler.contains($0) && !$0.isEmpty }
-  537          // The other side's open questions: answered only by a real answer. A question back, a
-  538          // deflection or a refusal leaves it uncertain (still not answered). Cut off if talked over.
-  539          for i in questions.indices where questions[i].asker != speaker
-  540              && (questions[i].status == .open || questions[i].status == .uncertain) && substantive {
-  541              if overlapped, questions[i].status == .open {
-  542                  questions[i].status = .interrupted
-  543                  changes.append(.interrupted(questions[i]))
-  544              } else if AnswerEvidence.isAnswer(text) {
-  545                  questions[i].status = .answered
-  546                  questions[i].answer = text
-  547                  changes.append(.answered(questions[i]))
-  548              } else if questions[i].status == .open {
-  549                  questions[i].status = .uncertain
-  550                  questions[i].answer = text
-  551                  changes.append(.uncertain(questions[i]))
-  552              }
-  553          }
-  554          let asked = Self.questions(in: text)
-  555          // Asking again before getting an answer abandons the earlier one.
-  556          if !asked.isEmpty {
-  557              for i in questions.indices where questions[i].asker == speaker
-  558                  && (questions[i].status == .open || questions[i].status == .interrupted || questions[i].status == .uncertain) {
-  559                  questions[i].status = .abandoned
-  560                  changes.append(.abandoned(questions[i]))
-  561              }
-  562          }
-  563          for q in asked {
-  564              let new = Question(id: nextID, asker: speaker, text: q, status: .open, answer: "")
-  565              nextID += 1
-  566              questions.append(new)
-  567              changes.append(.asked(new))
-  568          }
-  569          return changes
-  570      }
-  571  
-  572      /// A reply that shares meaning with the question, or says enough to be a real answer.
-  573      static func isConfirmed(_ q: Question) -> Bool {
-  574          let n = Delivery.words(q.answer).count
-  575          if n >= 8 { return true }
-  576          let shared = Repeats.meaning(q.text).intersection(Repeats.meaning(q.answer)).count
-  577          return n >= 3 && shared >= 1
-  578      }
-  579  
-  580      /// For the model: facts about questions tracked by rules from the transcript.
-  581      public var promptText: String {
-  582          let repAnswered = questions.filter { $0.asker == .rep && $0.status == .answered }
-  583          let theirsOpen = questions.filter { $0.asker == .prospect && $0.status == .open }
-  584          let repOpen = questions.filter { $0.asker == .rep && ($0.status == .open || $0.status == .interrupted) }
-  585          let repUncertain = questions.filter { $0.asker == .rep && $0.status == .uncertain }
-  586          var lines: [String] = []
-  587          if !theirsOpen.isEmpty { lines.append("Prospect questions NOT yet answered (answer these first): " + theirsOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
-  588          if !repOpen.isEmpty { lines.append("Rep questions still waiting for an answer: " + repOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
-  589          if !repUncertain.isEmpty { lines.append("Rep questions NOT answered (they asked back, deflected or declined; don't treat as answered, don't push): " + repUncertain.map { "\"\($0.text)\" -> they said \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
-  590          // Answered is judged by simple rules (the next reply looked like an answer), so it comes in two strengths.
-  591          let confirmed = repAnswered.filter { Self.isConfirmed($0) }
-  592          let probable = repAnswered.filter { !Self.isConfirmed($0) }
-  593          if !confirmed.isEmpty { lines.append("Asked AND answered, their words show it (never ask again): " + confirmed.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
-  594          if !probable.isEmpty { lines.append("Probably answered (a short or indirect reply; never ask again, but don't treat their answer as settled): " + probable.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
-  595          return lines.joined(separator: "\n")
-  596      }
-  597  }
+  499  /// Questions asked on the call and what happened to each, tracked in code from the transcript
+  500  /// (not inferred by the model). Fed to Haiku as facts: what's still open, what's already answered.
+  501  public struct QuestionTracker: Sendable {
+  502      public enum Speaker: String, Sendable { case rep, prospect }
+  503      public enum Status: String, Sendable { case open, answered, interrupted, abandoned, uncertain }
+  504      public struct Question: Sendable, Equatable {
+  505          public let id: Int
+  506          public let asker: Speaker
+  507          public let text: String
+  508          public var status: Status
+  509          public var answer: String
+  510      }
+  511      public enum Change: Sendable, Equatable {
+  512          case asked(Question), answered(Question), interrupted(Question), abandoned(Question), uncertain(Question)
+  513      }
+  514  
+  515      public private(set) var questions: [Question] = []
+  516      private var nextID = 1
+  517      public init() {}
+  518  
+  519      private static let filler: Set<String> = ["uh", "um", "hmm", "mm", "mhm", "uh-huh", "huh"]
+  520      private static let starts = ["who", "what", "when", "where", "why", "how", "do", "does", "did", "is", "are", "can",
+  521                                   "could", "would", "will", "should", "have", "has", "any", "which"]
+  522  
+  523      /// The questions in a turn: sentences ending in "?" (or starting like a question when no punctuation came through).
+  524      public static func questions(in text: String) -> [String] {
+  525          var out: [String] = []
+  526          var current = ""
+  527          for ch in text {
+  528              current.append(ch)
+  529              if ".?!".contains(ch) {
+  530                  let s = current.trimmingCharacters(in: .whitespaces)
+  531                  if ch == "?" { out.append(s) }
+  532                  current = ""
+  533              }
+  534          }
+  535          if out.isEmpty, !text.contains("."), let first = text.lowercased().split(separator: " ").first,
+  536             starts.contains(String(first)), text.split(separator: " ").count >= 4 {
+  537              out.append(text.trimmingCharacters(in: .whitespaces))
+  538          }
+  539          return out
+  540      }
+  541  
+  542      /// One finished turn. `overlapped`: the other person was still talking when this turn started.
+  543      public mutating func add(turn text: String, from speaker: Speaker, overlapped: Bool = false) -> [Change] {
+  544          var changes: [Change] = []
+  545          let words = text.lowercased().split(separator: " ").map { String($0).trimmingCharacters(in: .punctuationCharacters) }
+  546          let substantive = words.contains { !Self.filler.contains($0) && !$0.isEmpty }
+  547          // The other side's open questions: answered only by a real answer. A question back, a
+  548          // deflection or a refusal leaves it uncertain (still not answered). Cut off if talked over.
+  549          for i in questions.indices where questions[i].asker != speaker
+  550              && (questions[i].status == .open || questions[i].status == .uncertain) && substantive {
+  551              if overlapped, questions[i].status == .open {
+  552                  questions[i].status = .interrupted
+  553                  changes.append(.interrupted(questions[i]))
+  554              } else if AnswerEvidence.isAnswer(text) {
+  555                  questions[i].status = .answered
+  556                  questions[i].answer = text
+  557                  changes.append(.answered(questions[i]))
+  558              } else if questions[i].status == .open {
+  559                  questions[i].status = .uncertain
+  560                  questions[i].answer = text
+  561                  changes.append(.uncertain(questions[i]))
+  562              }
+  563          }
+  564          let asked = Self.questions(in: text)
+  565          // Asking again before getting an answer abandons the earlier one.
+  566          if !asked.isEmpty {
+  567              for i in questions.indices where questions[i].asker == speaker
+  568                  && (questions[i].status == .open || questions[i].status == .interrupted || questions[i].status == .uncertain) {
+  569                  questions[i].status = .abandoned
+  570                  changes.append(.abandoned(questions[i]))
+  571              }
+  572          }
+  573          for q in asked {
+  574              let new = Question(id: nextID, asker: speaker, text: q, status: .open, answer: "")
+  575              nextID += 1
+  576              questions.append(new)
+  577              changes.append(.asked(new))
+  578          }
+  579          return changes
+  580      }
+  581  
+  582      /// A reply that shares meaning with the question, or says enough to be a real answer.
+  583      static func isConfirmed(_ q: Question) -> Bool {
+  584          let n = Delivery.words(q.answer).count
+  585          if n >= 8 { return true }
+  586          let shared = Repeats.meaning(q.text).intersection(Repeats.meaning(q.answer)).count
+  587          return n >= 3 && shared >= 1
+  588      }
+  589  
+  590      /// For the model: facts about questions tracked by rules from the transcript.
+  591      public var promptText: String {
+  592          let repAnswered = questions.filter { $0.asker == .rep && $0.status == .answered }
+  593          let theirsOpen = questions.filter { $0.asker == .prospect && $0.status == .open }
+  594          let repOpen = questions.filter { $0.asker == .rep && ($0.status == .open || $0.status == .interrupted) }
+  595          let repUncertain = questions.filter { $0.asker == .rep && $0.status == .uncertain }
+  596          var lines: [String] = []
+  597          if !theirsOpen.isEmpty { lines.append("Prospect questions NOT yet answered (answer these first): " + theirsOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
+  598          if !repOpen.isEmpty { lines.append("Rep questions still waiting for an answer: " + repOpen.map { "\"\($0.text)\"" }.joined(separator: "; ")) }
+  599          if !repUncertain.isEmpty { lines.append("Rep questions NOT answered (they asked back, deflected or declined; don't treat as answered, don't push): " + repUncertain.map { "\"\($0.text)\" -> they said \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
+  600          // Answered is judged by simple rules (the next reply looked like an answer), so it comes in two strengths.
+  601          let confirmed = repAnswered.filter { Self.isConfirmed($0) }
+  602          let probable = repAnswered.filter { !Self.isConfirmed($0) }
+  603          if !confirmed.isEmpty { lines.append("Asked AND answered, their words show it (never ask again): " + confirmed.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
+  604          if !probable.isEmpty { lines.append("Probably answered (a short or indirect reply; never ask again, but don't treat their answer as settled): " + probable.map { "\"\($0.text)\" -> \"\($0.answer.prefix(80))\"" }.joined(separator: "; ")) }
+  605          return lines.joined(separator: "\n")
+  606      }
+  607  }
 ```
 
-`CoachCore/CoachCore.swift` lines 599–742
+`CoachCore/CoachCore.swift` lines 609–752
 
 ```swift
-  599  /// Objections on this call, tracked in code from the transcript (no AI).
-  600  /// Addressed is not resolved: "addressed" only means the rep answered it. Only the prospect's
-  601  /// next words can mark it resolved, still open, or uncertain.
-  602  public struct ObjectionTracker: Sendable {
-  603      public enum Status: String, Sendable { case raised, addressed, resolved, stillOpen = "still_open", uncertain }
-  604      public struct Objection: Sendable, Equatable {
-  605          public let id: Int
-  606          public let kind: String          // e.g. "not interested"
-  607          public let raisedText: String    // their exact words
-  608          public let raisedTurn: Int       // transcript turn number
-  609          public var status: Status
-  610          public var addressedText = ""    // the rep's answer
-  611          public var addressedTurn = 0
-  612          public var evidenceText = ""     // the prospect's words that decided resolved / still open / uncertain
-  613          public var evidenceTurn = 0
-  614      }
-  615      public struct Change: Sendable, Equatable {
-  616          public let objection: Objection
-  617          public let from: Status?
-  618          public let why: String
-  619      }
-  620  
-  621      /// Common cold-call objections: a name and the phrases that mean it.
-  622      public static let kinds: [(String, [String])] = [
-  623          ("won't share", ["can't discuss", "cannot discuss", "not something i can discuss", "can't share", "cannot share",
-  624                           "not something i can share", "confidential", "can't talk about", "not able to discuss", "not at liberty"]),
-  625          ("ending the call", ["thank you for calling", "thanks for calling", "thanks for the call", "have a good day",
-  626                               "have a great day", "i have to go", "i've got to go", "gotta go", "i need to go"]),
-  627          ("not interested", ["not interested", "no interest", "not for us", "we're good", "we are good", "i'm good", "pass on",
-  628                              "don't know that i'm interested", "don't think i'm interested", "not the right fit",
-  629                              "right fit for this", "not a good fit", "not a fit"]),
-  630          ("no time", ["no time", "too busy", "i'm busy", "in a meeting", "bad time", "not a good time", "driving"]),
-  631          ("send info", ["send me an email", "send me something", "send me info", "email me", "send it over", "send me some"]),
-  632          ("already have it", ["we already have", "we already use", "we use another", "we use a ", "already working with", "we have a partner", "we have someone", "in house", "in-house"]),
-  633          ("happy as is", ["happy with", "it's working", "works fine", "we're fine", "don't need", "do not need", "no need"]),
-  634          ("price", ["too expensive", "no budget", "can't afford", "cost too much", "costs too much", "not in the budget"]),
-  635          ("wrong person", ["not the right person", "not my area", "not my department", "talk to someone else", "i don't handle"]),
-  636          ("call later", ["call me later", "call back later", "call me next", "reach out next", "maybe later", "not right now"]),
-  637          ("trust", ["how did you get my number", "who gave you", "is this a sales call", "is this a scam"]),
-  638      ]
-  639      static let stillOpenWords = ["no", "nope", "still not", "not interested", "i said", "like i said", "already told you", "not really", "i don't think so",
-  640                                   "can't do", "cannot do", "won't work", "not looking", "not a priority", "no thanks"]
-  641      static let contrastWords = ["but", "however", "though", "although"]
-  642      /// Words that show the rep spoke to this kind of objection (plus general acknowledgments).
-  643      static let addressCues: [String: [String]] = [
-  644          "not interested": ["interested", "fair", "understand", "get it", "makes sense", "hear you"],
-  645          "no time": ["quick", "time", "seconds", "minute", "busy", "later", "call back"],
-  646          "send info": ["email", "send", "info"],
-  647          "already have it": ["already", "use", "using", "partner", "tool", "today", "working", "current"],
-  648          "happy as is": ["fine", "working", "need", "happy", "good", "today"],
-  649          "price": ["cost", "price", "budget", "free", "expensive", "money", "invest", "spend"],
-  650          "wrong person": ["right person", "who", "handles", "point me", "best person", "in charge"],
-  651          "call later": ["later", "when", "better time", "call back", "tomorrow", "next week"],
-  652          "trust": ["number", "list", "linkedin", "found", "sales call", "honest", "research"],
-  653          "won't share": ["no problem", "understand", "fair", "of course", "totally"],
-  654          "ending the call": [],
-  655      ]
-  656      static let acknowledgments = ["fair", "understand", "totally get", "get it", "makes sense", "hear you", "appreciate", "no problem", "of course"]
-  657  
-  658      /// Did the rep's words speak to this objection? Not just any 3 words: words tied to it, or an acknowledgment.
-  659      static func addresses(kind: String, text: String) -> Bool {
-  660          has(text, (addressCues[kind] ?? []) + acknowledgments)
-  661      }
-  662      static let resolvedWords = ["sure", "okay", "ok", "go ahead", "yeah", "yes", "tell me", "what is it", "how does", "how much", "what do you",
-  663                                  "that's fair", "fair enough", "makes sense", "i guess so", "interesting", "send it", "let's do", "that works"]
-  664      static let uncertainWords = ["hmm", "maybe", "i don't know", "not sure", "we'll see", "possibly", "i guess"]
-  665  
-  666      public private(set) var objections: [Objection] = []
-  667      private var nextID = 1
-  668      public init() {}
-  669  
-  670      /// The objection kind in these words, or nil. Script "sounds like" phrases can add their own kinds.
-  671      public static func detect(_ text: String, extra: [(String, [String])] = []) -> String? {
-  672          let t = " " + text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
-  673          return (extra + kinds).first { $0.1.contains { t.contains($0) } }?.0
-  674      }
+  609  /// Objections on this call, tracked in code from the transcript (no AI).
+  610  /// Addressed is not resolved: "addressed" only means the rep answered it. Only the prospect's
+  611  /// next words can mark it resolved, still open, or uncertain.
+  612  public struct ObjectionTracker: Sendable {
+  613      public enum Status: String, Sendable { case raised, addressed, resolved, stillOpen = "still_open", uncertain }
+  614      public struct Objection: Sendable, Equatable {
+  615          public let id: Int
+  616          public let kind: String          // e.g. "not interested"
+  617          public let raisedText: String    // their exact words
+  618          public let raisedTurn: Int       // transcript turn number
+  619          public var status: Status
+  620          public var addressedText = ""    // the rep's answer
+  621          public var addressedTurn = 0
+  622          public var evidenceText = ""     // the prospect's words that decided resolved / still open / uncertain
+  623          public var evidenceTurn = 0
+  624      }
+  625      public struct Change: Sendable, Equatable {
+  626          public let objection: Objection
+  627          public let from: Status?
+  628          public let why: String
+  629      }
+  630  
+  631      /// Common cold-call objections: a name and the phrases that mean it.
+  632      public static let kinds: [(String, [String])] = [
+  633          ("won't share", ["can't discuss", "cannot discuss", "not something i can discuss", "can't share", "cannot share",
+  634                           "not something i can share", "confidential", "can't talk about", "not able to discuss", "not at liberty"]),
+  635          ("ending the call", ["thank you for calling", "thanks for calling", "thanks for the call", "have a good day",
+  636                               "have a great day", "i have to go", "i've got to go", "gotta go", "i need to go"]),
+  637          ("not interested", ["not interested", "no interest", "not for us", "we're good", "we are good", "i'm good", "pass on",
+  638                              "don't know that i'm interested", "don't think i'm interested", "not the right fit",
+  639                              "right fit for this", "not a good fit", "not a fit"]),
+  640          ("no time", ["no time", "too busy", "i'm busy", "in a meeting", "bad time", "not a good time", "driving"]),
+  641          ("send info", ["send me an email", "send me something", "send me info", "email me", "send it over", "send me some"]),
+  642          ("already have it", ["we already have", "we already use", "we use another", "we use a ", "already working with", "we have a partner", "we have someone", "in house", "in-house"]),
+  643          ("happy as is", ["happy with", "it's working", "works fine", "we're fine", "don't need", "do not need", "no need"]),
+  644          ("price", ["too expensive", "no budget", "can't afford", "cost too much", "costs too much", "not in the budget"]),
+  645          ("wrong person", ["not the right person", "not my area", "not my department", "talk to someone else", "i don't handle"]),
+  646          ("call later", ["call me later", "call back later", "call me next", "reach out next", "maybe later", "not right now"]),
+  647          ("trust", ["how did you get my number", "who gave you", "is this a sales call", "is this a scam"]),
+  648      ]
+  649      static let stillOpenWords = ["no", "nope", "still not", "not interested", "i said", "like i said", "already told you", "not really", "i don't think so",
+  650                                   "can't do", "cannot do", "won't work", "not looking", "not a priority", "no thanks"]
+  651      static let contrastWords = ["but", "however", "though", "although"]
+  652      /// Words that show the rep spoke to this kind of objection (plus general acknowledgments).
+  653      static let addressCues: [String: [String]] = [
+  654          "not interested": ["interested", "fair", "understand", "get it", "makes sense", "hear you"],
+  655          "no time": ["quick", "time", "seconds", "minute", "busy", "later", "call back"],
+  656          "send info": ["email", "send", "info"],
+  657          "already have it": ["already", "use", "using", "partner", "tool", "today", "working", "current"],
+  658          "happy as is": ["fine", "working", "need", "happy", "good", "today"],
+  659          "price": ["cost", "price", "budget", "free", "expensive", "money", "invest", "spend"],
+  660          "wrong person": ["right person", "who", "handles", "point me", "best person", "in charge"],
+  661          "call later": ["later", "when", "better time", "call back", "tomorrow", "next week"],
+  662          "trust": ["number", "list", "linkedin", "found", "sales call", "honest", "research"],
+  663          "won't share": ["no problem", "understand", "fair", "of course", "totally"],
+  664          "ending the call": [],
+  665      ]
+  666      static let acknowledgments = ["fair", "understand", "totally get", "get it", "makes sense", "hear you", "appreciate", "no problem", "of course"]
+  667  
+  668      /// Did the rep's words speak to this objection? Not just any 3 words: words tied to it, or an acknowledgment.
+  669      static func addresses(kind: String, text: String) -> Bool {
+  670          has(text, (addressCues[kind] ?? []) + acknowledgments)
+  671      }
+  672      static let resolvedWords = ["sure", "okay", "ok", "go ahead", "yeah", "yes", "tell me", "what is it", "how does", "how much", "what do you",
+  673                                  "that's fair", "fair enough", "makes sense", "i guess so", "interesting", "send it", "let's do", "that works"]
+  674      static let uncertainWords = ["hmm", "maybe", "i don't know", "not sure", "we'll see", "possibly", "i guess"]
   675  
-  676      static func has(_ text: String, _ words: [String]) -> Bool {
-  677          let t = " " + text.lowercased().components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'")).inverted).joined(separator: " ") + " "
-  678          return words.contains { t.contains(" \($0) ") }
-  679      }
-  680  
-  681      /// Feed each finalized turn. `turn` is the transcript turn number (for evidence in the trace).
-  682      public mutating func add(turn text: String, from speaker: QuestionTracker.Speaker, turn: Int,
-  683                               extra: [(String, [String])] = []) -> [Change] {
-  684          var out: [Change] = []
-  685          func set(_ i: Int, _ s: Status, why: String) {
-  686              let from = objections[i].status
-  687              objections[i].status = s
-  688              out.append(Change(objection: objections[i], from: from, why: why))
-  689          }
-  690          if speaker == .rep {
-  691              // The rep answered any objection still waiting. Addressed, not resolved.
-  692              for i in objections.indices where [.raised, .stillOpen].contains(objections[i].status)
-  693                  && Self.addresses(kind: objections[i].kind, text: text) {
-  694                  objections[i].addressedText = text
-  695                  objections[i].addressedTurn = turn
-  696                  set(i, .addressed, why: "rep answered it (turn \(turn)); waiting on the prospect")
-  697              }
-  698              return out
+  676      public private(set) var objections: [Objection] = []
+  677      private var nextID = 1
+  678      public init() {}
+  679  
+  680      /// The objection kind in these words, or nil. Script "sounds like" phrases can add their own kinds.
+  681      public static func detect(_ text: String, extra: [(String, [String])] = []) -> String? {
+  682          let t = " " + text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
+  683          return (extra + kinds).first { $0.1.contains { t.contains($0) } }?.0
+  684      }
+  685  
+  686      static func has(_ text: String, _ words: [String]) -> Bool {
+  687          let t = " " + text.lowercased().components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'")).inverted).joined(separator: " ") + " "
+  688          return words.contains { t.contains(" \($0) ") }
+  689      }
+  690  
+  691      /// Feed each finalized turn. `turn` is the transcript turn number (for evidence in the trace).
+  692      public mutating func add(turn text: String, from speaker: QuestionTracker.Speaker, turn: Int,
+  693                               extra: [(String, [String])] = []) -> [Change] {
+  694          var out: [Change] = []
+  695          func set(_ i: Int, _ s: Status, why: String) {
+  696              let from = objections[i].status
+  697              objections[i].status = s
+  698              out.append(Change(objection: objections[i], from: from, why: why))
   699          }
-  700          // Prospect: first judge any objection the rep just addressed, from their words only.
-  701          let newKind = Self.detect(text, extra: extra)
-  702          for i in objections.indices where objections[i].status == .addressed {
-  703              objections[i].evidenceText = text
-  704              objections[i].evidenceTurn = turn
-  705              if newKind == objections[i].kind || Self.has(text, Self.stillOpenWords) {
-  706                  set(i, .stillOpen, why: "prospect pushed back again (turn \(turn))")
-  707              } else if Self.has(text, Self.uncertainWords) {
-  708                  set(i, .uncertain, why: "prospect's answer is unsure (turn \(turn))")
-  709              } else if Self.has(text, Self.resolvedWords) && !Self.has(text, Self.contrastWords) {
-  710                  set(i, .resolved, why: "prospect agreed (turn \(turn))")
-  711              } else if Self.has(text, Self.contrastWords) {
-  712                  set(i, .uncertain, why: "prospect agreed but added a 'but' (turn \(turn))")
-  713              } else {
-  714                  set(i, .uncertain, why: "prospect's answer doesn't settle it (turn \(turn))")
-  715              }
-  716          }
-  717          // A new objection (not one already open of the same kind).
-  718          if let kind = newKind, !objections.contains(where: { $0.kind == kind && $0.status != .resolved }) {
-  719              objections.append(Objection(id: nextID, kind: kind, raisedText: text, raisedTurn: turn, status: .raised))
-  720              nextID += 1
-  721              out.append(Change(objection: objections[objections.count - 1], from: nil, why: "prospect raised it (turn \(turn))"))
-  722          }
-  723          return out
-  724      }
-  725  
-  726      /// For Claude's context. Empty when there are none.
-  727      public var promptText: String {
-  728          objections.map { o in
-  729              var line = "- \(o.kind) (turn \(o.raisedTurn), \"\(o.raisedText)\"): "
-  730              switch o.status {
-  731              case .raised where o.kind == "won't share": line += "they won't share this. Respect it: don't ask about it again"
-  732              case .raised where o.kind == "ending the call": line += "they're ending the call. Thank them and close politely, no more questions"
-  733              case .raised: line += "NOT answered yet"
-  734              case .addressed: line += "rep answered it, prospect hasn't responded yet. NOT resolved"
-  735              case .resolved: line += "resolved: they said \"\(o.evidenceText)\""
-  736              case .stillOpen: line += "STILL OPEN after the rep's answer: they said \"\(o.evidenceText)\""
-  737              case .uncertain: line += "unclear: they said \"\(o.evidenceText)\""
-  738              }
-  739              return line
-  740          }.joined(separator: "\n")
-  741      }
-  742  }
+  700          if speaker == .rep {
+  701              // The rep answered any objection still waiting. Addressed, not resolved.
+  702              for i in objections.indices where [.raised, .stillOpen].contains(objections[i].status)
+  703                  && Self.addresses(kind: objections[i].kind, text: text) {
+  704                  objections[i].addressedText = text
+  705                  objections[i].addressedTurn = turn
+  706                  set(i, .addressed, why: "rep answered it (turn \(turn)); waiting on the prospect")
+  707              }
+  708              return out
+  709          }
+  710          // Prospect: first judge any objection the rep just addressed, from their words only.
+  711          let newKind = Self.detect(text, extra: extra)
+  712          for i in objections.indices where objections[i].status == .addressed {
+  713              objections[i].evidenceText = text
+  714              objections[i].evidenceTurn = turn
+  715              if newKind == objections[i].kind || Self.has(text, Self.stillOpenWords) {
+  716                  set(i, .stillOpen, why: "prospect pushed back again (turn \(turn))")
+  717              } else if Self.has(text, Self.uncertainWords) {
+  718                  set(i, .uncertain, why: "prospect's answer is unsure (turn \(turn))")
+  719              } else if Self.has(text, Self.resolvedWords) && !Self.has(text, Self.contrastWords) {
+  720                  set(i, .resolved, why: "prospect agreed (turn \(turn))")
+  721              } else if Self.has(text, Self.contrastWords) {
+  722                  set(i, .uncertain, why: "prospect agreed but added a 'but' (turn \(turn))")
+  723              } else {
+  724                  set(i, .uncertain, why: "prospect's answer doesn't settle it (turn \(turn))")
+  725              }
+  726          }
+  727          // A new objection (not one already open of the same kind).
+  728          if let kind = newKind, !objections.contains(where: { $0.kind == kind && $0.status != .resolved }) {
+  729              objections.append(Objection(id: nextID, kind: kind, raisedText: text, raisedTurn: turn, status: .raised))
+  730              nextID += 1
+  731              out.append(Change(objection: objections[objections.count - 1], from: nil, why: "prospect raised it (turn \(turn))"))
+  732          }
+  733          return out
+  734      }
+  735  
+  736      /// For Claude's context. Empty when there are none.
+  737      public var promptText: String {
+  738          objections.map { o in
+  739              var line = "- \(o.kind) (turn \(o.raisedTurn), \"\(o.raisedText)\"): "
+  740              switch o.status {
+  741              case .raised where o.kind == "won't share": line += "they won't share this. Respect it: don't ask about it again"
+  742              case .raised where o.kind == "ending the call": line += "they're ending the call. Thank them and close politely, no more questions"
+  743              case .raised: line += "NOT answered yet"
+  744              case .addressed: line += "rep answered it, prospect hasn't responded yet. NOT resolved"
+  745              case .resolved: line += "resolved: they said \"\(o.evidenceText)\""
+  746              case .stillOpen: line += "STILL OPEN after the rep's answer: they said \"\(o.evidenceText)\""
+  747              case .uncertain: line += "unclear: they said \"\(o.evidenceText)\""
+  748              }
+  749              return line
+  750          }.joined(separator: "\n")
+  751      }
+  752  }
 ```
 
 ### 7.1 The small rules the trackers and the coach lean on
 
-`CoachCore/CoachCore.swift` lines 974–996
+`CoachCore/CoachCore.swift` lines 984–1006
 
 ```swift
-  974  /// Is the prospect's reply an answer? A question back, a deflection or a refusal is not.
-  975  public enum AnswerEvidence {
-  976      public enum Kind: String, Sendable { case answer, counterQuestion, deflection, unsure, filler }
-  977      static let filler: Set<String> = ["uh", "um", "hmm", "mm", "mhm", "uh-huh", "huh"]
-  978      static let deflections = ["why are you asking", "why do you ask", "what do you mean", "who is this", "who's this",
-  979          "can't discuss", "cannot discuss", "not something i can", "rather not", "none of your", "not going to share",
-  980          "can't share", "cannot share", "why do you want to know", "what's this about", "what is this about", "can't say"]
-  981      static let unsure = ["not sure", "i don't know", "no idea", "hard to say", "it depends", "depends"]
-  982      static let whStarts: Set<String> = ["why", "what", "who", "how", "huh", "meaning", "sorry"]
-  983  
-  984      public static func kind(_ text: String) -> Kind {
-  985          let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
-  986          let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "-" }).map(String.init)
-  987          if words.isEmpty || words.allSatisfy(filler.contains) { return .filler }
-  988          if deflections.contains(where: { t.contains($0) }) { return .deflection }
-  989          if unsure.contains(where: { t.contains($0) }) { return .unsure }
-  990          if t.contains("?") { return .counterQuestion }
-  991          if words.count <= 3, let first = words.first, whStarts.contains(first) { return .counterQuestion }
-  992          return .answer
-  993      }
-  994  
-  995      public static func isAnswer(_ text: String) -> Bool { kind(text) == .answer }
-  996  }
+  984  /// Is the prospect's reply an answer? A question back, a deflection or a refusal is not.
+  985  public enum AnswerEvidence {
+  986      public enum Kind: String, Sendable { case answer, counterQuestion, deflection, unsure, filler }
+  987      static let filler: Set<String> = ["uh", "um", "hmm", "mm", "mhm", "uh-huh", "huh"]
+  988      static let deflections = ["why are you asking", "why do you ask", "what do you mean", "who is this", "who's this",
+  989          "can't discuss", "cannot discuss", "not something i can", "rather not", "none of your", "not going to share",
+  990          "can't share", "cannot share", "why do you want to know", "what's this about", "what is this about", "can't say"]
+  991      static let unsure = ["not sure", "i don't know", "no idea", "hard to say", "it depends", "depends"]
+  992      static let whStarts: Set<String> = ["why", "what", "who", "how", "huh", "meaning", "sorry"]
+  993  
+  994      public static func kind(_ text: String) -> Kind {
+  995          let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+  996          let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "-" }).map(String.init)
+  997          if words.isEmpty || words.allSatisfy(filler.contains) { return .filler }
+  998          if deflections.contains(where: { t.contains($0) }) { return .deflection }
+  999          if unsure.contains(where: { t.contains($0) }) { return .unsure }
+ 1000          if t.contains("?") { return .counterQuestion }
+ 1001          if words.count <= 3, let first = words.first, whStarts.contains(first) { return .counterQuestion }
+ 1002          return .answer
+ 1003      }
+ 1004  
+ 1005      public static func isAnswer(_ text: String) -> Bool { kind(text) == .answer }
+ 1006  }
 ```
 
-`CoachCore/CoachCore.swift` lines 911–931
+`CoachCore/CoachCore.swift` lines 921–941
 
 ```swift
-  911  /// What kind of answer the prospect gave to the rep's yes/no question. Only a clear yes uses the
-  912  /// line written ahead; no, unsure, or anything else gets a fresh answer from their real words.
-  913  public enum ProspectReply {
-  914      public enum Kind: String, Sendable { case yes, no, unsure, other }
-  915      static let yesWords: Set<String> = ["yes", "yeah", "yep", "yup", "sure", "okay", "ok", "correct", "right", "absolutely",
-  916          "definitely", "totally", "go", "ahead", "fire", "away", "shoot", "of", "course", "please", "alright", "fine", "i", "guess", "it", "does", "is", "true"]
-  917  
-  918      public static func kind(_ text: String) -> Kind {
-  919          let t = " " + text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
-  920          let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
-  921          guard !words.isEmpty else { return .other }
-  922          if ["not sure", "maybe", "depends", "hmm", "i don't know", "kind of", "sort of", "we'll see"].contains(where: { t.contains($0) }) { return .unsure }
-  923          if words.contains("no") || words.contains("nope") || words.contains("nah") || t.contains("not really")
-  924              || t.contains("not interested") || t.contains("i'm good") || t.contains("don't") || t.contains("not now") { return .no }
-  925          if words.count <= 5, words.allSatisfy(yesWords.contains),
-  926             words.contains(where: { ["yes", "yeah", "yep", "yup", "sure", "okay", "ok", "correct", "right", "absolutely", "definitely", "go", "shoot", "alright", "fine", "true"].contains($0) }) {
-  927              return .yes
-  928          }
-  929          return .other
-  930      }
-  931  }
+  921  /// What kind of answer the prospect gave to the rep's yes/no question. Only a clear yes uses the
+  922  /// line written ahead; no, unsure, or anything else gets a fresh answer from their real words.
+  923  public enum ProspectReply {
+  924      public enum Kind: String, Sendable { case yes, no, unsure, other }
+  925      static let yesWords: Set<String> = ["yes", "yeah", "yep", "yup", "sure", "okay", "ok", "correct", "right", "absolutely",
+  926          "definitely", "totally", "go", "ahead", "fire", "away", "shoot", "of", "course", "please", "alright", "fine", "i", "guess", "it", "does", "is", "true"]
+  927  
+  928      public static func kind(_ text: String) -> Kind {
+  929          let t = " " + text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
+  930          let words = t.split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+  931          guard !words.isEmpty else { return .other }
+  932          if ["not sure", "maybe", "depends", "hmm", "i don't know", "kind of", "sort of", "we'll see"].contains(where: { t.contains($0) }) { return .unsure }
+  933          if words.contains("no") || words.contains("nope") || words.contains("nah") || t.contains("not really")
+  934              || t.contains("not interested") || t.contains("i'm good") || t.contains("don't") || t.contains("not now") { return .no }
+  935          if words.count <= 5, words.allSatisfy(yesWords.contains),
+  936             words.contains(where: { ["yes", "yeah", "yep", "yup", "sure", "okay", "ok", "correct", "right", "absolutely", "definitely", "go", "shoot", "alright", "fine", "true"].contains($0) }) {
+  937              return .yes
+  938          }
+  939          return .other
+  940      }
+  941  }
 ```
 
-`CoachCore/CoachCore.swift` lines 1136–1165
+`CoachCore/CoachCore.swift` lines 1146–1175
 
 ```swift
- 1136  /// "Two no's and a go": one no gets one respectful question; two no's (or a no plus a sign-off) ends it (call 6).
- 1137  public enum Rejection {
- 1138      // Only clear no's. Reflex brush-offs ("we're good", "I'm good") don't count: they often open up right after.
- 1139      static let nos = ["not interested", "not relevant", "no thanks", "no thank you", "not a fit",
- 1140                        "not for us", "not really interested", "doesn't apply", "not something we need",
- 1141                        "not the right fit", "not a good fit", "right fit for this"]
- 1142      static let signOffs = ["yep thanks", "yep, thanks", "bye", "take care", "have a good one", "have a good day", "have a great day",
- 1143                             "gotta go", "got to go", "thanks anyway", "thank you anyway"]
- 1144  
- 1145      public static func isNo(_ text: String) -> Bool {
- 1146          let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
- 1147          // "...though our CRM data is a mess": a no that opens a door isn't a no.
- 1148          if [" but ", " though", " however", " although"].contains(where: { t.contains($0) }) { return false }
- 1149          if nos.contains(where: { t.contains($0) }) { return true }
- 1150          // "I don't think this is really relevant", "this isn't relevant to us"
- 1151          // "I don't know that I'm interested", "I don't know that I'm the right fit" (Nov 20): soft no's.
- 1152          let negated = ["don't think", "don't know that", "don't know if", "not", "isn't", "doesn't"].contains { t.contains($0) }
- 1153          return negated && (t.contains("relevant") || t.contains("interested") || t.contains("a fit") || t.contains("right fit"))
- 1154      }
- 1155  
- 1156      public static func isSignOff(_ text: String) -> Bool {
- 1157          let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'").replacingOccurrences(of: ".", with: "")
- 1158          return signOffs.contains { t.contains($0) }
- 1159      }
- 1160  
- 1161      /// Done: two no's, or a no that comes with a sign-off.
- 1162      public static func callOver(nosSoFar: Int, latest: String) -> Bool {
- 1163          nosSoFar >= 2 || (nosSoFar >= 1 && isSignOff(latest))
+ 1146  /// "Two no's and a go": one no gets one respectful question; two no's (or a no plus a sign-off) ends it (call 6).
+ 1147  public enum Rejection {
+ 1148      // Only clear no's. Reflex brush-offs ("we're good", "I'm good") don't count: they often open up right after.
+ 1149      static let nos = ["not interested", "not relevant", "no thanks", "no thank you", "not a fit",
+ 1150                        "not for us", "not really interested", "doesn't apply", "not something we need",
+ 1151                        "not the right fit", "not a good fit", "right fit for this"]
+ 1152      static let signOffs = ["yep thanks", "yep, thanks", "bye", "take care", "have a good one", "have a good day", "have a great day",
+ 1153                             "gotta go", "got to go", "thanks anyway", "thank you anyway"]
+ 1154  
+ 1155      public static func isNo(_ text: String) -> Bool {
+ 1156          let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+ 1157          // "...though our CRM data is a mess": a no that opens a door isn't a no.
+ 1158          if [" but ", " though", " however", " although"].contains(where: { t.contains($0) }) { return false }
+ 1159          if nos.contains(where: { t.contains($0) }) { return true }
+ 1160          // "I don't think this is really relevant", "this isn't relevant to us"
+ 1161          // "I don't know that I'm interested", "I don't know that I'm the right fit" (Nov 20): soft no's.
+ 1162          let negated = ["don't think", "don't know that", "don't know if", "not", "isn't", "doesn't"].contains { t.contains($0) }
+ 1163          return negated && (t.contains("relevant") || t.contains("interested") || t.contains("a fit") || t.contains("right fit"))
  1164      }
- 1165  }
+ 1165  
+ 1166      public static func isSignOff(_ text: String) -> Bool {
+ 1167          let t = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'").replacingOccurrences(of: ".", with: "")
+ 1168          return signOffs.contains { t.contains($0) }
+ 1169      }
+ 1170  
+ 1171      /// Done: two no's, or a no that comes with a sign-off.
+ 1172      public static func callOver(nosSoFar: Int, latest: String) -> Bool {
+ 1173          nosSoFar >= 2 || (nosSoFar >= 1 && isSignOff(latest))
+ 1174      }
+ 1175  }
 ```
 
-`CoachCore/CoachCore.swift` lines 999–1016
+`CoachCore/CoachCore.swift` lines 1009–1026
 
 ```swift
-  999  /// Call memory rules (C3, M4).
- 1000  public enum CallMemoryRules {
- 1001      /// A background summary is kept only for the same call, and only if it covers more turns than the one stored.
- 1002      public static func acceptSummary(currentCallID: String, summaryCallID: String, summaryCovers: Int, storedCovers: Int) -> Bool {
- 1003          currentCallID == summaryCallID && summaryCovers > storedCovers
- 1004      }
- 1005  
- 1006      /// First turn (index) sent word for word: everything the summary doesn't cover, and never fewer than the last `minRecent`.
- 1007      public static func verbatimStart(totalTurns: Int, summaryCovers: Int, hasSummary: Bool, minRecent: Int = 10) -> Int {
- 1008          guard hasSummary, totalTurns > 12 else { return 0 }
- 1009          return max(0, min(summaryCovers, totalTurns - minRecent))
- 1010      }
- 1011  
- 1012      /// Ask for a fresh summary when 6+ turns aren't covered (a late or failed one is retried).
- 1013      public static func summaryDue(totalTurns: Int, summaryCovers: Int, inFlight: Bool) -> Bool {
- 1014          !inFlight && totalTurns > 12 && totalTurns - summaryCovers >= 6
- 1015      }
- 1016  }
+ 1009  /// Call memory rules (C3, M4).
+ 1010  public enum CallMemoryRules {
+ 1011      /// A background summary is kept only for the same call, and only if it covers more turns than the one stored.
+ 1012      public static func acceptSummary(currentCallID: String, summaryCallID: String, summaryCovers: Int, storedCovers: Int) -> Bool {
+ 1013          currentCallID == summaryCallID && summaryCovers > storedCovers
+ 1014      }
+ 1015  
+ 1016      /// First turn (index) sent word for word: everything the summary doesn't cover, and never fewer than the last `minRecent`.
+ 1017      public static func verbatimStart(totalTurns: Int, summaryCovers: Int, hasSummary: Bool, minRecent: Int = 10) -> Int {
+ 1018          guard hasSummary, totalTurns > 12 else { return 0 }
+ 1019          return max(0, min(summaryCovers, totalTurns - minRecent))
+ 1020      }
+ 1021  
+ 1022      /// Ask for a fresh summary when 6+ turns aren't covered (a late or failed one is retried).
+ 1023      public static func summaryDue(totalTurns: Int, summaryCovers: Int, inFlight: Bool) -> Bool {
+ 1024          !inFlight && totalTurns > 12 && totalTurns - summaryCovers >= 6
+ 1025      }
+ 1026  }
 ```
 
 ### 7.2 Where they are fed (`CoachModel+Audio.swift`)
@@ -2436,84 +2456,84 @@ Key rules:
    97  }
 ```
 
-`CoachCore/CoachCore.swift` lines 1065–1098
+`CoachCore/CoachCore.swift` lines 1075–1108
 
 ```swift
- 1065  /// The screen controller's two decisions, shared by the app and the replay tests (H7), so the tests
- 1066  /// prove the code the app actually runs.
- 1067  public enum CoachController {
- 1068      public enum Offer: Equatable, Sendable { case show, queue, drop(String) }
- 1069      public enum Promote: Equatable, Sendable { case wait, show, drop(String) }
- 1070  
- 1071      /// A queued line waits while the prospect is talking, so the rep's eyes stay on them.
- 1072      /// It shows when they stop. (A line arriving right as they finish, like the ready "yes" line, still shows.) Exceptions live elsewhere and are untouched: openers, voicemail,
- 1073      /// screeners, opt-out (the goodbye line), and a line the rep asked for with Space.
- 1074      public static func waitForProspect(_ s: CoachSignals) -> Bool {
- 1075          s.hasLine && s.prospectSpeaking && !s.doNotCall
- 1076      }
- 1077  
- 1078      /// A finished line arrives. Openers, voicemails and the first line show at once; anything else
- 1079      /// only if the line on screen can be replaced now, else it waits in the queue.
- 1080      /// `staleReason`: why the rep has moved past this line since it was asked for (checked before showing too).
- 1081      public static func offer(isOpenerOrVoicemail: Bool, firstLine: Bool, holdLine: Bool, signals: CoachSignals,
- 1082                               staleReason: String? = nil) -> Offer {
- 1083          if isOpenerOrVoicemail || firstLine { return .show }
- 1084          if let why = staleReason { return .drop(why) }
- 1085          return !holdLine && CoachMachine.canReplace(signals) ? .show : .queue
+ 1075  /// The screen controller's two decisions, shared by the app and the replay tests (H7), so the tests
+ 1076  /// prove the code the app actually runs.
+ 1077  public enum CoachController {
+ 1078      public enum Offer: Equatable, Sendable { case show, queue, drop(String) }
+ 1079      public enum Promote: Equatable, Sendable { case wait, show, drop(String) }
+ 1080  
+ 1081      /// A queued line waits while the prospect is talking, so the rep's eyes stay on them.
+ 1082      /// It shows when they stop. (A line arriving right as they finish, like the ready "yes" line, still shows.) Exceptions live elsewhere and are untouched: openers, voicemail,
+ 1083      /// screeners, opt-out (the goodbye line), and a line the rep asked for with Space.
+ 1084      public static func waitForProspect(_ s: CoachSignals) -> Bool {
+ 1085          s.hasLine && s.prospectSpeaking && !s.doNotCall
  1086      }
  1087  
- 1088      /// A queued line, checked on each tick or when the rep's speech ends: wait, show, or drop as stale.
- 1089      public static func promote(holdLine: Bool, signals: CoachSignals, ageSeconds: Double, repWordsSinceQueued: Int,
- 1090                                 repAskedSinceQueued: Bool, repTextSinceQueued: String) -> Promote {
- 1091          guard !holdLine, !waitForProspect(signals), CoachMachine.canReplace(signals) else { return .wait }
- 1092          if let why = QueuedLine.staleReason(ageSeconds: ageSeconds, repWordsSinceQueued: repWordsSinceQueued,
- 1093                                              repAskedSinceQueued: repAskedSinceQueued, repTextSinceQueued: repTextSinceQueued) {
- 1094              return .drop(why)
- 1095          }
- 1096          return .show
- 1097      }
- 1098  }
+ 1088      /// A finished line arrives. Openers, voicemails and the first line show at once; anything else
+ 1089      /// only if the line on screen can be replaced now, else it waits in the queue.
+ 1090      /// `staleReason`: why the rep has moved past this line since it was asked for (checked before showing too).
+ 1091      public static func offer(isOpenerOrVoicemail: Bool, firstLine: Bool, holdLine: Bool, signals: CoachSignals,
+ 1092                               staleReason: String? = nil) -> Offer {
+ 1093          if isOpenerOrVoicemail || firstLine { return .show }
+ 1094          if let why = staleReason { return .drop(why) }
+ 1095          return !holdLine && CoachMachine.canReplace(signals) ? .show : .queue
+ 1096      }
+ 1097  
+ 1098      /// A queued line, checked on each tick or when the rep's speech ends: wait, show, or drop as stale.
+ 1099      public static func promote(holdLine: Bool, signals: CoachSignals, ageSeconds: Double, repWordsSinceQueued: Int,
+ 1100                                 repAskedSinceQueued: Bool, repTextSinceQueued: String) -> Promote {
+ 1101          guard !holdLine, !waitForProspect(signals), CoachMachine.canReplace(signals) else { return .wait }
+ 1102          if let why = QueuedLine.staleReason(ageSeconds: ageSeconds, repWordsSinceQueued: repWordsSinceQueued,
+ 1103                                              repAskedSinceQueued: repAskedSinceQueued, repTextSinceQueued: repTextSinceQueued) {
+ 1104              return .drop(why)
+ 1105          }
+ 1106          return .show
+ 1107      }
+ 1108  }
 ```
 
-`CoachCore/CoachCore.swift` lines 745–780
+`CoachCore/CoachCore.swift` lines 755–790
 
 ```swift
-  745  /// A line waiting in the queue (held while the rep talked) is only shown if it still fits.
-  746  /// The rep's own words are the source of truth: if they've moved on, the old line is dropped.
-  747  public enum QueuedLine {
-  748      public static let maxAge = 8.0
-  749      public static let maxRepWords = 8
-  750  
-  751      /// "heuristic" (the word or time limit, a safety net) or "conversation" (the rep asked their own
-  752      /// question, a real change in the talk). Logged with every drop so the two can be told apart.
-  753      public static func ruleKind(_ reason: String) -> String {
-  754          reason.contains("asked") || reason.contains("pivot") ? "conversation" : "heuristic"
-  755      }
-  756  
-  757      /// Phrases a rep uses to change direction, with or without a question mark.
-  758      static let pivots = ["quick question", "before i let you go", "one last thing", "actually", "let me ask", "can i ask", "curious"]
-  759  
-  760      /// The rep changed direction in their own words: an unpunctuated question or a pivot phrase.
-  761      public static func repPivoted(_ text: String) -> Bool {
-  762          let t = text.lowercased()
-  763          return pivots.contains(where: { t.contains($0) }) || !QuestionTracker.questions(in: text).isEmpty
-  764      }
-  765  
-  766      /// C4: the rep asked a question after this line was requested (even while it was still being written).
-  767      public static func repAskedSinceRequest(requestedAt: Double, lastRepQuestionAt: Double) -> Bool {
-  768          lastRepQuestionAt > requestedAt
-  769      }
-  770  
-  771      /// Why it's stale, or nil if it can still be shown.
-  772      public static func staleReason(ageSeconds: Double, repWordsSinceQueued: Int, repAskedSinceQueued: Bool,
-  773                                     repTextSinceQueued: String = "") -> String? {
-  774          if repAskedSinceQueued { return "the rep asked their own question since" }
-  775          if repPivoted(repTextSinceQueued) { return "the rep pivoted in their own words since" }
-  776          if repWordsSinceQueued >= maxRepWords { return "the rep said \(repWordsSinceQueued) words of their own since" }
-  777          if ageSeconds > maxAge { return String(format: "waited %.0f s; the talk moved on", ageSeconds) }
-  778          return nil
+  755  /// A line waiting in the queue (held while the rep talked) is only shown if it still fits.
+  756  /// The rep's own words are the source of truth: if they've moved on, the old line is dropped.
+  757  public enum QueuedLine {
+  758      public static let maxAge = 8.0
+  759      public static let maxRepWords = 8
+  760  
+  761      /// "heuristic" (the word or time limit, a safety net) or "conversation" (the rep asked their own
+  762      /// question, a real change in the talk). Logged with every drop so the two can be told apart.
+  763      public static func ruleKind(_ reason: String) -> String {
+  764          reason.contains("asked") || reason.contains("pivot") ? "conversation" : "heuristic"
+  765      }
+  766  
+  767      /// Phrases a rep uses to change direction, with or without a question mark.
+  768      static let pivots = ["quick question", "before i let you go", "one last thing", "actually", "let me ask", "can i ask", "curious"]
+  769  
+  770      /// The rep changed direction in their own words: an unpunctuated question or a pivot phrase.
+  771      public static func repPivoted(_ text: String) -> Bool {
+  772          let t = text.lowercased()
+  773          return pivots.contains(where: { t.contains($0) }) || !QuestionTracker.questions(in: text).isEmpty
+  774      }
+  775  
+  776      /// C4: the rep asked a question after this line was requested (even while it was still being written).
+  777      public static func repAskedSinceRequest(requestedAt: Double, lastRepQuestionAt: Double) -> Bool {
+  778          lastRepQuestionAt > requestedAt
   779      }
-  780  }
+  780  
+  781      /// Why it's stale, or nil if it can still be shown.
+  782      public static func staleReason(ageSeconds: Double, repWordsSinceQueued: Int, repAskedSinceQueued: Bool,
+  783                                     repTextSinceQueued: String = "") -> String? {
+  784          if repAskedSinceQueued { return "the rep asked their own question since" }
+  785          if repPivoted(repTextSinceQueued) { return "the rep pivoted in their own words since" }
+  786          if repWordsSinceQueued >= maxRepWords { return "the rep said \(repWordsSinceQueued) words of their own since" }
+  787          if ageSeconds > maxAge { return String(format: "waited %.0f s; the talk moved on", ageSeconds) }
+  788          return nil
+  789      }
+  790  }
 ```
 
 `CoachCore/CoachCore.swift` lines 229–243
@@ -2571,76 +2591,76 @@ Key rules:
   274  }
 ```
 
-`CoachCore/CoachCore.swift` lines 836–851
+`CoachCore/CoachCore.swift` lines 846–861
 
 ```swift
-  836  /// Prepare the next line while the rep is still talking off script, so it's ready the moment they
-  837  /// pause (instead of dropping the old line at the pause and making them wait for a new one).
-  838  public enum FollowRep {
-  839      /// Should a new rep-led line be requested now, after the rep's latest words?
-  840      /// - Not when they just asked a question (the prospect's answer comes next).
-  841      /// - Not while they're reading the line on screen (they're on script).
-  842      /// - Only once they've said 8+ of their own words since the last request.
-  843      /// - `recentRepSpeech`: the rep's last couple of transcript chunks, so a line read across two
-  844      ///   chunks still counts as on the line.
-  845      public static func shouldPrepare(repJustSaid: String, recentRepSpeech: String, shownLine: String,
-  846                                       shownLineDelivered: Bool, repWordsSinceLastAsk: Int) -> Bool {
-  847          if repJustSaid.contains("?") { return false }
-  848          if Delivery.onLine(line: shownLine, spoken: recentRepSpeech) && !shownLineDelivered { return false }
-  849          return repWordsSinceLastAsk >= QueuedLine.maxRepWords
-  850      }
-  851  }
+  846  /// Prepare the next line while the rep is still talking off script, so it's ready the moment they
+  847  /// pause (instead of dropping the old line at the pause and making them wait for a new one).
+  848  public enum FollowRep {
+  849      /// Should a new rep-led line be requested now, after the rep's latest words?
+  850      /// - Not when they just asked a question (the prospect's answer comes next).
+  851      /// - Not while they're reading the line on screen (they're on script).
+  852      /// - Only once they've said 8+ of their own words since the last request.
+  853      /// - `recentRepSpeech`: the rep's last couple of transcript chunks, so a line read across two
+  854      ///   chunks still counts as on the line.
+  855      public static func shouldPrepare(repJustSaid: String, recentRepSpeech: String, shownLine: String,
+  856                                       shownLineDelivered: Bool, repWordsSinceLastAsk: Int) -> Bool {
+  857          if repJustSaid.contains("?") { return false }
+  858          if Delivery.onLine(line: shownLine, spoken: recentRepSpeech) && !shownLineDelivered { return false }
+  859          return repWordsSinceLastAsk >= QueuedLine.maxRepWords
+  860      }
+  861  }
 ```
 
-`CoachCore/CoachCore.swift` lines 1167–1174
+`CoachCore/CoachCore.swift` lines 1177–1184
 
 ```swift
- 1167  /// When to write a line from the rep's own talk (call 6: 12 wasted calls on a monologue).
- 1168  public enum FollowRepLimit {
- 1169      public static let minWords = 15
- 1170      /// At most one per stretch of rep talk (until the prospect speaks again), and only after 15+ of their words.
- 1171      public static func allowed(repWordsSinceLastAsk: Int, followsThisStretch: Int) -> Bool {
- 1172          followsThisStretch == 0 && repWordsSinceLastAsk >= minWords
- 1173      }
- 1174  }
+ 1177  /// When to write a line from the rep's own talk (call 6: 12 wasted calls on a monologue).
+ 1178  public enum FollowRepLimit {
+ 1179      public static let minWords = 15
+ 1180      /// At most one per stretch of rep talk (until the prospect speaks again), and only after 15+ of their words.
+ 1181      public static func allowed(repWordsSinceLastAsk: Int, followsThisStretch: Int) -> Bool {
+ 1182          followsThisStretch == 0 && repWordsSinceLastAsk >= minWords
+ 1183      }
+ 1184  }
 ```
 
-`CoachCore/CoachCore.swift` lines 1019–1032
+`CoachCore/CoachCore.swift` lines 1029–1042
 
 ```swift
- 1019  /// When to keep or drop the line written ahead for "yes" (H3).
- 1020  public enum YesBranchRule {
- 1021      /// Keep it through small talk after the question ("Just a quick one."); drop it for a new yes/no
- 1022      /// question (a new one is written) or once the rep has said 8+ more words (the context moved on).
- 1023      public static func keep(afterRepSaid text: String, wordsSinceQuestion: Int) -> Bool {
- 1024          RepQuestion.closedQuestion(in: text) == nil && wordsSinceQuestion < QueuedLine.maxRepWords
- 1025      }
- 1026  
- 1027      /// A ready yes line expires: older than this since the question, it's not used, even on a clear yes.
- 1028      public static let maxAge = 12.0
- 1029      /// If they say yes while it's still being written, wait at most this long, then answer fresh.
- 1030      public static let maxWait = 1.2
- 1031      public static func usable(ageSinceQuestion: Double) -> Bool { ageSinceQuestion <= maxAge }
- 1032  }
+ 1029  /// When to keep or drop the line written ahead for "yes" (H3).
+ 1030  public enum YesBranchRule {
+ 1031      /// Keep it through small talk after the question ("Just a quick one."); drop it for a new yes/no
+ 1032      /// question (a new one is written) or once the rep has said 8+ more words (the context moved on).
+ 1033      public static func keep(afterRepSaid text: String, wordsSinceQuestion: Int) -> Bool {
+ 1034          RepQuestion.closedQuestion(in: text) == nil && wordsSinceQuestion < QueuedLine.maxRepWords
+ 1035      }
+ 1036  
+ 1037      /// A ready yes line expires: older than this since the question, it's not used, even on a clear yes.
+ 1038      public static let maxAge = 12.0
+ 1039      /// If they say yes while it's still being written, wait at most this long, then answer fresh.
+ 1040      public static let maxWait = 1.2
+ 1041      public static func usable(ageSinceQuestion: Double) -> Bool { ageSinceQuestion <= maxAge }
+ 1042  }
 ```
 
-`CoachCore/CoachCore.swift` lines 934–947
+`CoachCore/CoachCore.swift` lines 944–957
 
 ```swift
-  934  /// The conversational move Claude picks before writing the line. "silent" means the rep doesn't need
-  935  /// a new line right now (they're mid-thought, or the line on screen still fits).
-  936  public enum Move: String, CaseIterable, Sendable {
-  937      case answer, clarify, discover, acknowledge, objection, close, silent
-  938  
-  939      /// "MOVE: discover" -> .discover. nil if the line isn't a MOVE line.
-  940      public static func parse(_ line: String) -> Move? {
-  941          let t = line.trimmingCharacters(in: .whitespaces)
-  942          guard t.uppercased().hasPrefix("MOVE:") else { return nil }
-  943          let word = t.dropFirst(5).trimmingCharacters(in: .whitespaces).lowercased()
-  944              .split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
-  945          return Move(rawValue: word) ?? (word == "handle" ? .objection : nil)
-  946      }
-  947  }
+  944  /// The conversational move Claude picks before writing the line. "silent" means the rep doesn't need
+  945  /// a new line right now (they're mid-thought, or the line on screen still fits).
+  946  public enum Move: String, CaseIterable, Sendable {
+  947      case answer, clarify, discover, acknowledge, objection, close, silent
+  948  
+  949      /// "MOVE: discover" -> .discover. nil if the line isn't a MOVE line.
+  950      public static func parse(_ line: String) -> Move? {
+  951          let t = line.trimmingCharacters(in: .whitespaces)
+  952          guard t.uppercased().hasPrefix("MOVE:") else { return nil }
+  953          let word = t.dropFirst(5).trimmingCharacters(in: .whitespaces).lowercased()
+  954              .split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
+  955          return Move(rawValue: word) ?? (word == "handle" ? .objection : nil)
+  956      }
+  957  }
 ```
 
 ### 8.1 Where the signals come from
@@ -2719,23 +2739,23 @@ Key rules:
    92      }
 ```
 
-`ClarityLiveCoach/ScriptOutlineCard.swift` lines 66–79
+`ClarityLiveCoach/ScriptOutlineCard.swift` lines 74–87
 
 ```swift
-   66      /// Which part the call is on right now.
-   67      var currentID: String {
-   68          if coach.status == .ready { return "opening" }
-   69          let stage = coach.suggestion.stage.lowercased()
-   70          let theySpoke = coach.turns.contains { $0.speaker == .prospect }
-   71          if stage.contains("objection") { return "objection" }
-   72          if stage.contains("goal") || stage.contains("clos") || stage.contains("ask") || stage.contains("book") { return "closing" }
-   73          if stage.contains("discover") || stage.contains("question") { return "discovery" }
-   74          if stage.contains("value") || stage.contains("reason") || stage.contains("why") || stage.contains("problem") { return "value" }
-   75          if stage.contains("exit") { return "exit" }
-   76          // Still on the opener, but they answered it: the next thing to say is why you're calling.
-   77          if (stage.contains("opener") || stage.isEmpty), theySpoke, !coach.sawVoicemail, !coach.screenerActive { return "value" }
-   78          return "opening"
-   79      }
+   74      /// Which part the call is on right now.
+   75      var currentID: String {
+   76          if coach.status == .ready { return "opening" }
+   77          let stage = coach.suggestion.stage.lowercased()
+   78          let theySpoke = coach.turns.contains { $0.speaker == .prospect }
+   79          if stage.contains("objection") { return "objection" }
+   80          if stage.contains("goal") || stage.contains("clos") || stage.contains("ask") || stage.contains("book") { return "closing" }
+   81          if stage.contains("discover") || stage.contains("question") { return "discovery" }
+   82          if stage.contains("value") || stage.contains("reason") || stage.contains("why") || stage.contains("problem") { return "value" }
+   83          if stage.contains("exit") { return "exit" }
+   84          // Still on the opener, but they answered it: the next thing to say is why you're calling.
+   85          if (stage.contains("opener") || stage.isEmpty), theySpoke, !coach.sawVoicemail, !coach.screenerActive { return "value" }
+   86          return "opening"
+   87      }
 ```
 
 ### 9.1 How a script is generated (the writer's prompt)
@@ -3109,7 +3129,7 @@ THINK is requested by the prompt (`Think.promptLine`), parsed into `Suggestion.t
 THINK is **not** validated by a second model call and is not checked against the conversation beyond items 3–7. The conversation checks in `lineProblems` (section 4.4) test SAY and `MOVE`, not THINK.
 
 
-`CoachCore/Think.swift` lines 1–143
+`CoachCore/Think.swift` lines 1–147
 
 ```swift
     1  import Foundation
@@ -3138,168 +3158,172 @@ THINK is **not** validated by a second model call and is not checked against the
    24            - When a question is the wrong move, a short instruction instead: they asked what the call is about
    25              -> "Explain the free AI health check." They said no again -> "Thank them and end the call." They are
    26              ending the call -> "Thank them. Don't push." Never both a question and an instruction in one THINK.
-   27            - Answer their direct question first. Respect a no: no discovery question after they decline.
-   28            - Never repeat a question they already answered, declined or deflected. Skip what the call already established.
-   29            - Never vague coaching words: no "explore", "probe", "find the gap", "handle the objection", "qualify".
-   30            - Everyday words: "your team", "call notes", "follow-ups". Never "your reps".
-   31            - Good: "Does Gong handle your follow-ups too?"  Bad: "Who's the right person? Ask for a name."
-   32            - Good: "Who handles sales tools there?"  Bad: "Explore whether Gong handles CRM updates."
-   33  
-   34          """
-   35      }
-   36  
-   37      /// Coaching jargon that needs translating mid-call: falls back to SAY.
-   38      static let jargon = ["explore", "probe", "dig ", "drive ", "uncover", "leverage", "qualify", "find the gap",
-   39                           "handle the objection", "handle objection", "identify friction", "friction"]
-   40  
-   41      /// Words a THINK that states (not asks) a pain would be assuming, unless the prospect said them.
-   42      static let assumedPain = ["wasting", "struggling", "losing hours", "drowning", "frustrated", "painful", "a mess"]
-   43  
-   44      /// A usable thought on its own, or nil (then the card falls back to SAY).
-   45      public static func valid(_ think: String) -> String? {
-   46          let t = think.trimmingCharacters(in: .whitespacesAndNewlines)
-   47          let words = t.split(whereSeparator: { $0 == " " }).count
-   48          guard words >= 2, words <= 16, !t.hasPrefix("<"), !t.uppercased().hasPrefix("SAY") else { return nil }
-   49          let low = t.lowercased()
-   50          if jargon.contains(where: { low.contains($0) }) { return nil }
-   51          // A question to say plus an instruction to the rep ("Who's the right person? Ask for a name.").
-   52          if let q = t.firstIndex(of: "?"), t[t.index(after: q)...].contains(where: { $0.isLetter }) { return nil }
-   53          if RoleCheck.speaksAsProspect(t) { return nil }
-   54          return t
-   55      }
-   56  
-   57      /// Why this THINK should not reach the screen in this conversation (empty = fine). Rules only, no model call.
-   58      /// `sayLine` is the SAY that came with it. Each problem string is also what a retry is told to fix.
-   59      public static func problems(think: String, say: String, move: String, intent: ConversationIntent, objectionKind: String?,
-   60                                  latestProspect: String, recentText: String, scriptText: String, answeredQuestions: [String]) -> [String] {
-   61          let t = think.trimmingCharacters(in: .whitespacesAndNewlines)
-   62          guard !t.isEmpty else { return ["THINK is missing: write one short coaching nudge"] }
-   63          guard valid(t) != nil else { return ["THINK isn't usable: one clear move, 2 to 16 simple words, no jargon, no question plus instruction"] }
-   64          var out: [String] = []
-   65          let isQuestion = t.hasSuffix("?")
-   66          let redirects: Set<String> = ["wrong person", "call later"] // a question is the right move for these
+   27            - Answer their direct question first. An objection ("we use Gong", "no time") can get one relevant question.
+   28              A clear no ("not interested", "not a fit") gets no sales question: acknowledge, at most offer an easy exit.
+   29            - Never repeat a question they already answered, declined or deflected. Skip what the call already established.
+   30            - Never vague coaching words: no "explore", "probe", "find the gap", "handle the objection", "qualify".
+   31            - Everyday words: "your team", "call notes", "follow-ups". Never "your reps".
+   32            - Good: "Does Gong handle your follow-ups too?"  Bad: "Who's the right person? Ask for a name."
+   33            - Good: "Who handles sales tools there?"  Bad: "Explore whether Gong handles CRM updates."
+   34  
+   35          """
+   36      }
+   37  
+   38      /// Coaching jargon that needs translating mid-call: falls back to SAY.
+   39      static let jargon = ["explore", "probe", "dig ", "drive ", "uncover", "leverage", "qualify", "find the gap",
+   40                           "handle the objection", "handle objection", "identify friction", "friction"]
+   41  
+   42      /// Words a THINK that states (not asks) a pain would be assuming, unless the prospect said them.
+   43      static let assumedPain = ["wasting", "struggling", "losing hours", "drowning", "frustrated", "painful", "a mess"]
+   44  
+   45      /// A usable thought on its own, or nil (then the card falls back to SAY).
+   46      public static func valid(_ think: String) -> String? {
+   47          let t = think.trimmingCharacters(in: .whitespacesAndNewlines)
+   48          let words = t.split(whereSeparator: { $0 == " " }).count
+   49          guard words >= 2, words <= 16, !t.hasPrefix("<"), !t.uppercased().hasPrefix("SAY") else { return nil }
+   50          let low = t.lowercased()
+   51          if jargon.contains(where: { low.contains($0) }) { return nil }
+   52          // A question to say plus an instruction to the rep ("Who's the right person? Ask for a name.").
+   53          if let q = t.firstIndex(of: "?"), t[t.index(after: q)...].contains(where: { $0.isLetter }) { return nil }
+   54          if RoleCheck.speaksAsProspect(t) { return nil }
+   55          return t
+   56      }
+   57  
+   58      /// Why this THINK should not reach the screen in this conversation (empty = fine). Rules only, no model call.
+   59      /// `sayLine` is the SAY that came with it. Each problem string is also what a retry is told to fix.
+   60      public static func problems(think: String, say: String, move: String, intent: ConversationIntent, objectionKind: String?,
+   61                                  latestProspect: String, recentText: String, scriptText: String, answeredQuestions: [String]) -> [String] {
+   62          let t = think.trimmingCharacters(in: .whitespacesAndNewlines)
+   63          guard !t.isEmpty else { return ["THINK is missing: write one short coaching nudge"] }
+   64          guard valid(t) != nil else { return ["THINK isn't usable: one clear move, 2 to 16 simple words, no jargon, no question plus instruction"] }
+   65          var out: [String] = []
+   66          let isQuestion = t.hasSuffix("?")
    67          // They're done: no question to ask.
    68          if isQuestion, [.ending, .optOut].contains(intent) {
    69              out.append("THINK asks a question but they're ending the call: thank them, don't push")
    70          }
-   71          if isQuestion, intent == .rejection, !redirects.contains(objectionKind ?? "") {
-   72              out.append("THINK asks a question after they declined: acknowledge it, don't keep discovering")
-   73          }
-   74          // A direct question from them comes first: THINK must answer it, not discover.
-   75          if intent == .question, move == "discover" {
-   76              out.append("they asked a direct question: THINK must answer it first (MOVE answer), not start discovery")
+   71          // A clear no: no sales question. The only question allowed is the exit itself (move close: "Can I send one email?").
+   72          if isQuestion, intent == .rejection, move != "close" {
+   73              out.append("THINK asks a question after a clear no: acknowledge it, at most offer an easy exit")
+   74          }
+   75          if intent == .rejection, ["discover", "clarify", "objection"].contains(move) {
+   76              out.append("MOVE \(move) after a clear no: acknowledge or close instead")
    77          }
-   78          // Discovery needs a question; a pure statement or instruction for MOVE discover is the wrong coaching.
-   79          if move == "discover", !isQuestion {
-   80              out.append("MOVE is discover but THINK isn't a question: write the one question to ask")
+   78          // A direct question from them comes first: THINK must answer it, not discover.
+   79          if intent == .question, move == "discover" {
+   80              out.append("they asked a direct question: THINK must answer it first (MOVE answer), not start discovery")
    81          }
-   82          if isQuestion {
-   83              // Already answered: same meaning as a question the rep asked and got an answer to.
-   84              if let again = answeredQuestions.first(where: { Repeats.same($0, t) }) {
-   85                  out.append("THINK repeats a question already answered: \"\(again)\"")
-   86              }
-   87              // Unrelated topic: nothing in it comes from this conversation or the script.
-   88              let mine = Repeats.meaning(t)
-   89              if !mine.isEmpty {
-   90                  let known = Repeats.meaning(recentText).union(Repeats.meaning(scriptText))
-   91                  if mine.intersection(known).isEmpty { out.append("THINK is about something that hasn't come up: ground it in what they said") }
-   92              }
-   93          } else {
-   94              // States a pain as theirs when they never said it.
-   95              let low = t.lowercased(), said = latestProspect.lowercased() + " " + recentText.lowercased()
-   96              if let w = assumedPain.first(where: { low.contains($0) && !said.contains($0) }) {
-   97                  out.append("THINK assumes a problem they haven't named (\"\(w)\"): ask, don't state it")
-   98              }
-   99          }
-  100          if !agrees(think: t, say: say, move: move) {
-  101              out.append("THINK and SAY aren't the same move: SAY should say what THINK asks or explains")
-  102          }
-  103          return out
-  104      }
-  105  
-  106      /// First word class of a question: its wh-word, or "yn" for a yes/no question.
-  107      static func questionClass(_ q: String) -> String {
-  108          let first = q.lowercased().split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
-  109          return ["what", "who", "how", "why", "when", "where", "which"].contains(first) ? first : "yn"
-  110      }
-  111  
-  112      /// THINK and SAY must be the same move. Not "share any word": the same kind of question, and most of
-  113      /// THINK's meaning inside SAY's question; or, for an instruction, at least one shared meaning word.
-  114      public static func agrees(think: String, say: String, move: String = "") -> Bool {
-  115          let t = think.trimmingCharacters(in: .whitespacesAndNewlines)
-  116          if t.hasSuffix("?") {
-  117              // SAY's questions: the one that best matches THINK.
-  118              let sayQuestions = QuestionTracker.questions(in: say)
-  119              guard !sayQuestions.isEmpty else { return false }
-  120              let mine = Repeats.meaning(t)
-  121              return sayQuestions.contains { q in
-  122                  guard questionClass(q) == questionClass(t) else { return false }
-  123                  let theirs = Repeats.meaning(q)
-  124                  guard !mine.isEmpty else { return true }
-  125                  return Double(mine.intersection(theirs).count) / Double(mine.count) >= 0.5
-  126              }
-  127          }
-  128          // An instruction describes the move; SAY carries it out. Discovery needs a question, so no.
-  129          if move == "discover" { return false }
-  130          // Stop or close: SAY must not go on asking.
-  131          if ["acknowledge", "close"].contains(move) { return !say.contains("?") }
-  132          // Answer or explain: SAY must be about the same thing.
-  133          let mine = Repeats.meaning(t)
-  134          return mine.isEmpty || !mine.intersection(Repeats.meaning(say)).isEmpty
-  135      }
-  136  
-  137      /// What the big line shows. Script rows (exact) and missing or bad thoughts show SAY; the rep can ask for SAY anytime.
-  138      public static func primary(think: String, say: String, exact: Bool, enabled: Bool, showFull: Bool, move: String = "") -> String {
-  139          guard enabled, !exact, !showFull, let t = valid(think), agrees(think: t, say: say, move: move) else { return say }
-  140          return t
-  141      }
-  142  }
-  143  
+   82          // Discovery needs a question; a pure statement or instruction for MOVE discover is the wrong coaching.
+   83          if move == "discover", !isQuestion {
+   84              out.append("MOVE is discover but THINK isn't a question: write the one question to ask")
+   85          }
+   86          if isQuestion {
+   87              // Already answered: same meaning as a question the rep asked and got an answer to.
+   88              if let again = answeredQuestions.first(where: { Repeats.same($0, t) }) {
+   89                  out.append("THINK repeats a question already answered: \"\(again)\"")
+   90              }
+   91              // Unrelated topic: nothing in it comes from this conversation or the script.
+   92              let mine = Repeats.meaning(t)
+   93              if !mine.isEmpty {
+   94                  let known = Repeats.meaning(recentText).union(Repeats.meaning(scriptText))
+   95                  if mine.intersection(known).isEmpty { out.append("THINK is about something that hasn't come up: ground it in what they said") }
+   96              }
+   97          } else {
+   98              // States a pain as theirs when they never said it.
+   99              let low = t.lowercased(), said = latestProspect.lowercased() + " " + recentText.lowercased()
+  100              if let w = assumedPain.first(where: { low.contains($0) && !said.contains($0) }) {
+  101                  out.append("THINK assumes a problem they haven't named (\"\(w)\"): ask, don't state it")
+  102              }
+  103          }
+  104          if !agrees(think: t, say: say, move: move) {
+  105              out.append("THINK and SAY aren't the same move: SAY should say what THINK asks or explains")
+  106          }
+  107          return out
+  108      }
+  109  
+  110      /// First word class of a question: its wh-word, or "yn" for a yes/no question.
+  111      static func questionClass(_ q: String) -> String {
+  112          let first = q.lowercased().split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
+  113          return ["what", "who", "how", "why", "when", "where", "which"].contains(first) ? first : "yn"
+  114      }
+  115  
+  116      /// THINK and SAY must be the same move. Not "share any word": the same kind of question, and most of
+  117      /// THINK's meaning inside SAY's question; or, for an instruction, at least one shared meaning word.
+  118      public static func agrees(think: String, say: String, move: String = "") -> Bool {
+  119          let t = think.trimmingCharacters(in: .whitespacesAndNewlines)
+  120          if t.hasSuffix("?") {
+  121              // SAY's questions: the one that best matches THINK.
+  122              let sayQuestions = QuestionTracker.questions(in: say)
+  123              guard !sayQuestions.isEmpty else { return false }
+  124              let mine = Repeats.meaning(t)
+  125              return sayQuestions.contains { q in
+  126                  guard questionClass(q) == questionClass(t) else { return false }
+  127                  let theirs = Repeats.meaning(q)
+  128                  guard !mine.isEmpty else { return true }
+  129                  return Double(mine.intersection(theirs).count) / Double(mine.count) >= 0.5
+  130              }
+  131          }
+  132          // An instruction describes the move; SAY carries it out. Discovery needs a question, so no.
+  133          if move == "discover" { return false }
+  134          // Stop or close: SAY must not go on asking.
+  135          if ["acknowledge", "close"].contains(move) { return !say.contains("?") }
+  136          // Answer or explain: SAY must be about the same thing.
+  137          let mine = Repeats.meaning(t)
+  138          return mine.isEmpty || !mine.intersection(Repeats.meaning(say)).isEmpty
+  139      }
+  140  
+  141      /// What the big line shows. Script rows (exact) and missing or bad thoughts show SAY; the rep can ask for SAY anytime.
+  142      public static func primary(think: String, say: String, exact: Bool, enabled: Bool, showFull: Bool, move: String = "") -> String {
+  143          guard enabled, !exact, !showFull, let t = valid(think), agrees(think: t, say: say, move: move) else { return say }
+  144          return t
+  145      }
+  146  }
+  147  
 ```
 
 `ClarityLiveCoach/CoachView.swift` lines 1060–1080
 
 ```swift
- 1060          .animation(.easeOut(duration: 0.15), value: coach.suggestion.say)
- 1061          .onChange(of: coach.suggestion.say) { showFullLine = false }
- 1062      }
- 1063  
- 1064      /// THINK mode is on and this card is a normal live line (not a script row, nudge or history).
- 1065      private var thinkActive: Bool {
- 1066          Think.enabled && coach.status == .live && coach.kind == .reply && !coach.suggestion.nudge && coach.historyIndex == nil
- 1067      }
- 1068      /// What the big line shows: the thought in THINK mode, otherwise (or on request, or when missing) SAY.
- 1069      private var cardLine: String {
- 1070          guard thinkActive else { return coach.suggestion.say }
- 1071          return Think.primary(think: coach.suggestion.think, say: coach.suggestion.say,
- 1072                               exact: coach.suggestion.rowTag != nil, enabled: true, showFull: showFullLine,
- 1073                               move: coach.suggestion.move)
- 1074      }
- 1075      /// A thought (not SAY) is on the card right now.
- 1076      private var thinkShown: Bool { thinkActive && cardLine != coach.suggestion.say }
- 1077  
- 1078      /// The line on the card: big and bold, or a little softer for a nudge.
- 1079      private var lineFont: Font {
- 1080          coach.suggestion.nudge ? Font.system(size: 22, weight: .medium) : Font.system(size: 26, weight: .semibold)
+ 1060                  }
+ 1061              } else if liveCardOpen {
+ 1062              lineText(inTour && coach.status == .ready ? TourSample.line
+ 1063                   : coach.suggestion.say.isEmpty
+ 1064                   ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, and upload your keys file." : "Getting your line ready...")
+ 1065                   : cardLine, emphasized: false) // frozen for the model test: plain line
+ 1066                  .font(lineFont)
+ 1067                  .lineSpacing(2)
+ 1068                  .fixedSize(horizontal: false, vertical: true)
+ 1069                  .foregroundStyle(lineIsSoft ? Color.secondary : Color.primary)
+ 1070                  .opacity(coach.historyIndex == nil ? 1 : 0.6)
+ 1071                  // Between calls, click the opener to edit it.
+ 1072                  .onTapGesture {
+ 1073                      guard coach.status == .ready, coach.kind == .opener, !inTour else { return }
+ 1074                      openerDraft = coach.scriptOpenerLine() ?? coach.suggestion.say
+ 1075                      editingOpener = true
+ 1076                  }
+ 1077                  .help(coach.status == .ready && coach.kind == .opener ? "Click to edit your opener" : "")
+ 1078              // THINK mode: one thought on the card; the full line only when the rep asks (⌘⇧L).
+ 1079              if thinkShown || showFullLine {
+ 1080                  Button(showFullLine ? "Back to the short thought" : "Full line (⌘⇧L)") { showFullLine.toggle() }
 ```
 
-`ClarityLiveCoach/CoachView.swift` lines 1104–1117
+`ClarityLiveCoach/CoachView.swift` lines 1147–1160
 
 ```swift
- 1104      private var cardLabel: String {
- 1105          if inTour && coach.status == .ready { return "WHEN THEY PICK UP" }
- 1106          if coach.historyIndex != nil { return "EARLIER LINE" }
- 1107          if coach.suggestion.nudge { return "IF IT GOES QUIET" }
- 1108          switch coach.kind {
- 1109          case .opener: return "WHEN THEY PICK UP"
- 1110          case .screener: return "A ROBOT ANSWERED · SAY THIS"
- 1111          case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
- 1112          case .reply:
- 1113              // THINK mode: no label while a thought is up. If THINK didn't hold up, the full line shows and says so.
- 1114              if thinkActive { return coach.suggestion.rowTag != nil ? "EXACT" : (thinkShown ? "" : "SAY THIS") }
- 1115              return coach.suggestion.rowTag != nil ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
- 1116          }
- 1117      }
+ 1147      private var cardLabel: String {
+ 1148          if inTour && coach.status == .ready { return "WHEN THEY PICK UP" }
+ 1149          if coach.historyIndex != nil { return "EARLIER LINE" }
+ 1150          if coach.suggestion.nudge { return "IF IT GOES QUIET" }
+ 1151          switch coach.kind {
+ 1152          case .opener: return "WHEN THEY PICK UP"
+ 1153          case .screener: return "A ROBOT ANSWERED · SAY THIS"
+ 1154          case .voicemail: return "VOICEMAIL · WAIT FOR THE BEEP"
+ 1155          case .reply:
+ 1156              // THINK mode: no label while a thought is up. If THINK didn't hold up, the full line shows and says so.
+ 1157              if thinkActive { return coach.suggestion.rowTag != nil ? "EXACT" : (thinkShown ? "" : "SAY THIS") }
+ 1158              return coach.suggestion.rowTag != nil ? "SAY THIS · EXACT" : "SAY THIS" // frozen for the Haiku vs Sonnet test
+ 1159          }
+ 1160      }
 ```
 
 `CoachCore/LineLook.swift` lines 1–41
@@ -3530,29 +3554,29 @@ There is **no** Haiku-specific or Sonnet-specific prompt text, parser, or check.
   100      }
 ```
 
-`CoachCore/CoachCore.swift` lines 1185–1204
+`CoachCore/CoachCore.swift` lines 1195–1214
 
 ```swift
- 1185  /// Haiku vs Sonnet scoreboard math: is a difference real or luck?
- 1186  public enum ModelTest {
- 1187      /// Two-proportion z score. |z| >= 1.96 is about 95% sure the difference is real.
- 1188      public static func z(_ a: Int, of n1: Int, vs b: Int, of n2: Int) -> Double {
- 1189          guard n1 > 0, n2 > 0 else { return 0 }
- 1190          let p1 = Double(a) / Double(n1), p2 = Double(b) / Double(n2)
- 1191          let p = Double(a + b) / Double(n1 + n2)
- 1192          let se = (p * (1 - p) * (1 / Double(n1) + 1 / Double(n2))).squareRoot()
- 1193          return se == 0 ? 0 : (p1 - p2) / se
- 1194      }
- 1195  
- 1196      /// "Haiku wins", "Sonnet wins" or "too close to call yet".
- 1197      public static func verdict(_ a: Int, of n1: Int, vs b: Int, of n2: Int, names: (String, String)) -> String {
- 1198          let score = z(a, of: n1, vs: b, of: n2)
- 1199          if n1 < 20 || n2 < 20 { return "not enough calls yet (need 20+ each)" }
- 1200          if score >= 1.96 { return "\(names.0) wins (95% sure)" }
- 1201          if score <= -1.96 { return "\(names.1) wins (95% sure)" }
- 1202          return "too close to call yet"
- 1203      }
- 1204  }
+ 1195  /// Haiku vs Sonnet scoreboard math: is a difference real or luck?
+ 1196  public enum ModelTest {
+ 1197      /// Two-proportion z score. |z| >= 1.96 is about 95% sure the difference is real.
+ 1198      public static func z(_ a: Int, of n1: Int, vs b: Int, of n2: Int) -> Double {
+ 1199          guard n1 > 0, n2 > 0 else { return 0 }
+ 1200          let p1 = Double(a) / Double(n1), p2 = Double(b) / Double(n2)
+ 1201          let p = Double(a + b) / Double(n1 + n2)
+ 1202          let se = (p * (1 - p) * (1 / Double(n1) + 1 / Double(n2))).squareRoot()
+ 1203          return se == 0 ? 0 : (p1 - p2) / se
+ 1204      }
+ 1205  
+ 1206      /// "Haiku wins", "Sonnet wins" or "too close to call yet".
+ 1207      public static func verdict(_ a: Int, of n1: Int, vs b: Int, of n2: Int, names: (String, String)) -> String {
+ 1208          let score = z(a, of: n1, vs: b, of: n2)
+ 1209          if n1 < 20 || n2 < 20 { return "not enough calls yet (need 20+ each)" }
+ 1210          if score >= 1.96 { return "\(names.0) wins (95% sure)" }
+ 1211          if score <= -1.96 { return "\(names.1) wins (95% sure)" }
+ 1212          return "too close to call yet"
+ 1213      }
+ 1214  }
 ```
 
 ### 11.1 Small helpers the decision path calls
@@ -3567,85 +3591,85 @@ There is **no** Haiku-specific or Sonnet-specific prompt text, parser, or check.
   172  }
 ```
 
-`CoachCore/CoachCore.swift` lines 878–909
+`CoachCore/CoachCore.swift` lines 888–919
 
 ```swift
-  878  /// The rep asked a yes/no question ("Can I get 30 seconds?", "Does that sound familiar?", "...yeah?"):
-  879  /// the line for "yes" can be written before they answer. Open questions ("What do you use?") aren't.
-  880  public enum RepQuestion {
-  881      static let closedStarts: Set<String> = ["can", "could", "would", "will", "do", "does", "did", "is", "are", "was",
-  882          "were", "have", "has", "mind", "may", "should", "okay", "ok", "sound", "fair", "right", "yeah", "correct", "cool", "make"]
-  883  
-  884      /// The last question in what the rep said, if it's a yes/no question.
-  885      /// Check-ins ("Still with me?") aren't a real ask: a "yeah" to them isn't a yes to anything.
-  886      static let checkIns = ["still with me", "you there", "can you hear me", "are you there", "did i lose you", "still there"]
-  887  
-  888      /// Questions often come through with no "?" ("You guys use Salesforce right"). Treat a tag ending as one.
-  889      public static func asQuestion(_ text: String) -> String {
-  890          let t = text.trimmingCharacters(in: .whitespaces)
-  891          guard !t.hasSuffix("?") else { return t }
-  892          let l = t.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".!, "))
-  893          let tags = [" right", " correct", " yeah", " yes", " no", " true", " fair"]
-  894          return tags.contains(where: { l.hasSuffix($0) }) ? l + "?" : t
-  895      }
-  896  
-  897      public static func closedQuestion(in raw: String) -> String? {
-  898          let t = asQuestion(raw)
-  899          guard t.hasSuffix("?") else { return nil }
-  900          if checkIns.contains(where: { t.lowercased().contains($0) }) { return nil }
-  901          let sentence = t.dropLast().split(whereSeparator: { ".?!".contains($0) }).last.map(String.init) ?? ""
-  902          var words = sentence.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
-  903          while let w = words.first, ["so", "and", "but", "well", "hey", "um", "uh", "like", "just"].contains(w) { words.removeFirst() }
-  904          guard let first = words.first else { return nil }
-  905          // A tag question ("You guys use Salesforce, right") is yes/no whatever its first word.
-  906          let tagged = ["right", "correct", "yeah", "true", "huh"].contains(words.last ?? "") && words.count > 2
-  907          return tagged || closedStarts.contains(first) ? sentence.trimmingCharacters(in: .whitespaces) + "?" : nil
-  908      }
-  909  }
+  888  /// The rep asked a yes/no question ("Can I get 30 seconds?", "Does that sound familiar?", "...yeah?"):
+  889  /// the line for "yes" can be written before they answer. Open questions ("What do you use?") aren't.
+  890  public enum RepQuestion {
+  891      static let closedStarts: Set<String> = ["can", "could", "would", "will", "do", "does", "did", "is", "are", "was",
+  892          "were", "have", "has", "mind", "may", "should", "okay", "ok", "sound", "fair", "right", "yeah", "correct", "cool", "make"]
+  893  
+  894      /// The last question in what the rep said, if it's a yes/no question.
+  895      /// Check-ins ("Still with me?") aren't a real ask: a "yeah" to them isn't a yes to anything.
+  896      static let checkIns = ["still with me", "you there", "can you hear me", "are you there", "did i lose you", "still there"]
+  897  
+  898      /// Questions often come through with no "?" ("You guys use Salesforce right"). Treat a tag ending as one.
+  899      public static func asQuestion(_ text: String) -> String {
+  900          let t = text.trimmingCharacters(in: .whitespaces)
+  901          guard !t.hasSuffix("?") else { return t }
+  902          let l = t.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".!, "))
+  903          let tags = [" right", " correct", " yeah", " yes", " no", " true", " fair"]
+  904          return tags.contains(where: { l.hasSuffix($0) }) ? l + "?" : t
+  905      }
+  906  
+  907      public static func closedQuestion(in raw: String) -> String? {
+  908          let t = asQuestion(raw)
+  909          guard t.hasSuffix("?") else { return nil }
+  910          if checkIns.contains(where: { t.lowercased().contains($0) }) { return nil }
+  911          let sentence = t.dropLast().split(whereSeparator: { ".?!".contains($0) }).last.map(String.init) ?? ""
+  912          var words = sentence.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+  913          while let w = words.first, ["so", "and", "but", "well", "hey", "um", "uh", "like", "just"].contains(w) { words.removeFirst() }
+  914          guard let first = words.first else { return nil }
+  915          // A tag question ("You guys use Salesforce, right") is yes/no whatever its first word.
+  916          let tagged = ["right", "correct", "yeah", "true", "huh"].contains(words.last ?? "") && words.count > 2
+  917          return tagged || closedStarts.contains(first) ? sentence.trimmingCharacters(in: .whitespaces) + "?" : nil
+  918      }
+  919  }
 ```
 
-`CoachCore/CoachCore.swift` lines 1177–1182
+`CoachCore/CoachCore.swift` lines 1187–1192
 
 ```swift
- 1177  /// A line with a slot still unfilled ("[Name]", "[Day]") never shows (script rule: token fill).
- 1178  public enum TokenFill {
- 1179      public static func hasOpenSlot(_ line: String) -> Bool {
- 1180          line.range(of: #"\[[^\]]{1,30}\]"#, options: .regularExpression) != nil
- 1181      }
- 1182  }
+ 1187  /// A line with a slot still unfilled ("[Name]", "[Day]") never shows (script rule: token fill).
+ 1188  public enum TokenFill {
+ 1189      public static func hasOpenSlot(_ line: String) -> Bool {
+ 1190          line.range(of: #"\[[^\]]{1,30}\]"#, options: .regularExpression) != nil
+ 1191      }
+ 1192  }
 ```
 
-`CoachCore/CoachCore.swift` lines 1035–1062
+`CoachCore/CoachCore.swift` lines 1045–1072
 
 ```swift
- 1035  /// The meeting is only "booked" when the prospect's words agree, not when a closing line is shown (N4).
- 1036  public enum GoalEvidence {
- 1037      static let agree = ["works for me", "that works", "sounds good", "send the invite", "send me the invite", "let's do",
- 1038                          "book it", "put me down", "i'm in", "see you then", "that's perfect", "perfect, send"]
- 1039      static let times = ["monday", "tuesday", "wednesday", "thursday", "friday", "tomorrow", "next week", " am", " pm", "o'clock"]
- 1040  
- 1041      public static func mentionsTime(_ text: String) -> Bool {
- 1042          let t = " " + text.lowercased() + " "
- 1043          // A clock time, not any number ("30 seconds" isn't a meeting time).
- 1044          let clock = #"\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?(am|pm|a\.m\.|p\.m\.)|\bat \d{1,2}\b"#
- 1045          return times.contains(where: { t.contains($0) }) || t.range(of: clock, options: .regularExpression) != nil
- 1046      }
- 1047  
- 1048      static let negative = ["difficult", "can't", "cannot", "won't", "busy", "bad", "doesn't work", "don't", "tough", "booked", "out of"]
- 1049      static let positive = ["works", "good", "fine", "great", "perfect", "okay", "ok", "sure", "yes", "yeah"]
+ 1045  /// The meeting is only "booked" when the prospect's words agree, not when a closing line is shown (N4).
+ 1046  public enum GoalEvidence {
+ 1047      static let agree = ["works for me", "that works", "sounds good", "send the invite", "send me the invite", "let's do",
+ 1048                          "book it", "put me down", "i'm in", "see you then", "that's perfect", "perfect, send"]
+ 1049      static let times = ["monday", "tuesday", "wednesday", "thursday", "friday", "tomorrow", "next week", " am", " pm", "o'clock"]
  1050  
- 1051      /// `afterTimeOffer`: the line they answered offered a time, so a plain "sure" agrees to it.
- 1052      public static func confirms(_ prospectSaid: String, afterTimeOffer: Bool = false) -> Bool {
- 1053          let t = " " + prospectSaid.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
- 1054          let kind = ProspectReply.kind(prospectSaid)
- 1055          if kind == .no || kind == .unsure { return false }
- 1056          if t.contains(" but ") || t.contains("not ") || negative.contains(where: { t.contains($0) }) { return false }
- 1057          if agree.contains(where: { t.contains($0) }) { return true }
- 1058          // A day or time alone isn't agreement ("Tuesday is difficult"): it needs a positive word with it.
- 1059          if times.contains(where: { t.contains($0) }) { return positive.contains(where: { t.contains(" \($0)") }) }
- 1060          return kind == .yes && afterTimeOffer
- 1061      }
- 1062  }
+ 1051      public static func mentionsTime(_ text: String) -> Bool {
+ 1052          let t = " " + text.lowercased() + " "
+ 1053          // A clock time, not any number ("30 seconds" isn't a meeting time).
+ 1054          let clock = #"\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?(am|pm|a\.m\.|p\.m\.)|\bat \d{1,2}\b"#
+ 1055          return times.contains(where: { t.contains($0) }) || t.range(of: clock, options: .regularExpression) != nil
+ 1056      }
+ 1057  
+ 1058      static let negative = ["difficult", "can't", "cannot", "won't", "busy", "bad", "doesn't work", "don't", "tough", "booked", "out of"]
+ 1059      static let positive = ["works", "good", "fine", "great", "perfect", "okay", "ok", "sure", "yes", "yeah"]
+ 1060  
+ 1061      /// `afterTimeOffer`: the line they answered offered a time, so a plain "sure" agrees to it.
+ 1062      public static func confirms(_ prospectSaid: String, afterTimeOffer: Bool = false) -> Bool {
+ 1063          let t = " " + prospectSaid.lowercased().replacingOccurrences(of: "\u{2019}", with: "'") + " "
+ 1064          let kind = ProspectReply.kind(prospectSaid)
+ 1065          if kind == .no || kind == .unsure { return false }
+ 1066          if t.contains(" but ") || t.contains("not ") || negative.contains(where: { t.contains($0) }) { return false }
+ 1067          if agree.contains(where: { t.contains($0) }) { return true }
+ 1068          // A day or time alone isn't agreement ("Tuesday is difficult"): it needs a positive word with it.
+ 1069          if times.contains(where: { t.contains($0) }) { return positive.contains(where: { t.contains(" \($0)") }) }
+ 1070          return kind == .yes && afterTimeOffer
+ 1071      }
+ 1072  }
 ```
 
 ## 12. Getting a real call's exact messages from a trace
