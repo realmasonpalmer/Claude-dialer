@@ -1037,19 +1037,20 @@ extension CoachModel {
             ActivityLog.add("Coach line shown (\(kind)\(ms.map { ", \($0) ms after their last words" } ?? "")): \(s.say)")
         }
         var s = s
-        // THINK that doesn't hold up against this conversation never reaches the card: SAY shows instead, on purpose
-        // (the card says "SAY THIS"), and the reason is in the trace.
-        if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, !s.think.isEmpty {
-            let why = Think.problems(think: s.think, say: s.say, move: s.move, intent: ConversationIntent.classify(CoachPrompt.latestProspect),
-                                     objectionKind: ObjectionTracker.detect(CoachPrompt.latestProspect),
-                                     latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
-                                     scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions)
-            if !why.isEmpty {
-                CallTrace.event("think.fallback", ["think": s.think, "say": s.say, "problems": why], sug: id)
+        // EXACT is decided once, here: an approved script line word for word, never just a [row] tag on the CUE.
+        if kind == .reply { s.exact = Self.isExact(s) }
+        // THINK is cleared only for a serious problem (a wrong move, a role mix-up): different wording from SAY or
+        // a new topic is not a reason to swap in the full sentence. Serious lines are normally suppressed earlier.
+        var thinkProblems: [String] = []
+        if status == .live, kind == .reply, Think.enabled, !s.exact, !s.nudge {
+            thinkProblems = Think.problems(think: s.think, say: s.say, move: s.move, intent: ConversationIntent.classify(CoachPrompt.latestProspect),
+                                           objectionKind: ObjectionTracker.detect(CoachPrompt.latestProspect),
+                                           latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
+                                           scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions)
+            if thinkProblems.contains(where: Self.isSerious), !s.think.isEmpty {
+                CallTrace.event("think.cleared", ["think": s.think, "say": s.say, "problems": thinkProblems], sug: id)
                 s.think = ""
             }
-        } else if status == .live, kind == .reply, Think.enabled, s.rowTag == nil, !s.nudge, s.think.isEmpty {
-            CallTrace.event("think.fallback", ["think": "", "say": s.say, "problems": ["THINK was missing"]], sug: id)
         }
         s.say = fillTags(s.say, for: calling) // [SDR], {first name} and other slots Claude copied from the script
         // Still an unfilled slot ([Day], [Firm] we don't know): never show it. Keep the current line (script rule).
