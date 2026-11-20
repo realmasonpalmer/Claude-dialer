@@ -206,6 +206,11 @@ struct CoachView: View {
     @AppStorage(PrefKey.dropNudgeDismissed) private var dropNudgeDismissed = false
     @State private var showWhy = false
     @State private var showScriptMaker = false
+    /// The live coach card is folded (like My script, This block and My activity).
+    @AppStorage("liveCardOpen") private var liveCardOpen = true
+    /// A script step the rep is reading with Previous / Next (nil = follow the call).
+    @State private var browsingStep: ScriptStep?
+    @State private var showFullScript = false
     /// The first-run tour: 0 = welcome card, 1...n = steps, nil = hidden.
     @State private var tourStep: Int?
     @AppStorage(PrefKey.tourSeen) private var tourSeen = false
@@ -264,7 +269,6 @@ struct CoachView: View {
             // Show less (between calls): no line card or script, just the call block and your numbers.
             // During a call the line always shows: it's what to say.
             if showAll || coach.status != .ready { scriptCard.tourScrollSpot(.line) }
-            if showAll { ScriptOutlineCard(coach: coach).tourScrollSpot(.script) }
             belowCard
             // Essential view: only between calls (during a call it's just the line).
             if coach.statusRecordID != nil, coach.status == .ready {
@@ -358,6 +362,19 @@ struct CoachView: View {
         }
         .onChange(of: campaigns.campaigns) { _, _ in campaigns.ensureSelectedActive(); syncScriptToList() }
         .sheet(isPresented: $showHelp) { HelpView() }
+        .sheet(isPresented: $showFullScript) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Full script: \(campaigns.selected.name)").font(.title3.weight(.semibold))
+                    Spacer()
+                    Button("Done") { showFullScript = false }.keyboardShortcut(.defaultAction)
+                }
+                ScrollView { ScriptOutlineCard(coach: coach, fullOnly: true) }
+            }
+            .padding(20)
+            .frame(width: 520, height: 600)
+            .brandWindow()
+        }
         .sheet(isPresented: $showScriptMaker) {
             ScriptMakerView(onEdit: { edit($0) }).environmentObject(campaigns)
         }
@@ -909,10 +926,17 @@ struct CoachView: View {
                     .background(Brand.blue.opacity(0.25), in: Capsule())
             }
             HStack(spacing: 6) {
-                Text(cardLabel)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.subtext)
-                // Which script row (or which opener) this line is, so the rep learns what works.
+                Button { liveCardOpen.toggle() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: liveCardOpen ? "chevron.down" : "chevron.right").font(.caption2)
+                        Text(cardLabel.isEmpty ? "LIVE COACH" : cardLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(coach.kind == .voicemail || coach.kind == .screener ? warning : Brand.text)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(liveCardOpen ? "Fold the coach card" : "Open the coach card")
                 Spacer()
                 if coach.thinking && coach.status == .live {
                     ProgressView().controlSize(.mini)
@@ -937,6 +961,7 @@ struct CoachView: View {
                         .help("Don't like this line? Get a new one right now.")
                 }
             }
+            if liveCardOpen {
             lineText(inTour && coach.status == .ready ? TourSample.line
                  : coach.suggestion.say.isEmpty
                  ? (Keychain.read(.anthropic) == nil ? "Almost there. Click the gear, then Set up, and upload your keys file." : "Getting your line ready...")
@@ -958,6 +983,10 @@ struct CoachView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.green)
                     .transition(.opacity)
+            }
+            Divider().overlay(Brand.edge)
+            ScriptStepper(coach: coach, browsing: $browsingStep, showFull: $showFullScript)
+                .tourSpot(.script)
             }
         }
         .padding(16)
