@@ -14,6 +14,8 @@ struct Suggestion: Equatable {
     var offered: [String] = []
     /// The move Claude picked before writing the line (answer, clarify, discover...).
     var move = ""
+    /// THINK mode only: one short thought for the card (empty when the mode is off).
+    var think = ""
     /// Voicemail follow-ups: a text to send and a LinkedIn connection note.
     var textMessage = ""
     var linkedin = ""
@@ -49,6 +51,10 @@ struct Suggestion: Equatable {
             if let m = Move.parse(trimmed) {
                 s.move = m.rawValue
                 if m == .silent { s.skip = true } // the rep doesn't need a new line
+                continue
+            }
+            if trimmed.hasPrefix("THINK:") {
+                s.think = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces)
                 continue
             }
             if trimmed.hasPrefix("SAY:") {
