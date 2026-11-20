@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import CoachCore
 
 /// Settings and tools: the coach's speed, plus tools for checking results and getting help.
 struct SettingsPane: View {
@@ -16,6 +17,7 @@ struct SettingsPane: View {
     @AppStorage(PrefKey.autoText) private var autoText = true
     @AppStorage("linkedInBotSend") private var autoLinkedInRequest = true
     @AppStorage(PrefKey.voicemailDropOn) private var dropOn = false
+    @AppStorage(Think.defaultsKey) private var thinkOn = true
     @State private var confirmReset = false
     @State private var note: String?
 
@@ -35,6 +37,11 @@ struct SettingsPane: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("Send LinkedIn connection requests by itself", isOn: $autoLinkedInRequest)
                 Text("On: the app sends it in Chrome in the background while you keep calling. Off: it opens their profile and types the note, you click Send.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            section("Coach card") {
+                Toggle("Short thoughts on the card (THINK)", isOn: $thinkOn)
+                Text("On: during a call the card shows one short thought from your script's backbone, in words you can say. Command-Shift-L shows the full line. Lines word for word from the script always show in full.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             section("Tools") {

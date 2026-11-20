@@ -1,11 +1,11 @@
 import Foundation
 
-/// THINK mode (off by default, test builds only): the card shows one short thought the rep can say
+/// THINK mode (on by default): the card shows one short thought the rep can say
 /// as-is or in their own words. The full SAY line stays one shortcut away. Script rows always show in full.
 public enum Think {
     public static let defaultsKey = "thinkCoach"
-    /// Off unless turned on for a test. Live calls in the Haiku vs Sonnet test never see it.
-    public static var enabled: Bool { UserDefaults.standard.bool(forKey: defaultsKey) }
+    /// On unless turned off in Settings.
+    public static var enabled: Bool { UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? true }
 
     /// The prompt line asking for the thought. Empty when THINK mode is off, so the live prompt is unchanged.
     public static func promptLine(enabled: Bool) -> String {
@@ -15,6 +15,8 @@ public enum Think {
           THINK rules:
           - Something the rep could say directly to the prospect. Use "you" / "your" when it fits.
           - One conversational move, specific to their latest meaningful words and the call so far.
+          - Follow the script's backbone: the thought moves the call toward the goal of the STAGE you picked,
+            using that stage's own words from the script when they fit.
           - Never mix spoken words with instructions to the rep. Never start with a command like
             "ask", "explore", "find out" or "mention".
           - Never repeat a question they already answered or declined. Never assume a pain they haven't said.
