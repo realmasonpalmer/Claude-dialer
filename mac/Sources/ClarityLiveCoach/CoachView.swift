@@ -1008,7 +1008,6 @@ struct CoachView: View {
                     Button("Latest") { coach.showLatest() }
                         .buttonStyle(.brandLink).font(.caption2)
                 } else if coach.status == .live {
-                    Text(coach.coachState.rawValue).font(.caption2).foregroundStyle(.secondary)
                     Button(coach.holdLine ? "Release" : "Hold") { coach.holdLine.toggle() }
                         .buttonStyle(.brandLink).font(.caption2)
                         .help("Hold keeps this line on screen until you release it.")
