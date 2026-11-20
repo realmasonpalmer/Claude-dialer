@@ -392,7 +392,7 @@ final class CallList: ObservableObject {
                 refreshUpNext(after: index)
                 return true
             }
-            message = "Log in to Salesforce in Chrome, then press START CALLING again."
+            message = "Log in to Salesforce in Chrome, then press START CALLING LIST again."
             return false
         }
         lastIndex = index
