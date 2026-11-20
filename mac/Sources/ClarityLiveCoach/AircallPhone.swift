@@ -576,6 +576,7 @@ struct DialingSwitches: View {
     @AppStorage(PrefKey.nextDials) private var autoDial = true
     @AppStorage(PrefKey.doubleTap) private var doubleTap = true
     var card = true
+    @State private var mobileTick = false
 
     var body: some View {
         let row = HStack(spacing: 14) {
@@ -588,6 +589,14 @@ struct DialingSwitches: View {
                 .fixedSize()
                 .help("On: if they don't pick up, the app calls them one more time right away. Off: one call, then the next person.")
             Spacer(minLength: 0)
+            Toggle("Mobile numbers only", isOn: Binding(
+                get: { MobileOnly.on },
+                set: { MobileOnly.setOn($0); mobileTick.toggle() }
+            ))
+                .toggleStyle(.checkbox)
+                .fixedSize()
+                .id(mobileTick)
+                .help("On: skip anyone with no Mobile in Salesforce, for the call list in use now. Better pick up rates, and every text can go out.")
         }
         .font(.callout)
         if card {
