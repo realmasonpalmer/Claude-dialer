@@ -509,53 +509,53 @@ struct AircallPhonePanel: View {
     @AppStorage("aircallTextNumberID") private var textNumberID = 0
     @State private var numbers: [Aircall.Number] = []
 
-    @State private var showOptions = false
-
     var body: some View {
-        // The top row of the calling bar: which number calls go out from, and Options for the rest.
-        HStack(spacing: 10) {
-            Image(systemName: "phone").foregroundStyle(Brand.subtext)
-            if numbers.isEmpty {
-                Text("Aircall number").font(.callout).foregroundStyle(Brand.muted)
-            } else {
-                // The app dials through Aircall's system, so it needs to be told which line to use.
-                Picker("Calling from", selection: $numberID) {
-                    if !numbers.contains(where: { $0.id == numberID }) { Text("Pick number").tag(0) }
-                    ForEach(numbers) { Text($0.name).tag($0.id) }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 220)
-                .help("Calls go out from this Aircall number")
+        // Calling options, always in view between calls: the two numbers on top, the switches below.
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                numberField("CALLS GO OUT FROM", selection: $numberID, sameAsCalls: false)
+                    .help("Calls go out from this Aircall number")
+                numberField("TEXTS GO OUT FROM", selection: $textNumberID, sameAsCalls: true)
+                    .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
             }
-            Spacer(minLength: 0)
-            Button { showOptions.toggle() } label: {
-                Label("Options", systemImage: "slider.horizontal.3").font(.callout)
-            }
-            .buttonStyle(BrandQuietButton())
-            .help("Auto dial, Call twice, Mobile numbers only, the texting number and time zones")
-            .tourSpot(.options)
-            .popover(isPresented: $showOptions, arrowEdge: .top) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Calling options").font(.headline)
-                    DialingSwitches(card: false, stacked: true)
-                    if !numbers.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Texts go out from").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
-                            Picker("Texts", selection: $textNumberID) {
-                                Text("Same as calls").tag(0)
-                                ForEach(numbers) { Text($0.name).tag($0.id) }
-                            }
-                            .labelsHidden()
-                            .frame(maxWidth: 240)
-                            .help("Texts need a number registered for texting (A2P). Oliver's Portland number is.")
-                        }
+            Divider().overlay(Brand.edge)
+            DialingSwitches(card: false).tourSpot(.options)
+        }
+    }
+
+    /// A labeled dropdown for an Aircall number: gray caps label, the number's name, one down arrow.
+    private func numberField(_ title: String, selection: Binding<Int>, sameAsCalls: Bool) -> some View {
+        let name = sameAsCalls && selection.wrappedValue == 0 ? "Same as calls"
+            : numbers.first { $0.id == selection.wrappedValue }?.name ?? (numbers.isEmpty ? "Aircall not set up" : "Pick a number")
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption.weight(.medium)).tracking(0.4).foregroundStyle(Brand.subtext)
+            Menu {
+                if sameAsCalls { Button("Same as calls") { selection.wrappedValue = 0 } }
+                ForEach(numbers) { n in
+                    Button {
+                        selection.wrappedValue = n.id
+                    } label: {
+                        if n.id == selection.wrappedValue { Label(n.name, systemImage: "checkmark") } else { Text(n.name) }
                     }
                 }
-                .padding(16)
-                .frame(width: 300)
-                .brandWindow()
+            } label: {
+                HStack {
+                    Text(name).font(.body.weight(.medium)).foregroundStyle(Brand.text).lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: 6)
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .background(Brand.quiet, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.controlEdge, lineWidth: 1))
+                .contentShape(Rectangle())
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .disabled(numbers.isEmpty)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
         .task {
             numbers = (try? await Aircall.numbers()) ?? []
             Aircall.pickTextNumber(from: numbers)
@@ -625,8 +625,13 @@ struct DialingSwitches: View {
                 }
             }
         } label: {
-            Text(picked.map { "\($0.label) only" } ?? (east ? "East Coast first" : "All time zones"))
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.arrow.down").foregroundStyle(Brand.subtext)
+                Text(picked.map { "\($0.label) only" } ?? (east ? "East Coast first" : "All time zones")).foregroundStyle(Brand.text)
+                Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+            }
         }
+        .menuIndicator(.hidden)
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(coach.status != .ready)
@@ -635,20 +640,19 @@ struct DialingSwitches: View {
 
     var body: some View {
         let row = stack {
-            Toggle("Auto Dial", isOn: $autoDial)
-                .toggleStyle(.checkbox)
+            Toggle("Auto dial", isOn: $autoDial)
+                .toggleStyle(RoundCheck())
                 .fixedSize()
                 .help("On: the app calls the next person by itself. Off: you click Call each time.")
-            Toggle("Call Twice", isOn: $doubleTap)
-                .toggleStyle(.checkbox)
+            Toggle("Call twice", isOn: $doubleTap)
+                .toggleStyle(RoundCheck())
                 .fixedSize()
                 .help("On: if they don't pick up, the app calls them one more time right away. Off: one call, then the next person.")
-            if !stacked { Spacer(minLength: 0) }
-            Toggle("Mobile Numbers Only", isOn: Binding(
+            Toggle("Mobile only", isOn: Binding(
                 get: { MobileOnly.on },
                 set: { MobileOnly.setOn($0); mobileTick.toggle() }
             ))
-                .toggleStyle(.checkbox)
+                .toggleStyle(RoundCheck())
                 .fixedSize()
                 .id(mobileTick)
                 .help("On: skip anyone with no Mobile in Salesforce, for the call list in use now. Better pick up rates, and every text can go out.")
@@ -658,6 +662,7 @@ struct DialingSwitches: View {
                     timeZoneMenu
                 }
             } else {
+                Spacer(minLength: 8)
                 timeZoneMenu
             }
         }
@@ -667,5 +672,26 @@ struct DialingSwitches: View {
         } else {
             row
         }
+    }
+}
+
+/// A round check: an empty circle when off, a white filled circle with a dark check when on.
+struct RoundCheck: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().stroke(Brand.controlEdge, lineWidth: 1.5)
+                        .background(Circle().fill(configuration.isOn ? Brand.text : Color.clear))
+                    if configuration.isOn {
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Brand.navy)
+                    }
+                }
+                .frame(width: 18, height: 18)
+                configuration.label.foregroundStyle(Brand.text)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
