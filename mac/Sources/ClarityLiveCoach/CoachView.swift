@@ -1323,13 +1323,7 @@ struct CoachView: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon).font(.title3)
-                // Shorter words when the button is narrow, never "START CALLING LI…".
-                ViewThatFits(in: .horizontal) {
-                    ForEach(Self.shorter(title), id: \.self) { t in
-                        Text(t).font(.title3.weight(.bold)).lineLimit(1).fixedSize()
-                    }
-                    Text(title).font(.title3.weight(.bold)).lineLimit(1)
-                }
+                Text(title).font(.title3.weight(.bold)).lineLimit(1)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
@@ -1338,27 +1332,13 @@ struct CoachView: View {
         .buttonStyle(BrandPrimaryButton(color: color))
     }
 
-    /// The button's title, then shorter ones for narrow windows.
-    private static func shorter(_ title: String) -> [String] {
-        switch title {
-        case "START CALLING LIST": return ["START CALLING LIST", "START CALLING", "START"]
-        case "STOP CALLING": return ["STOP CALLING", "STOP"]
-        case "Next Person": return ["Next Person", "Next"]
-        default: return [title]
-        }
-    }
-
     private func smallButton(_ title: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let icon { Image(systemName: icon) }
-                ViewThatFits(in: .horizontal) {
-                    ForEach(Self.shorter(title), id: \.self) { t in
-                        Text(t).font(.body.weight(.semibold)).lineLimit(1).fixedSize()
-                    }
-                }
+                Text(title).font(.body.weight(.semibold)).lineLimit(1)
             }
-            .frame(minWidth: 70)
+            .frame(minWidth: 140)
             .padding(.vertical, 8)
         }
         .buttonStyle(BrandQuietButton())
