@@ -1535,9 +1535,6 @@ struct CoachView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    Text(Self.initials(p.name)).font(.title3.weight(.semibold)).foregroundStyle(Brand.text)
-                        .frame(width: 52, height: 52)
-                        .background(Brand.blue.opacity(0.35), in: Circle())
                 }
             }
             .padding(CardStyle.padding)
@@ -1549,10 +1546,6 @@ struct CoachView: View {
             }
             .animation(.easeOut(duration: 0.15), value: p.name)
         }
-    }
-
-    private static func initials(_ name: String) -> String {
-        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
     }
 
     /// The person on screen now, from the Salesforce tab (e.g. Lead "Burcin Sonmezer").
