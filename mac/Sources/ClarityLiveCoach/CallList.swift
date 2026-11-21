@@ -380,6 +380,27 @@ final class CallList: ObservableObject {
 
     private func open(_ record: Record, at index: Int) -> Bool {
         // Click it in the list like the rep would (keeps split view); else go to its address.
+        // Not loaded in the list yet (Salesforce loads rows as you scroll): search the list for them,
+        // then click their row, so it opens in split view. Clears the search after.
+        if !SalesforceChrome.click(recordID: record.id), SalesforceChrome.searchList(record.name) {
+            lastIndex = index
+            lastOpenedID = record.id
+            message = nil
+            save()
+            refreshUpNext(after: index)
+            Task { @MainActor in
+                var opened = false
+                for _ in 0..<8 where !opened {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    opened = SalesforceChrome.click(recordID: record.id)
+                }
+                if !opened { _ = SalesforceChrome.open(record.url) }
+                try? await Task.sleep(for: .seconds(2))
+                _ = SalesforceChrome.searchList("")
+                ActivityLog.add(opened ? "Opened \(record.name) by searching the list" : "Search didn't find them: opened their record page")
+            }
+            return true
+        }
         guard SalesforceChrome.click(recordID: record.id) || SalesforceChrome.open(record.url) else {
             if chromeBlocked {
                 message = "Chrome needs one setting: View > Developer > Allow JavaScript from Apple Events."
@@ -725,6 +746,8 @@ enum SalesforceChrome {
         let js = deepFind + "(function(){var links=deep(listRoot()||document,'a[href]',[]);"
             + "for(var i=0;i<links.length;i++){var a=links[i];"
             + "if(a.getClientRects().length&&a.href.indexOf('\(recordID)')>=0&&(a.textContent||'').trim()){a.click();return 'ok';}}"
+            + "for(var j=0;j<links.length;j++){var b=links[j];"
+            + "if(b.href.indexOf('\(recordID)')>=0&&(b.textContent||'').trim()){b.scrollIntoView({block:'center'});b.click();return 'ok';}}"
             + "return 'no';})()"
         guard javascript(js) == "ok" else { return false }
         defer { invalidate() }
@@ -739,6 +762,20 @@ enum SalesforceChrome {
     /// Clicks the number on the open record (Salesforce's click-to-dial): Mobile, or Phone if there's
     /// no Mobile. That makes the Aircall panel in Salesforce dial it. Only a fallback when the app
     /// can't place calls itself. Skips the split view list.
+    /// Types into the list's own "Search this list" box (empty clears it), so a row Salesforce hasn't
+    /// loaded yet shows up and can be clicked in split view.
+    static func searchList(_ text: String) -> Bool {
+        let t = text.filter { $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" }
+        let js = deepFind + "(function(){var ins=deep(document,'input',[]);var box=null;"
+            + "for(var i=0;i<ins.length;i++){var p=(ins[i].placeholder||'').toLowerCase();if(p.indexOf('search this list')>=0&&ins[i].getClientRects().length){box=ins[i];break;}}"
+            + "if(!box)return 'no';box.focus();"
+            + "var set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(box,'\(t)');"
+            + "box.dispatchEvent(new Event('input',{bubbles:true}));"
+            + "['keydown','keyup'].forEach(function(n){box.dispatchEvent(new KeyboardEvent(n,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));});"
+            + "return 'ok';})()"
+        return javascript(js) == "ok"
+    }
+
     static func clickToDial() -> Bool {
         for which in [mobileLabel, phoneLabel] {
             if javascript(mobileFinder + "(function(){var el=numberEl(\(which));if(!el)return 'no';"
