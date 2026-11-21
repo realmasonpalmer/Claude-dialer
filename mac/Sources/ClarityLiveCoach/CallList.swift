@@ -199,7 +199,9 @@ final class CallList: ObservableObject {
             // The team's calls from Salesforce, so the order knows who was called on another Mac.
             await CallHistory.load(ids: rows.map(\.id), object: key.object)
             guard listKey == key else { return false }
-            let origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } } ?? ""
+            var origin = SalesforceChrome.url().flatMap { URL(string: $0) }.flatMap { u in u.host.map { "https://\($0)" } } ?? ""
+            if origin.contains("force.com") { UserDefaults.standard.set(origin, forKey: "salesforceOrigin") }
+            else { origin = UserDefaults.standard.string(forKey: "salesforceOrigin") ?? origin }
             let currentID = lastIndex >= 0 && lastIndex < records.count ? records[lastIndex].id : nil
             let before = Set(records.map { String($0.id.prefix(15)) })
             let beforeCount = records.count
@@ -392,7 +394,20 @@ final class CallList: ObservableObject {
                 refreshUpNext(after: index)
                 return true
             }
-            message = "Log in to Salesforce in Chrome, then press START CALLING LIST again."
+            // Signed out (or the address was saved without the org): open the login page. Once the rep
+            // is signed in, the app goes back to the list and opens this person by itself.
+            let origin = UserDefaults.standard.string(forKey: "salesforceOrigin")
+            let path = record.url.hasPrefix("https://") ? nil : record.url
+            let target = origin.map { $0 + (path ?? "") } ?? "https://login.salesforce.com"
+            if SalesforceChrome.openNewTab(target) {
+                message = "Log in to Salesforce in the Chrome tab that just opened. The app opens the next person by itself once you're in."
+                lastIndex = index
+                lastOpenedID = record.id
+                save()
+                refreshUpNext(after: index)
+                return true
+            }
+            message = "Open Chrome and log in to Salesforce. The app opens the next person by itself once you're in."
             return false
         }
         lastIndex = index
