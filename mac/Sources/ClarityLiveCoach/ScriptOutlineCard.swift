@@ -8,6 +8,8 @@ struct ScriptOutlineCard: View {
     @AppStorage(PrefKey.scriptOutlineOpen) private var open = false
     /// The "View Full Script" sheet: every part, no fold.
     var fullOnly = false
+    /// The Live Coach card is folded: the opener shows highlighted at the top of this card instead.
+    var openerOnTop = false
     /// Saves an edited script (the card can't reach the call list store itself).
     var onScriptChange: ((String) -> Void)? = nil
     /// The part being edited on the card, and its text.
@@ -114,6 +116,23 @@ struct ScriptOutlineCard: View {
                     // Edit: its own click target, never folds the card.
                     if let editMenu { editMenu }
                 }
+            }
+            if openerOnTop, !fullOnly, let part = parts.first(where: { $0.id == "opening" }) {
+                let line = coach.openerStyle.map { coach.fillTags($0.template, for: nil) } ?? part.text.trimmed
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("OPENER").font(.caption.weight(.semibold)).foregroundStyle(Brand.subtext)
+                        Text("EXACT").font(.caption2.weight(.bold)).foregroundStyle(Color.green)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .overlay(Capsule().stroke(Color.green.opacity(0.6), lineWidth: 1))
+                    }
+                    Text(line).font(.body.weight(.bold)).foregroundStyle(Brand.text)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Brand.blue.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.blue.opacity(0.5), lineWidth: 1))
             }
             if open || fullOnly {
                 ForEach(shown) { part in
