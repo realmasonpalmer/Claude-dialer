@@ -230,10 +230,9 @@ private struct TodayCard: View {
             let overdue: Int = { if case .due(_, let d) = session.plan(for: lead) { return d } else { return 0 } }()
             Card {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("OUTREACH SEQUENCE").font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        if overdue > 0 {
+                    if overdue > 0 {
+                        HStack {
+                            Spacer()
                             Text("\(overdue) day\(overdue == 1 ? "" : "s") overdue").font(.caption).foregroundStyle(Brand.stop)
                         }
                     }
