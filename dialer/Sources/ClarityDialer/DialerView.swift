@@ -42,10 +42,10 @@ struct DialerView: View {
                 Divider()
                 ActionBar()
                     .padding(.horizontal, 20).padding(.vertical, 14)
-                    .background(.bar)
+                    .background(Brand.navy)
                 Divider()
                 OutboundPanel()
-                    .background(.bar)
+                    .background(Brand.navy)
             }
             .frame(minWidth: 600)
         }
@@ -146,7 +146,7 @@ extension TopBar {
                 Button { updater.update() } label: {
                     if labels { Label("Update", systemImage: "arrow.down.circle.fill") } else { Image(systemName: "arrow.down.circle.fill") }
                 }
-                .buttonStyle(.borderedProminent).tint(.blue)
+                .buttonStyle(BrandPrimaryButton())
                 .help("A new build is ready. Installs it and reopens the app (1–3 minutes).")
             }
             if stats != .hidden {
@@ -367,7 +367,7 @@ private struct ScriptCard: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        Card {
+        Card(script: true) {
             VStack(alignment: .leading, spacing: 10) {
                 header
                 if editing { editor } else { reading }
@@ -431,7 +431,7 @@ private struct ScriptCard: View {
                 Spacer()
                 Button("Cancel") { editing = false }.keyboardShortcut(.cancelAction)
                 Button("Save & share") { save() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BrandPrimaryButton())
                     .keyboardShortcut("s", modifiers: .command)
                     .help("⌘S. Saves and updates this script for everyone who uses it.")
             }
@@ -492,13 +492,13 @@ private struct ActionBar: View {
             switch session.state {
             case .ready:
                 primary("Call", "phone.fill") { session.call() }
-                Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command)
-                Button("Back") { session.back() }.keyboardShortcut(.leftArrow, modifiers: .command).disabled(session.index == 0)
+                Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
+                Button("Back") { session.back() }.keyboardShortcut(.leftArrow, modifiers: .command).disabled(session.index == 0).buttonStyle(BrandQuietButton())
             case .countdown(let n):
                 Text("Calling in \(n)…").font(.headline).monospacedDigit()
                 primary("Call now", "phone.fill") { session.call() }
-                Button("Pause") { session.togglePause() }.keyboardShortcut(.cancelAction)
-                Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command)
+                Button("Pause") { session.togglePause() }.keyboardShortcut(.cancelAction).buttonStyle(BrandQuietButton())
+                Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
             case .dialing, .live:
                 CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
                 Spacer()
@@ -511,7 +511,7 @@ private struct ActionBar: View {
                 }
                 Button(role: .destructive) { session.hangUp() } label: { Label("Hang up", systemImage: "phone.down.fill") }
                     .keyboardShortcut(".", modifiers: .command)
-                    .buttonStyle(.borderedProminent).tint(.red).controlSize(.large)
+                    .buttonStyle(BrandPrimaryButton(color: Brand.stop)).controlSize(.large)
             case .wrapUp:
                 wrapUp
             default:
@@ -558,7 +558,7 @@ private struct ActionBar: View {
 
     private func primary(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) { Label(title, systemImage: icon).frame(minWidth: 110) }
-            .buttonStyle(.borderedProminent).controlSize(.large)
+            .buttonStyle(BrandPrimaryButton()).controlSize(.large)
             .keyboardShortcut(.defaultAction)
     }
 }

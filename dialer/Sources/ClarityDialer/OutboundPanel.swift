@@ -16,7 +16,7 @@ struct OutboundPanel: View {
                 HStack(spacing: 8) {
                     Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                     Image(systemName: "slider.horizontal.3").foregroundStyle(Look.accent)
-                    Text("Outbound Settings").font(.headline)
+                    Text("Outbound Settings").font(CardStyle.title)
                     Spacer()
                     if !open { Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
@@ -106,7 +106,7 @@ struct OutboundPanel: View {
     // MARK: Pieces
 
     private func check(_ title: String, _ value: Binding<Bool>, _ help: String) -> some View {
-        Toggle(title, isOn: value).toggleStyle(.checkbox).help(help)
+        Toggle(title, isOn: value).toggleStyle(BlueCheck()).help(help)
     }
 
     private func field<C: View>(_ title: String, icon: String, @ViewBuilder _ content: () -> C) -> some View {
@@ -124,7 +124,7 @@ struct OutboundPanel: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .overlay(RoundedRectangle(cornerRadius: Look.radius).strokeBorder(.quaternary))
+        .overlay(RoundedRectangle(cornerRadius: Look.radius).stroke(Brand.controlEdge, lineWidth: 1))
     }
 
 }

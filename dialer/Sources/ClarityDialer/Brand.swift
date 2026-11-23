@@ -1,0 +1,162 @@
+import SwiftUI
+import AppKit
+
+/// Clarity's navy, blue and teal, calmed down for long reading. Strong color is saved for what
+/// matters now: the Call button (blue), labels and the script's edge (teal), problems (orange/red).
+enum Brand {
+    private static func hex(_ v: UInt32) -> Color {
+        Color(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
+    }
+
+    /// Page background: slate navy.
+    static let navy = hex(0x111827)
+    static let navyNS = NSColor(red: 0x11 / 255, green: 0x18 / 255, blue: 0x27 / 255, alpha: 1)
+    /// Standard cards.
+    static let card = hex(0x1B2538)
+    /// The script card: solid, no gradient, for reading all call long.
+    static let scriptCard = hex(0x202F49)
+    /// Quiet buttons (Next, Reload, Hide, Back).
+    static let quiet = hex(0x253249)
+    /// Decorative borders.
+    static let edge = hex(0x303D52)
+    /// Control outlines: a step brighter than decorative borders so buttons read as buttons.
+    static let controlEdge = hex(0x3E4D66)
+    /// Main text: white. All regular text is white or gray, never blue.
+    static let text = hex(0xFFFFFF)
+    /// Secondary text: labels, instructions.
+    static let subtext = hex(0xCBD5E1)
+    /// Muted text: timestamps, hints, disabled.
+    static let muted = hex(0x94A3B8)
+    /// Primary action blue.
+    static let blue = hex(0x2563EB)
+    /// Teal accent: the script card's edge and small highlights (never text).
+    static let teal = hex(0x45C3CB)
+    /// The main call button.
+    static let go = hex(0x16A34A)
+    /// Stop and End call.
+    static let stop = hex(0xEF4444)
+}
+
+/// One look for every fold-out card: same chevron, icon, title size and padding.
+enum CardStyle {
+    static let title = Font.title3.weight(.semibold)
+    static let chevron = Font.callout.weight(.semibold)
+    static let icon = Font.title3
+    static let padding: CGFloat = 16
+    static let radius: CGFloat = 14
+}
+
+extension View {
+    /// A standard card: slightly lighter than the page, with a soft edge.
+    func brandCard(radius: CGFloat = 10) -> some View {
+        background(Brand.card, in: RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).stroke(Brand.edge, lineWidth: 0.5))
+    }
+
+    /// Slate navy page, soft white text, quieter secondary text, blue controls.
+    /// Put on every window's root view.
+    func brandWindow() -> some View {
+        tint(Brand.blue)
+            .foregroundStyle(Brand.text, Brand.subtext, Brand.muted)
+            .background(Brand.navy)
+            .preferredColorScheme(.dark)
+    }
+}
+
+/// The one strong action on screen (Call, Redial). Always blue, even when the window isn't in
+/// front (the Mac's own blue buttons turn gray then, and the coach floats over Salesforce).
+struct BrandPrimaryButton: ButtonStyle {
+    var color: Color = Brand.blue
+    func makeBody(configuration: Configuration) -> some View {
+        Look(configuration: configuration, color: color)
+    }
+
+    private struct Look: View {
+        let configuration: Configuration
+        let color: Color
+        @Environment(\.isEnabled) private var enabled
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(color.opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.35),
+                            in: RoundedRectangle(cornerRadius: 8))
+                .opacity(enabled ? 1 : 0.7)
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+/// Everything next to the main action (Next, Back, Reload, Hide): a muted surface, soft white
+/// label and a clear outline.
+struct BrandQuietButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Look(configuration: configuration)
+    }
+
+    private struct Look: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var enabled
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(enabled ? Brand.text : Brand.subtext.opacity(0.6))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(configuration.isPressed ? Brand.edge : Brand.quiet, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.controlEdge, lineWidth: 1))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+/// Text-style links (Stop, Skip, Show more...): white text, underlined on hover, never blue on blue.
+struct BrandLinkButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Look(configuration: configuration)
+    }
+
+    private struct Look: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var enabled
+        @State private var hover = false
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(enabled ? Brand.text : Brand.muted)
+                .underline(hover && enabled)
+                .opacity(configuration.isPressed ? 0.7 : 1)
+                .contentShape(Rectangle())
+                .onHover { hover = $0 }
+        }
+    }
+}
+
+extension ButtonStyle where Self == BrandLinkButton {
+    /// White text link (replaces the system blue link style).
+    static var brandLink: BrandLinkButton { BrandLinkButton() }
+}
+
+/// A blue filled square with a white check when on, an outlined square when off.
+struct BlueCheck: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(configuration.isOn ? Brand.blue : Color.clear)
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(configuration.isOn ? Brand.blue : Brand.controlEdge, lineWidth: 1.5))
+                    if configuration.isOn {
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 20, height: 20)
+                configuration.label.foregroundStyle(Brand.text).lineLimit(1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
