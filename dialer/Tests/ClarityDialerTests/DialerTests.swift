@@ -269,7 +269,7 @@ final class SessionTests: XCTestCase {
         await session.load(Salesforce.ListView(id: "LV", label: "List", object: .lead))
     }
 
-    func wait(until done: () -> Bool) async {
+    func wait(until done: @escaping () -> Bool) async {
         var tries = 0
         while !done(), tries < 400 {
             tries += 1
