@@ -201,7 +201,7 @@ enum Salesforce {
         for start in stride(from: 0, to: ids.count, by: 200) {
             let batch = safeIDs(ids[start..<min(start + 200, ids.count)])
             guard !batch.isEmpty else { continue }
-            for r in try await query("SELECT WhoId, CreatedDate FROM Task WHERE TaskSubtype = 'Call' AND WhoId IN (\(batch)) AND CreatedDate = LAST_N_DAYS:90") {
+            for r in try await query("SELECT WhoId, CreatedDate FROM Task WHERE (TaskSubtype = 'Call' OR Subject LIKE 'Call%') AND WhoId IN (\(batch)) AND CreatedDate = LAST_N_DAYS:90") {
                 guard let who = r["WhoId"] as? String, let raw = r["CreatedDate"] as? String else { continue }
                 let fixed = raw.replacingOccurrences(of: "+0000", with: "Z")
                 if let d = iso.date(from: fixed) ?? ISO8601DateFormatter().date(from: fixed) {
@@ -288,12 +288,22 @@ enum Salesforce {
             "Description": String(description.prefix(30_000)),
         ]
         if let id = a.salesforceTaskID {
+            // WhoId and TaskSubtype can only be set when the Task is created.
             var update = body
             update["WhoId"] = nil
+            update["TaskSubtype"] = nil
             try await call("PATCH", "/services/data/\(apiVersion)/sobjects/Task/\(id)", body: update)
             return id
         }
-        let json = try await call("POST", "/services/data/\(apiVersion)/sobjects/Task", body: body) as? [String: Any]
+        var json: [String: Any]?
+        do {
+            json = try await call("POST", "/services/data/\(apiVersion)/sobjects/Task", body: body) as? [String: Any]
+        } catch let e as SFError where e.message.contains("TaskSubtype") {
+            // Some profiles can't set it at all: log the call without it (Subject still says "Call: ...").
+            var plain = body
+            plain["TaskSubtype"] = nil
+            json = try await call("POST", "/services/data/\(apiVersion)/sobjects/Task", body: plain) as? [String: Any]
+        }
         guard let id = json?["id"] as? String else { throw SFError(message: "Salesforce didn't return the Task.") }
         return id
     }
