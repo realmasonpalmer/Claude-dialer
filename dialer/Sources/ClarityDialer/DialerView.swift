@@ -87,54 +87,93 @@ private struct TopBar: View {
                 Divider()
                 Button("Refresh lists") { Task { await reloadLists() } }
             } label: {
-                Text(session.list?.title ?? "Choose a list").font(.headline)
+                Text(session.list?.title ?? "Choose a list").font(.headline).lineLimit(1).truncationMode(.middle)
             }
-            .menuStyle(.borderlessButton).fixedSize()
+            .menuStyle(.borderlessButton)
+            .frame(maxWidth: 280, alignment: .leading)
+            .layoutPriority(1)
 
             if session.list != nil, session.state != .loading {
                 Text("\(min(session.index + 1, session.queue.count)) of \(session.queue.count)")
-                    .foregroundStyle(.secondary).monospacedDigit()
+                    .foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize()
                 Button { if let v = session.list { Task { await session.load(v) } } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless).help("Reload list")
             }
-            if let listError { Text(listError).font(.caption).foregroundStyle(.orange) }
-            Spacer()
-            if store.settings.autoDial, session.list != nil {
-                Button { session.togglePause() } label: {
-                    Label(session.paused ? "Resume auto-dial" : "Pause auto-dial",
-                          systemImage: session.paused ? "play.fill" : "pause.fill")
-                }
-                .keyboardShortcut("p", modifiers: .command)
-                .tint(session.paused ? .green : nil)
-                .help("⌘P. Pausing lets the current call finish, then stops before the next dial.")
+            if let listError { Text(listError).font(.caption).foregroundStyle(.orange).lineLimit(1) }
+            Spacer(minLength: 8)
+            // Narrow window: drop words before anything wraps. Every variant is one line.
+            ViewThatFits(in: .horizontal) {
+                trailing(labels: true, stats: .full)
+                trailing(labels: false, stats: .full)
+                trailing(labels: false, stats: .compact)
+                trailing(labels: false, stats: .hidden)
             }
-            if updater.updating {
-                ProgressView().controlSize(.small)
-                Text("Updating…").font(.caption).foregroundStyle(.secondary)
-            } else if updater.available {
-                Button { updater.update() } label: { Label("Update", systemImage: "arrow.down.circle.fill") }
-                    .buttonStyle(.borderedProminent).tint(.blue)
-                    .help("A new build was pushed. Installs it and reopens the app (1–3 minutes).")
-            }
-            TodayStrip().onTapGesture { openWindow(id: "metrics") }.help("Open Metrics (⇧⌘M)")
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
     }
 }
 
+extension TopBar {
+    /// Pause, Update and today's numbers, at one of several widths.
+    @ViewBuilder
+    func trailing(labels: Bool, stats: TodayStrip.Style) -> some View {
+        HStack(spacing: 10) {
+            if store.settings.autoDial, session.list != nil {
+                Button { session.togglePause() } label: {
+                    if labels {
+                        Label(session.paused ? "Resume auto-dial" : "Pause auto-dial", systemImage: session.paused ? "play.fill" : "pause.fill")
+                    } else {
+                        Image(systemName: session.paused ? "play.fill" : "pause.fill")
+                    }
+                }
+                .keyboardShortcut("p", modifiers: .command)
+                .tint(session.paused ? .green : nil)
+                .help(session.paused ? "Resume auto-dial (⌘P)" : "Pause auto-dial (⌘P). The current call finishes, then it stops.")
+            }
+            if updater.updating {
+                ProgressView().controlSize(.small)
+                if labels { Text("Updating…").font(.caption).foregroundStyle(.secondary) }
+            } else if updater.available {
+                Button { updater.update() } label: {
+                    if labels { Label("Update", systemImage: "arrow.down.circle.fill") } else { Image(systemName: "arrow.down.circle.fill") }
+                }
+                .buttonStyle(.borderedProminent).tint(.blue)
+                .help("A new build is ready. Installs it and reopens the app (1–3 minutes).")
+            }
+            if stats != .hidden {
+                TodayStrip(style: stats).onTapGesture { openWindow(id: "metrics") }.help("Today. Click for Metrics (⇧⌘M)")
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
+    }
+}
+
 /// Today's numbers, always visible.
 struct TodayStrip: View {
+    enum Style { case full, compact, hidden }
     @Environment(Store.self) private var store
+    var style: Style = .full
+
     var body: some View {
         let s = Metrics.summary(store.attempts.filter { Period.today.contains($0.dialedAt) })
-        HStack(spacing: 14) {
-            stat("\(s.dials)", "dials")
-            stat("\(s.connects)", "connects · \(s.connectRate.percent)")
-            stat("\(s.meetings)", "meetings")
-            stat(s.talkSeconds.duration, "talk")
+        HStack(spacing: style == .full ? 14 : 10) {
+            if style == .full {
+                stat("\(s.dials)", "dials")
+                stat("\(s.connects)", "connects · \(s.connectRate.percent)")
+                stat("\(s.meetings)", "meetings")
+                stat(s.talkSeconds.duration, "talk")
+            } else {
+                stat("\(s.dials)", "dials")
+                stat("\(s.connects)", "conn")
+                stat("\(s.meetings)", "mtg")
+            }
         }
         .font(.callout)
+        .lineLimit(1)
+        .fixedSize()
     }
+
     private func stat(_ v: String, _ l: String) -> some View {
         HStack(spacing: 4) { Text(v).bold().monospacedDigit(); Text(l).foregroundStyle(.secondary) }
     }
