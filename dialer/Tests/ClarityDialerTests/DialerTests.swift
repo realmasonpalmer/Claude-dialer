@@ -270,7 +270,11 @@ final class SessionTests: XCTestCase {
     }
 
     func wait(until done: () -> Bool) async {
-        for _ in 0..<400 where !done() { try? await Task.sleep(for: .milliseconds(5)) }
+        var tries = 0
+        while !done(), tries < 400 {
+            tries += 1
+            try? await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     func testUnansweredCallLogsNoAnswerAndMovesOn() async {
