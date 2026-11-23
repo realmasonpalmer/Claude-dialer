@@ -25,6 +25,10 @@ public enum Think {
           - Never assume their tools: say "your CRM" or "customer records" unless they named the tool themselves.
           - Answer their direct question first. An objection gets one relevant tip. A clear no gets no selling:
             acknowledge, at most offer an easy exit. If talk is going well and nothing is needed, MOVE silent.
+          - THINK is the move and SAY is the words. THINK must not repeat or paraphrase SAY.
+          - If the call context has a STRATEGY line, THINK is that move in plain words and SAY carries it out. It outranks the script.
+          - Coach the rep too: a long pitch with no problem found, pushing past a no, or a follow-up they were offered
+            are moves, not just the next question. "Stop pitching." / "Respect the no." / "Accept it and end the call."
           - Plain words, no jargon ("explore", "probe", "find the gap", "qualify"), never "your reps".
 
         """
@@ -95,6 +99,8 @@ public enum Think {
                 if mine.intersection(known).isEmpty { out.append("THINK is about something that hasn't come up: ground it in what they said") }
             }
         } else {
+            // A statement that only says SAY again is not coaching.
+            if repeatsSay(think: t, say: say) { out.append("THINK repeats SAY: tell the rep the move, not the same words") }
             // States a pain as theirs when they never said it.
             let low = t.lowercased(), said = latestProspect.lowercased() + " " + recentText.lowercased()
             if let w = assumedPain.first(where: { low.contains($0) && !said.contains($0) }) {
@@ -105,6 +111,15 @@ public enum Think {
             out.append("THINK and SAY aren't the same move: SAY should say what THINK asks or explains")
         }
         return out
+    }
+
+    /// THINK (a statement) that is SAY again: contained in it, or nearly the same words.
+    static func repeatsSay(think: String, say: String) -> Bool {
+        let a = Delivery.words(think), b = Delivery.words(say)
+        guard a.count >= 4, b.count >= 4 else { return false }
+        if (" " + b.joined(separator: " ") + " ").contains(" " + a.joined(separator: " ") + " ") { return true }
+        let x = Set(a), y = Set(b)
+        return Double(x.intersection(y).count) / Double(x.union(y).count) >= 0.9
     }
 
     /// The kind of question: "qty" (how many / much / long / often), "who", "when", "where", "which",

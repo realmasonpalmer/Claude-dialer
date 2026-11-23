@@ -255,6 +255,14 @@ extension CoachModel {
             return
         }
         if phoneTreeActive { uncoached = ""; askPhoneTree(); return } // the menu goes on: re-plan the route
+        // They offered to talk later ("call me back at the end of Q1"): accept it and stop selling. Code decides, no model wait.
+        if status == .live, !voicemailActive, !callClosed, let d = CallStrategy.afterProspect(strategyTurns()), d.kind == .acceptFollowUp {
+            callClosed = true
+            uncoached = ""
+            CallTrace.event("call.closing", ["said": said, "why": "they offered a follow-up", "strategy": d.reason])
+            showStrategyCard(d)
+            return
+        }
         // Two no's and a go: count their no's; two (or a no plus "yep, thanks") ends it politely, no AI.
         if status == .live, prospectNos > 0 { prospectTurnsAfterFirstNo += 1 }
         if status == .live, !voicemailActive, Rejection.isNo(said) { prospectNos += 1 }
@@ -634,6 +642,8 @@ extension CoachModel {
                                                 latestProspect: CoachPrompt.latestProspect, recentText: CoachPrompt.recentText,
                                                 scriptText: CoachPrompt.scriptText, answeredQuestions: CoachPrompt.answeredQuestions))
         }
+        // The whole-call strategy (follow-up offered, a clear no, no need found) outranks the model's move.
+        p.append(contentsOf: CallStrategy.problems(directive: CoachPrompt.strategy, move: s.move, think: s.think, say: s.say))
         // A script row copied word for word ("S2 open" is 26 words) isn't sent back for being long.
         return !isExact(s) ? p : p.filter { !$0.contains("words (max") }
     }
@@ -650,7 +660,7 @@ extension CoachModel {
             // Measured: these two checks wrongly reject good pairs (10 of 40 in the THINK/SAY matrix), so they
             // fall back to SAY instead of hiding the line.
             || problem.hasPrefix("THINK and SAY aren't the same move") || problem.hasPrefix("THINK is about something that hasn't come up") { return false }
-        return ["the rep claims", "they asked a direct", "they declined", "THINK ", "MOVE "].contains { problem.hasPrefix($0) }
+        return ["the rep claims", "they asked a direct", "they declined", "THINK ", "MOVE ", "STRATEGY"].contains { problem.hasPrefix($0) }
     }
 
     /// A line broke the rules: Haiku tries again with the reasons, then Sonnet, then the smallest safe fix.
@@ -1071,7 +1081,7 @@ extension CoachModel {
             // Sonnet line), and a line replaced before it could be read doesn't count as ignored.
             if testLineCounted, !lineDelivered, Date().timeIntervalSince(shownAt) < 2 { callLinesShown -= 1 }
             testLineCounted = kind == .reply && !s.nudge && s.say != LiveCoach.optOutLine && !freshLineIDs.contains(id)
-                && !s.cue.hasPrefix("From your script") && !s.cue.hasPrefix("Two no")
+                && !s.cue.hasPrefix("From your script") && !s.cue.hasPrefix("Two no") && s.strategy.isEmpty
             if testLineCounted { callLinesShown += 1 }
         }
         if status == .live {

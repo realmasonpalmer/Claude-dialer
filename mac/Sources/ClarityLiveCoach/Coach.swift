@@ -168,6 +168,10 @@ final class CoachModel: ObservableObject {
     var screenerCallID = ""
     var prospectNos = 0 { didSet { CoachPrompt.prospectNos = prospectNos } }
     var callClosed = false
+    /// Strategy cards: the last one shown (kind + how many prospect turns had happened), so each shows once per stretch.
+    var lastStrategyKey = ""
+    /// The strategy kind last written to the log, so a change is logged once.
+    var loggedStrategyKind = ""
     var callLinesShown = 0
     var callLinesUsed = 0
     var prospectTurnsAfterFirstNo = 0

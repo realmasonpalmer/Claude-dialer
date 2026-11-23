@@ -198,6 +198,9 @@ enum CoachPrompt {
     static var objectionFacts = ""
     /// How many times the prospect has said no this call (two no's and a go).
     static var prospectNos = 0
+    /// What the whole call means right now (decided in code): the one move the line must serve, and its prompt text.
+    static var strategy: CallStrategy.Directive?
+    static var strategyFacts = ""
     /// The prospect's words the latest reply was written for (the line check reads it).
     static var latestProspect = ""
     /// The last turns word for word and the campaign script, for the "is this THINK about this call" check.
@@ -264,7 +267,7 @@ enum CoachPrompt {
 
         \(repLast.isEmpty ? "" : "The rep's last words: \"\(repLast)\"\n")\(now)
         \(blockerHints.isEmpty ? "" : "\n" + blockerHints + "\n")\(questionFacts.isEmpty ? "" : "\nQuestions on this call (tracked by simple rules from the transcript):\n" + questionFacts + "\n")\(objectionFacts.isEmpty ? "" : "\nObjections on this call (tracked by simple rules from their words; answered is not the same as resolved):\n" + objectionFacts + "\n")
-        \(priority)\(shown)\(prospectNos == 1 ? "They have clearly said no once. No more sales questions: acknowledge it, at most offer an easy exit.\n" : "")
+        \(strategyFacts.isEmpty ? "" : "STRATEGY (decided by code from the whole call; it outranks the script, the stage and every default above):\n" + strategyFacts + "\n")\(priority)\(shown)\(prospectNos == 1 ? "They have clearly said no once. No more sales questions: acknowledge it, at most offer an easy exit.\n" : "")
         The tracked questions and objections above come from simple rules on the transcript. If the transcript
         shows something different, the transcript is the truth.
         The rep's actual words are the truth; the script is the guide. If the rep already covered something in

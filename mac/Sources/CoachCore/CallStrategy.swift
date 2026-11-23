@@ -51,7 +51,7 @@ public enum CallStrategy {
         let t = norm(text)
         if OptOut.matches(t) { return .optOut }
         if FollowUp.isOffered(t) { return .followUpOffered }
-        if Rejection.isNo(t) { return .clearNo }
+        if isNo(t) { return .clearNo }
         if has(t, tooSmallPhrases) { return .tooSmall }
         if has(t, alreadyUsingPhrases) { return .alreadyUsing }
         if has(t, notPriorityPhrases) { return .notPriority }
@@ -59,9 +59,23 @@ public enum CallStrategy {
         return .none
     }
 
+    static let contrast = [" but ", " though", " however", " although"]
+    static let softNos = ["not at this point", "not at this time", "not at this point in time", "i'm good right now", "we're good right now",
+                          "i'm all set", "no thank you", "no thanks"]
+
+    /// A clear no, wider than `Rejection.isNo` (which also drives the two-no's-and-a-go exit and is left alone):
+    /// a bare "No." sentence, or "Not at this point." A no that opens a door ("no, but...") isn't one.
+    public static func isNo(_ text: String) -> Bool {
+        let t = norm(text).lowercased()
+        if Rejection.isNo(t) { return true }
+        if contrast.contains(where: { t.contains($0) }) { return false }
+        if has(t, softNos) { return true }
+        return t.range(of: #"(?:^|[.!?]\s+)no[.!,]"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     /// A clear no was said and nothing since shows new interest: the sale stays closed.
     public static func noStands(_ turns: [Turn]) -> Bool {
-        guard let i = turns.lastIndex(where: { !$0.rep && Rejection.isNo($0.text) }) else { return false }
+        guard let i = turns.lastIndex(where: { !$0.rep && isNo($0.text) }) else { return false }
         return !turns[(i + 1)...].contains { !$0.rep && NeedSignal.interested($0.text) }
     }
 
@@ -83,14 +97,22 @@ public enum CallStrategy {
     /// After a clear no, even a short push is too much.
     public static let pushAfterNoWords = 25
 
-    static let incentiveWords = ["free", "lunch", "gift", "discount", "no cost", "no charge", "on us", "we'd buy", "we will buy", "we'll buy"]
+    static let incentiveWords = ["free", "lunch", "gift", "discount", "no cost", "no charge", "on us", "we'd buy", "we will buy", "we'll buy",
+                                 "bought you", "buy you", "a share in", "dollars", "cash"]
     static let meetingWords = ["meeting", "calendar", "schedule", "book", "demo", "health check", "call with", "30 minutes", "15 minutes"]
     static let riskyWords = ["guarantee", "guaranteed", "100%", "no risk", "risk free", "risk-free", "double your", "triple your",
-                             "we'll save you", "we will save you", "proven to", "never fails"]
+                             "we'll save you", "we will save you", "proven to", "never fails",
+                             "went public", "just went public", "ipo", "stock"]
 
     public static func offersIncentive(_ text: String) -> Bool { has(text, incentiveWords) || text.contains("$") }
     public static func pitchesMeeting(_ text: String) -> Bool { has(text, meetingWords) }
-    public static func riskyClaims(in text: String) -> [String] { riskyWords.filter { has(text, [$0]) || text.lowercased().contains($0) } }
+    /// Promises the rep can't back up. Words match as whole words; "100%" has no letters to split on, so it is a plain contains.
+    public static func riskyClaims(in text: String) -> [String] {
+        let low = norm(text).lowercased()
+        return riskyWords.filter { w in
+            w.contains("%") ? low.contains(w) : has(low, [w])
+        }
+    }
 
     // MARK: - Decisions
 
@@ -100,7 +122,7 @@ public enum CallStrategy {
         let m = meaning(of: last.text)
         if m == .optOut { return nil } // the opt-out path owns this
         if m == .followUpOffered {
-            let when = FollowUp.timing(last.text)
+            let when = FollowUp.timing(last.text).map(FollowUp.spoken)
             return Directive(kind: .acceptFollowUp, think: "They offered a follow-up. Accept it and end the call.",
                              say: when.map { "Sounds good. I'll reach out \($0). Thanks for your time." } ?? "Sounds good. I'll reach out then. Thanks for your time.",
                              move: "close", hard: true, reason: "follow-up offered" + (when.map { " (\($0))" } ?? ""))
@@ -257,7 +279,7 @@ public enum FollowUp {
     static let refusals = ["don't call", "do not call", "stop calling", "never call", "don't contact", "do not contact", "remove me", "take me off"]
     static let months = "january|february|march|april|may|june|july|august|september|october|november|december"
     static let patterns: [String] = [
-        #"(?:at |by |around |toward |towards )?the (?:end|beginning|start|middle) of (?:the |this |next )?(?:q[1-4]|quarter|month|year|week|summer|fall|spring|winter|\#(months))"#,
+        #"(?:at |by |around |toward |towards )?the (?:end|beginning|start|middle) of (?:(?:the|this|next|first|second|third|fourth) )*(?:q[1-4]|quarter|month|year|week|summer|fall|spring|winter|\#(months))"#,
         #"\b(?:in |by |around |for )?q[1-4]\b"#,
         #"\b(?:next|this coming) (?:quarter|month|year|week)\b"#,
         #"\b(?:after|in|around|early|late|mid)[ -](?:the )?(?:new year|holidays|\#(months))\b"#,
@@ -276,6 +298,13 @@ public enum FollowUp {
             }
         }
         return nil
+    }
+
+    /// How the rep says it back: "at the end of first quarter", "in Q1", "next quarter".
+    public static func spoken(_ timing: String) -> String {
+        if timing.hasPrefix("the ") { return "at " + timing }
+        if timing.range(of: #"^Q[1-4]$"#, options: .regularExpression) != nil { return "in " + timing }
+        return timing
     }
 
     public static func isOffered(_ text: String) -> Bool {

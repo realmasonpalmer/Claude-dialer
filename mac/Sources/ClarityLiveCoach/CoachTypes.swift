@@ -27,6 +27,8 @@ struct Suggestion: Equatable {
     /// An approved script line said word for word (an instant script answer, or a SAY that matches a script
     /// Say line). Set by the app when the line is shown; the CUE's [row] tag alone doesn't make it EXACT.
     var exact = false
+    /// The strategy move that made this card (CallStrategy.Kind raw value), or "" for an ordinary model line.
+    var strategy = ""
 
     /// The script row this line came from, when the cue starts with one: "[S5 manual 2] ..." -> "S5 manual 2".
     var rowTag: String? {

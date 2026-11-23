@@ -289,6 +289,7 @@ extension CoachModel {
         lastWordsAt = Date()
         defer { scheduleStillWithMe() }
         defer { if speaker == .rep { prepareWhileRepTalks(text); prepareYesBranch(text) } } // runs after the turn is recorded
+        defer { refreshStrategy(); if speaker == .rep { strategyCheckAfterRep() } } // runs first: the strategy is current for the rest
         if speaker == .rep {
             let count = text.split(separator: " ").count
             repWordsSinceShown += count
@@ -305,8 +306,11 @@ extension CoachModel {
         if speaker == .rep, status == .live, !suggestion.say.isEmpty {
             repSaidSinceShown += " " + text
             // THINK is what the rep sees: saying its question in their own words counts as following the line.
+            let followedStrategy = CallStrategy.Kind(rawValue: suggestion.strategy).map { CallStrategy.followed(kind: $0, repSaid: repSaidSinceShown) } ?? false
             if !lineDelivered, Delivery.delivered(line: suggestion.say, spoken: repSaidSinceShown)
-                || (!suggestion.think.isEmpty && suggestion.think.contains("?") && Delivery.delivered(line: suggestion.think, spoken: repSaidSinceShown)) {
+                || (!suggestion.think.isEmpty && suggestion.think.contains("?") && Delivery.delivered(line: suggestion.think, spoken: repSaidSinceShown))
+                || followedStrategy {
+                if followedStrategy { CallTrace.event("strategy.followed", ["kind": suggestion.strategy, "rep_said": repSaidSinceShown], sug: shownID) }
                 lineDelivered = true
                 if testLineCounted { callLinesUsed += 1 }
                 let conf = Delivery.confidence(line: suggestion.say, spoken: repSaidSinceShown)

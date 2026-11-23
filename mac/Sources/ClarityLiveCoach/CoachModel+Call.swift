@@ -685,6 +685,9 @@ extension CoachModel {
         questionTracker = QuestionTracker()
         objectionTracker = ObjectionTracker()
         CoachPrompt.objectionFacts = ""
+        CoachPrompt.strategy = nil
+        CoachPrompt.strategyFacts = ""
+        lastStrategyKey = ""
         CoachPrompt.shownLines = []
         CoachPrompt.saidLines = []
         CoachPrompt.likelyCoveredLines = []
