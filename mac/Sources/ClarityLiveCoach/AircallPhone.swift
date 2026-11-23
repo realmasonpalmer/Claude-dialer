@@ -118,12 +118,29 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
         var gum = md.getUserMedia.bind(md);
         // One audio mode for the whole session: hold a mic stream open from the start, so a Bluetooth
         // headset stays in call mode instead of switching (and changing sound speed) on every call.
+        // It is checked every few seconds, not asked for once: a headset that reconnects, sleeps or changes
+        // mode ends the held stream, and then the next call's own mic request flips the headset's mode in the
+        // middle of the call (the sound speed changes: voices go octaves up and down).
         if (!window.__clarityKeep) {
           window.__clarityKeep = true;
-          setTimeout(function () {
-            gum({ audio: true }).then(function (s) { window.__clarityKeepStream = s; post({ side: 'info', pcm: 'headset held in call mode for the session' }); })
-              .catch(function (e) { window.__clarityKeep = false; post({ side: 'info', pcm: 'could not hold the mic open: ' + e }); });
-          }, 1500);
+          var holding = false, holdFailures = 0;
+          var hold = function () {
+            if (holding || holdFailures >= 5) return;
+            var kept = window.__clarityKeepStream;
+            if (kept && live(kept)) return;
+            var again = !!kept;
+            holding = true;
+            gum({ audio: true }).then(function (s) {
+              holding = false; holdFailures = 0;
+              window.__clarityKeepStream = s;
+              post({ side: 'info', pcm: again ? 'headset hold had ended: holding call mode again' : 'headset held in call mode for the session' });
+            }).catch(function (e) {
+              holding = false; holdFailures++;
+              post({ side: 'info', pcm: 'could not hold the mic open: ' + e });
+            });
+          };
+          setTimeout(hold, 1500);
+          setInterval(hold, 4000);
         }
         md.getUserMedia = function (c) {
           return gum(c).then(function (stream) {
