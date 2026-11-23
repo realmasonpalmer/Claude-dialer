@@ -107,6 +107,8 @@ final class AircallPhone: NSObject, WKUIDelegate {
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.userContentController.addUserScript(
             WKUserScript(source: Self.minimalScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        config.userContentController.addUserScript(
+            WKUserScript(source: Self.navyTheme, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 360, height: 640), configuration: config)
         // Aircall supports Chrome; look like it so the page loads.
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -149,6 +151,62 @@ final class AircallPhone: NSObject, WKUIDelegate {
           apply();
         })();
         """
+
+    /// Clarity colors on Aircall's phone. Aircall's class names change with each release, so instead
+    /// of targeting them this finds every dark gray background or border and swaps it for the
+    /// matching shade of Clarity navy. Colored parts (green call buttons, red badges) stay as they are.
+    /// Runs again whenever the page changes.
+    private static let navyTheme = """
+    (function () {
+      if (window.__clarityTheme) return;
+      window.__clarityTheme = true;
+      var RGB = /rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/;
+      function gray(c) {
+        var m = RGB.exec(c || "");
+        if (!m) return null;
+        var r = +m[1], g = +m[2], b = +m[3], a = m[4] === undefined ? 1 : +m[4];
+        if (a === 0 || Math.max(r, g, b) - Math.min(r, g, b) > 12) return null; // colored: leave it
+        return { l: (r + g + b) / 3, a: a };
+      }
+      // Slate navy for a gray of lightness L: 20 = page #111827, 35 = card #1B2538.
+      function slate(L, a) {
+        return "rgba(" + Math.round(L * 0.62 + 5) + ", " + Math.round(L * 0.85 + 7) + ", " +
+          Math.round(L * 1.15 + 16) + ", " + a + ")";
+      }
+      function paint() {
+        var all = document.querySelectorAll("*");
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i], cs = getComputedStyle(el), x;
+          // Backgrounds: squeeze the grays together so panels and pills barely stand out
+          // from the card color. Quiet panel, eyes stay on the script.
+          if ((x = gray(cs.backgroundColor)) && x.l < 110)
+            el.style.setProperty("background-color", slate(Math.max(28, 30 + (x.l - 20) * 0.35), x.a), "important");
+          // Outlines stay clearly visible.
+          if (cs.borderTopStyle !== "none" && (x = gray(cs.borderTopColor)) && x.l < 140)
+            el.style.setProperty("border-color", slate(Math.max(45, x.l), x.a), "important");
+          // Text: bright white becomes soft white; gray details (timestamps, numbers) become muted.
+          if ((x = gray(cs.color))) {
+            if (x.l > 225) el.style.setProperty("color", "rgba(229, 234, 242, " + x.a + ")", "important");
+            else if (x.l > 110) el.style.setProperty("color", "rgba(167, 178, 197, " + x.a + ")", "important");
+          }
+        }
+        document.documentElement.style.setProperty("background-color", "#1B2538", "important");
+      }
+      var queued = false;
+      function later() {
+        if (queued) return;
+        queued = true;
+        setTimeout(function () { queued = false; try { paint(); } catch (e) {} }, 250);
+      }
+      function start() {
+        later();
+        new MutationObserver(later).observe(document.documentElement,
+          { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      }
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+      else start();
+    })();
+    """
 
     /// Clicks Aircall's red Hang up button. True if it found one.
     func hangUp() async -> Bool { await click(#"/hang[ _-]?up|end[ _-]?call|end the call/"#, avoid: "/^$/") }
