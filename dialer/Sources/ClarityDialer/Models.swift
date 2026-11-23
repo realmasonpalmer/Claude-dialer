@@ -117,6 +117,8 @@ struct OutboundSettings: Codable, Equatable, Sendable {
     var countdown = 3               // seconds before auto-dial
     var callTwice = false           // redial once right away if unanswered
     var mobileOnly = false          // skip people with no Mobile
+    var startHour = 8               // calling hours, in the person's local time
+    var endHour = 17
     var voicemailDrop = true        // show the Drop voicemail button (Aircall's recorded messages)
     var cadence = Cadence.standard  // the Day 1 / 3 / 5 sequence
     var maxAttemptsPerDay = 2
@@ -136,6 +138,8 @@ struct OutboundSettings: Codable, Equatable, Sendable {
         countdown = v(.countdown, d.countdown)
         callTwice = v(.callTwice, d.callTwice)
         mobileOnly = v(.mobileOnly, d.mobileOnly)
+        startHour = v(.startHour, d.startHour)
+        endHour = v(.endHour, d.endHour)
         voicemailDrop = v(.voicemailDrop, d.voicemailDrop)
         cadence = v(.cadence, d.cadence)
         maxAttemptsPerDay = v(.maxAttemptsPerDay, d.maxAttemptsPerDay)

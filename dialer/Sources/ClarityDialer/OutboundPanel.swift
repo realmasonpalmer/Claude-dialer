@@ -39,6 +39,8 @@ struct OutboundPanel: View {
         .task { numbers = (try? await Aircall.numbers()) ?? [] }
         // Who's on the list depends on these: reload between calls so the change shows.
         .onChange(of: store.settings.mobileOnly) { reloadIfIdle() }
+        .onChange(of: store.settings.startHour) { reloadIfIdle() }
+        .onChange(of: store.settings.endHour) { reloadIfIdle() }
     }
 
     private var summary: String {
@@ -88,6 +90,16 @@ struct OutboundPanel: View {
             check("Auto Dial", $store.settings.autoDial, "Calls the next person by itself after a countdown. ⌘P pauses.")
             check("Call Twice", $store.settings.callTwice, "If they don't pick up, call once more right away.")
             check("Mobile Only", $store.settings.mobileOnly, "Skip anyone with no Mobile in Salesforce.")
+            HStack(spacing: 6) {
+                Image(systemName: "clock").foregroundStyle(.secondary)
+                Picker("", selection: $store.settings.startHour) { ForEach(0..<24) { Text(Self.hour($0)).tag($0) } }
+                    .labelsHidden().fixedSize()
+                Text("to")
+                Picker("", selection: $store.settings.endHour) { ForEach(1..<25) { Text(Self.hour($0)).tag($0) } }
+                    .labelsHidden().fixedSize()
+                Text("their time").foregroundStyle(.secondary)
+            }
+            .help("Only call people when it's between these times where they are (from their state or area code).")
         }
     }
 
@@ -104,6 +116,10 @@ struct OutboundPanel: View {
     }
 
     // MARK: Pieces
+
+    static func hour(_ h: Int) -> String {
+        h == 24 ? "midnight" : "\(h % 12 == 0 ? 12 : h % 12)\(h < 12 ? "am" : "pm")"
+    }
 
     private func check(_ title: String, _ value: Binding<Bool>, _ help: String) -> some View {
         Toggle(title, isOn: value).toggleStyle(BlueCheck()).help(help)

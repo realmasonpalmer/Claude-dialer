@@ -32,6 +32,13 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(Rules.skip(lead(mobile: "+44 20 7946 0958"), s, History(), now: noonPacific), .notNorthAmerican)
     }
 
+    func testCallingHoursUseTheirZone() {
+        // 20:00Z = 3pm Eastern, noon Pacific. Ending at 2pm: New York is out, Oregon is in.
+        var h = s; h.endHour = 14
+        XCTAssertNil(Rules.skip(lead(state: "OR"), h, History(), now: noonPacific, calendar: cal))
+        if case .outsideHours = Rules.skip(lead(mobile: "212-555-0100", state: "NY"), h, History(), now: noonPacific, calendar: cal) {} else { XCTFail() }
+    }
+
     func testCalledTodayIsSkipped() {
         var hist = History(); hist.add("00Q000000000001", at: noonPacific.addingTimeInterval(-3600))
         XCTAssertEqual(Rules.skip(lead(), s, hist, now: noonPacific, calendar: cal), .calledToday)
@@ -256,6 +263,8 @@ final class SessionTests: XCTestCase {
         store.settings.aircallUserID = 1
         store.settings.fromNumberID = 2
         store.settings.autoDial = false
+        store.settings.startHour = 0   // calling hours would depend on when the tests run
+        store.settings.endHour = 24
         session = Session(store: store, phone: phone, crm: crm)
         session.pollInterval = .milliseconds(5)
         await session.load(Salesforce.ListView(id: "LV", label: "List", object: .lead))
