@@ -472,12 +472,12 @@ private struct ActionBar: View {
                 } else {
                     primary("Call", "phone.fill") { session.call() }
                 }
-                Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
+                Button("Next") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
                 Button("Back") { session.back() }.keyboardShortcut(.leftArrow, modifiers: .command).disabled(session.index == 0).buttonStyle(BrandQuietButton())
             case .countdown(let n):
                 Text("Calling in \(n)…").font(.headline).monospacedDigit()
                 primary("Call now", "phone.fill") { session.call() }
-                Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
+                Button("Next") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
             case .dialing, .live:
                 CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
                 Spacer()
