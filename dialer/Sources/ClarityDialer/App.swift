@@ -4,6 +4,7 @@ import SwiftUI
 struct ClarityDialerApp: App {
     @State private var store: Store
     @State private var session: Session
+    @State private var updater = Updater()
 
     init() {
         let store = Store()
@@ -16,8 +17,10 @@ struct ClarityDialerApp: App {
             DialerView()
                 .environment(store)
                 .environment(session)
+                .environment(updater)
                 .frame(minWidth: 980, minHeight: 640)
                 .task { await session.startSync() }
+                .task { await updater.run() }
         }
         Window("Metrics", id: "metrics") {
             MetricsView()

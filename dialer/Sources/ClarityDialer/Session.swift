@@ -76,6 +76,8 @@ final class Session {
     private(set) var attempt: Attempt?
     private(set) var statusOptions: [String] = []
     var message: String?
+    /// Auto-dial is paused: finish the current call, then stay on the next person.
+    private(set) var paused = false
 
     private var task: Task<Void, Never>?
     private var voicemailDropped = false
@@ -223,7 +225,11 @@ final class Session {
         a.outcome = outcome
         a.note = note.trimmed
         a.endedAt = a.endedAt ?? Date()
-        if let status, status != lead.status, !status.isEmpty { a.statusAfter = status }
+        if let status = status.nonBlank {
+            if status != lead.status { a.statusAfter = status } // the rep's pick wins (the picker starts on the step-up)
+        } else if let stepped = autoStatus(for: lead) {
+            a.statusAfter = stepped                      // New -> 1st -> 2nd -> 3rd contact, once a day
+        }
         a.needsSync = true
         attempt = nil
         store.save(a)
@@ -328,7 +334,23 @@ final class Session {
     }
 
     /// Stops auto-dial; stays on this person.
-    func pause() { if isCountdown { go(.ready) } }
+    /// The status this call would step them to (see Rules.steppedStatus), for the wrap-up picker too.
+    func autoStatus(for lead: Lead) -> String? {
+        let callsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
+        return Rules.steppedStatus(from: lead.status, callsToday: callsToday, options: statusOptions)
+    }
+
+    /// Pause: stops a countdown now, and stops auto-dial after the current call. Resume restarts it.
+    func togglePause() {
+        paused.toggle()
+        if paused {
+            if isCountdown { go(.ready) }
+        } else if state == .ready, settings.autoDial {
+            countdown(settings.countdown)
+        }
+    }
+
+    func pause() { if !paused { togglePause() } }
 
     private func advance(autoDial: Bool = true) {
         index += 1
@@ -338,7 +360,7 @@ final class Session {
             queue.remove(at: index)
         }
         guard lead != nil else { return go(.finished) }
-        guard autoDial, settings.autoDial else { return go(.ready) }
+        guard autoDial, settings.autoDial, !paused else { return go(.ready) }
         countdown(settings.countdown)
     }
 

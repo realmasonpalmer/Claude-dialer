@@ -98,6 +98,17 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(s.cadenceDays, [0, 2, 5, 9, 14])
     }
 
+    func testStatusLadder() {
+        let opts = ["New", "1st Contact", "2nd Contact", "3rd Contact", "Qualified"]
+        XCTAssertEqual(Rules.steppedStatus(from: "New", callsToday: 1, options: opts), "1st Contact")
+        XCTAssertEqual(Rules.steppedStatus(from: "1st contact", callsToday: 1, options: opts), "2nd Contact")
+        XCTAssertEqual(Rules.steppedStatus(from: "2nd Contact", callsToday: 1, options: opts), "3rd Contact")
+        XCTAssertNil(Rules.steppedStatus(from: "3rd Contact", callsToday: 1, options: opts), "stops at 3rd")
+        XCTAssertNil(Rules.steppedStatus(from: "New", callsToday: 2, options: opts), "never twice in a day")
+        XCTAssertNil(Rules.steppedStatus(from: "Qualified", callsToday: 1, options: opts), "off the ladder: leave it")
+        XCTAssertNil(Rules.steppedStatus(from: "New", callsToday: 1, options: ["New", "Contacted"]), "org lacks the value")
+    }
+
     func testZone() {
         XCTAssertEqual(CallZone.of(state: "Oregon", phones: []), .pacific)
         XCTAssertEqual(CallZone.of(state: nil, phones: ["(850) 555-0100"]), .central)
@@ -184,7 +195,7 @@ final class FakeCRM: CRM {
     var statusSet: [String] = []
     func leads(of view: Salesforce.ListView) async throws -> [Lead] { people }
     func callHistory(_ ids: [String]) async throws -> [String: [Date]] { [:] }
-    func statuses(_ object: SFObject) async -> [String] { ["New", "Contacted"] }
+    func statuses(_ object: SFObject) async -> [String] { ["New", "1st Contact", "2nd Contact", "3rd Contact", "Contacted"] }
     var created = 0
     var failNext = false
     func logCall(_ a: Attempt) async throws -> String {
@@ -272,6 +283,53 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(store.unsynced.count, 0)
         XCTAssertEqual(crm.created, 1)
         XCTAssertEqual(crm.logged.last?.outcome, .noAnswer)
+    }
+
+    func testUnansweredCallStepsStatusOnce() async {
+        session.call()
+        await wait { session.index == 1 }
+        await wait { !crm.statusSet.isEmpty }
+        XCTAssertEqual(crm.statusSet, ["1st Contact"])
+        XCTAssertEqual(session.queue[0].status, "1st Contact")
+    }
+
+    func testRedialSameDayDoesNotStepAgain() async {
+        store.settings.callTwice = true
+        session.call()
+        await wait { session.index == 1 }
+        await wait { store.unsynced.isEmpty && !crm.statusSet.isEmpty }
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(phone.dialed.count, 2)
+        XCTAssertEqual(crm.statusSet, ["1st Contact"], "two calls today, one step")
+        XCTAssertEqual(store.attempts.compactMap(\.statusAfter), ["1st Contact"])
+    }
+
+    func testRepStatusPickWins() async {
+        phone.answers = [true]
+        session.call()
+        await wait { session.state == .wrapUp }
+        XCTAssertEqual(session.autoStatus(for: session.lead!), "1st Contact")
+        session.log(.connected, status: "New") // rep keeps it at New on purpose
+        await wait { store.unsynced.isEmpty }
+        XCTAssertNil(store.attempts.first?.statusAfter)
+        XCTAssertTrue(crm.statusSet.isEmpty)
+    }
+
+    func testPauseMidCallStopsAfterIt() async {
+        store.settings.autoDial = true
+        store.settings.countdown = 1
+        phone.answers = [true]
+        session.call()
+        await wait { session.state == .wrapUp }
+        session.togglePause()
+        session.log(.connected)
+        try? await Task.sleep(for: .milliseconds(1500))
+        XCTAssertEqual(session.state, .ready)
+        XCTAssertEqual(session.index, 1)
+        XCTAssertEqual(phone.dialed.count, 1, "paused: no auto-dial")
+        session.togglePause() // resume -> countdown -> dial
+        await wait { phone.dialed.count == 2 }
+        XCTAssertEqual(phone.dialed.count, 2)
     }
 
     func testCallTwiceRedialsOnce() async {

@@ -15,7 +15,12 @@ fi
 WORK="$HOME/Library/Caches/ClarityDialer-get"
 rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
 echo "Downloading Clarity Dialer..."
-curl -fsSL -o code.zip "https://github.com/$REPO/archive/refs/heads/$BRANCH.zip"
+# Pin to one exact version, so the Update button knows what's installed.
+SHA="${SHA:-$(curl -fsSL "https://github.com/$REPO/commits/$BRANCH.atom" | grep -oE 'Commit/[0-9a-f]{40}' | head -1 | cut -d/ -f2)}"
+if [ -n "$SHA" ]; then URL="https://github.com/$REPO/archive/$SHA.zip"; else URL="https://github.com/$REPO/archive/refs/heads/$BRANCH.zip"; fi
+curl -fsSL -o code.zip "$URL"
 ditto -x -k code.zip .
 cd "$(find . -maxdepth 2 -type d -name dialer | head -1)"
 bash scripts/install.sh
+if [ -n "$SHA" ]; then defaults write io.clarityconsulting.dialer installedSHA "$SHA"; fi
+echo "Installed version ${SHA:0:7}."

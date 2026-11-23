@@ -3,6 +3,7 @@ import SwiftUI
 /// The one screen: who, what to say, and one primary action.
 struct DialerView: View {
     @Environment(Store.self) private var store
+    @Environment(Updater.self) private var updater
     @Environment(Session.self) private var session
     @Environment(\.openWindow) private var openWindow
     @State private var lists: [Salesforce.ListView] = []
@@ -15,6 +16,13 @@ struct DialerView: View {
                 Divider()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
+                        if let m = updater.message {
+                            Label(m, systemImage: "arrow.down.circle").foregroundStyle(.secondary).font(.callout)
+                        }
+                        if session.paused {
+                            Label("Auto-dial paused. Press ⌘P or Resume to keep going.", systemImage: "pause.circle")
+                                .foregroundStyle(.secondary).font(.callout)
+                        }
                         if let m = session.message {
                             Label(m, systemImage: "exclamationmark.circle")
                                 .foregroundStyle(.orange).font(.callout)
@@ -60,6 +68,7 @@ struct DialerView: View {
 
 private struct TopBar: View {
     @Environment(Store.self) private var store
+    @Environment(Updater.self) private var updater
     @Environment(Session.self) private var session
     @Environment(\.openWindow) private var openWindow
     let lists: [Salesforce.ListView]
@@ -85,6 +94,23 @@ private struct TopBar: View {
             }
             if let listError { Text(listError).font(.caption).foregroundStyle(.orange) }
             Spacer()
+            if store.settings.autoDial, session.list != nil {
+                Button { session.togglePause() } label: {
+                    Label(session.paused ? "Resume auto-dial" : "Pause auto-dial",
+                          systemImage: session.paused ? "play.fill" : "pause.fill")
+                }
+                .keyboardShortcut("p", modifiers: .command)
+                .tint(session.paused ? .green : nil)
+                .help("⌘P. Pausing lets the current call finish, then stops before the next dial.")
+            }
+            if updater.updating {
+                ProgressView().controlSize(.small)
+                Text("Updating…").font(.caption).foregroundStyle(.secondary)
+            } else if updater.available {
+                Button { updater.update() } label: { Label("Update", systemImage: "arrow.down.circle.fill") }
+                    .buttonStyle(.borderedProminent).tint(.blue)
+                    .help("A new build was pushed. Installs it and reopens the app (1–3 minutes).")
+            }
             TodayStrip().onTapGesture { openWindow(id: "metrics") }.help("Open Metrics (⇧⌘M)")
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
@@ -207,7 +233,7 @@ private struct ActionBar: View {
             case .countdown(let n):
                 Text("Calling in \(n)…").font(.headline).monospacedDigit()
                 primary("Call now", "phone.fill") { session.call() }
-                Button("Pause") { session.pause() }.keyboardShortcut(.cancelAction)
+                Button("Pause") { session.togglePause() }.keyboardShortcut(.cancelAction)
                 Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command)
             case .dialing, .live:
                 CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
@@ -229,7 +255,13 @@ private struct ActionBar: View {
             }
             if !isCall { Spacer() }
         }
-        .onChange(of: session.state) { _, s in if s == .wrapUp { outcome = nil; note = ""; status = session.lead?.status ?? "" } }
+        .onChange(of: session.state) { _, s in
+            if s == .wrapUp, let lead = session.lead {
+                outcome = nil
+                note = ""
+                status = session.autoStatus(for: lead) ?? lead.status
+            }
+        }
     }
 
     private var isCall: Bool { session.state == .dialing || session.state == .live }

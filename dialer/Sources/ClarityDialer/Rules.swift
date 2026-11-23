@@ -94,6 +94,20 @@ enum Rules {
         s.callTwice && outcome == .noAnswer && dialsToday < max(2, s.maxAttemptsPerDay)
     }
 
+    /// New -> 1st contact -> 2nd contact -> 3rd contact.
+    static let contactLadder = ["New", "1st contact", "2nd contact", "3rd contact"]
+
+    /// The status to move someone to after a call: one step up the ladder, only on their first
+    /// call of the day (redials and later calls the same day never step it again), and only to a
+    /// value the org has (matched ignoring case, so "1st Contact" works too). nil = leave it.
+    static func steppedStatus(from current: String, callsToday: Int, options: [String]) -> String? {
+        guard callsToday == 1,
+              let i = contactLadder.firstIndex(where: { $0.caseInsensitiveCompare(current.trimmed) == .orderedSame }),
+              i + 1 < contactLadder.count else { return nil }
+        let next = contactLadder[i + 1]
+        return options.first { $0.caseInsensitiveCompare(next) == .orderedSame }
+    }
+
     /// The follow-up text after a voicemail, or nil when it shouldn't go out.
     static func followUpText(after outcome: Outcome, to lead: Lead, _ s: OutboundSettings) -> String? {
         guard outcome == .voicemail, s.textAfterVoicemail, lead.mobile.nonBlank != nil,
