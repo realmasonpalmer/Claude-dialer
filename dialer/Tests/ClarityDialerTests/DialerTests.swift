@@ -279,32 +279,28 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(crm.logged.first?.outcome, .noAnswer)
     }
 
-    func testAnsweredCallWaitsForWrapUp() async {
+    func testAnsweredCallLogsItselfAndMovesOn() async {
         phone.answers = [true]
         session.call()
-        await wait { [self] in session.state == .wrapUp }
-        XCTAssertEqual(session.state, .wrapUp)
-        session.log(.meeting, note: "Thu 2pm", status: "Contacted")
-        XCTAssertEqual(session.index, 1)
+        await wait { [self] in session.index == 1 }
+        XCTAssertEqual(session.state, .ready, "no wrap-up step")
+        XCTAssertEqual(store.attempts.first?.outcome, .connected)
         await wait { [self] in !crm.statusSet.isEmpty }
-        XCTAssertEqual(crm.statusSet, ["Contacted"])
-        XCTAssertEqual(store.attempts.first?.note, "Thu 2pm")
-        XCTAssertTrue(session.history.isFinished("00Q000000000001"))
+        XCTAssertEqual(crm.statusSet, ["1st Contact"], "status set automatically")
     }
 
-    func testEveryCallIsLoggedWhenItEndsThenUpdated() async {
+    func testLastCallCanBeChangedAfterwards() async {
         phone.answers = [true]
         session.call()
-        await wait { [self] in session.state == .wrapUp }
-        // In Salesforce before the rep picks an outcome.
-        await wait { [self] in store.attempts.first?.salesforceTaskID != nil }
+        await wait { [self] in session.index == 1 }
+        await wait { [self] in store.unsynced.isEmpty && store.attempts.first?.salesforceTaskID != nil }
         XCTAssertEqual(crm.created, 1)
-        XCTAssertNil(crm.logged.first?.outcome)
-        session.log(.connected, note: "Call back Monday")
-        await wait { [self] in crm.logged.last?.outcome == .connected }
+        session.amend(outcome: .meeting)
+        session.amend(note: "Thu 2pm")
+        await wait { [self] in crm.logged.last?.outcome == .meeting && crm.logged.last?.note == "Thu 2pm" }
         XCTAssertEqual(crm.created, 1, "one call = one Task, updated in place")
-        XCTAssertEqual(crm.logged.last?.note, "Call back Monday")
-        XCTAssertEqual(store.unsynced.count, 0)
+        XCTAssertEqual(crm.logged.last?.note, "Thu 2pm")
+        XCTAssertTrue(session.history.isFinished("00Q000000000001"))
     }
 
     func testFailedSyncIsRetried() async {
@@ -338,25 +334,15 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(store.attempts.compactMap(\.statusAfter), ["1st Contact"])
     }
 
-    func testRepStatusPickWins() async {
-        phone.answers = [true]
-        session.call()
-        await wait { [self] in session.state == .wrapUp }
-        XCTAssertEqual(session.autoStatus(for: session.lead!), "1st Contact")
-        session.log(.connected, status: "New") // rep keeps it at New on purpose
-        await wait { [self] in store.unsynced.isEmpty }
-        XCTAssertNil(store.attempts.first?.statusAfter)
-        XCTAssertTrue(crm.statusSet.isEmpty)
-    }
-
     func testPauseMidCallStopsAfterIt() async {
         store.settings.autoDial = true
         store.settings.countdown = 1
         phone.answers = [true]
+        session.pollInterval = .milliseconds(200)
         session.startAutoDialing()
-        await wait { [self] in session.state == .wrapUp }
-        session.togglePause()
-        session.log(.connected)
+        await wait { [self] in session.state == .dialing || session.state == .live }
+        session.stopAutoDialing()
+        await wait { [self] in session.index == 1 }
         try? await Task.sleep(for: .milliseconds(1500))
         XCTAssertEqual(session.state, .ready)
         XCTAssertEqual(session.index, 1)

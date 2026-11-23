@@ -31,6 +31,12 @@ struct DialerView: View {
                     }
                     .padding(20)
                 }
+                if session.lastLogged != nil {
+                    Divider()
+                    LastCallBar()
+                        .padding(.horizontal, 20).padding(.vertical, 8)
+                        .background(Brand.navy)
+                }
                 Divider()
                 ActionBar()
                     .padding(.horizontal, 20).padding(.vertical, 14)
@@ -458,9 +464,6 @@ private struct Empty: View {
 private struct ActionBar: View {
     @Environment(Store.self) private var store
     @Environment(Session.self) private var session
-    @State private var outcome: Outcome?
-    @State private var note = ""
-    @State private var status = ""
 
     var body: some View {
         HStack(spacing: 10) {
@@ -491,8 +494,6 @@ private struct ActionBar: View {
                 Button(role: .destructive) { session.hangUp() } label: { Label("Hang up", systemImage: "phone.down.fill") }
                     .keyboardShortcut(".", modifiers: .command)
                     .buttonStyle(BrandPrimaryButton(color: Brand.stop)).controlSize(.large)
-            case .wrapUp:
-                wrapUp
             default:
                 EmptyView()
             }
@@ -504,42 +505,9 @@ private struct ActionBar: View {
             }
             if !isCall { Spacer() }
         }
-        .onChange(of: session.state) { _, s in
-            if s == .wrapUp, let lead = session.lead {
-                outcome = nil
-                note = ""
-                status = session.autoStatus(for: lead) ?? lead.status
-            }
-        }
     }
 
     private var isCall: Bool { session.state == .dialing || session.state == .live }
-
-    private var wrapUp: some View {
-        HStack(spacing: 10) {
-            ForEach(Outcome.allCases) { o in
-                Toggle(o.label, isOn: Binding(get: { outcome == o }, set: { if $0 { outcome = o } }))
-                    .toggleStyle(.button)
-                    .keyboardShortcut(KeyEquivalent(o.key), modifiers: .command)
-                    .help("⌘\(o.key)")
-            }
-            TextField("Note", text: $note).textFieldStyle(.roundedBorder).frame(minWidth: 120)
-                .onSubmit(logIt)
-            if !session.statusOptions.isEmpty {
-                Picker("Status", selection: $status) {
-                    if !session.statusOptions.contains(status) { Text(status.isEmpty ? "-" : status).tag(status) }
-                    ForEach(session.statusOptions, id: \.self) { Text($0).tag($0) }
-                }
-                .labelsHidden().frame(width: 150)
-            }
-            primary("Log & next", "checkmark") { logIt() }.disabled(outcome == nil)
-        }
-    }
-
-    private func logIt() {
-        guard let outcome else { return }
-        session.log(outcome, note: note, status: status)
-    }
 
     private func primary(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) { Label(title, systemImage: icon).frame(minWidth: 110) }
@@ -568,5 +536,37 @@ private struct CallClock: View {
 private struct TightLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 4) { configuration.icon.imageScale(.small); configuration.title }
+    }
+}
+
+/// The last call, logged automatically. Change its outcome or add a note without stopping.
+private struct LastCallBar: View {
+    @Environment(Session.self) private var session
+    @State private var note = ""
+
+    var body: some View {
+        if let a = session.lastLogged {
+            HStack(spacing: 10) {
+                Text("Last call").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(a.leadName).font(.callout).lineLimit(1)
+                Menu {
+                    ForEach(Outcome.allCases) { o in
+                        Button(o.label) { session.amend(outcome: o) }
+                    }
+                } label: {
+                    Text(a.outcome?.label ?? "-").font(.callout.weight(.medium))
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("Change the outcome (updates Salesforce)")
+                TextField("Add a note", text: $note)
+                    .textFieldStyle(.roundedBorder).font(.callout)
+                    .onSubmit { session.amend(note: note) }
+                if a.statusAfter != nil {
+                    Label(a.statusAfter!, systemImage: "arrow.up.right").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .onChange(of: session.lastLoggedID) { _, _ in note = "" }
+            .onAppear { note = a.note }
+        }
     }
 }

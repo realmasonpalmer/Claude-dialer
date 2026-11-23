@@ -181,14 +181,10 @@ final class Session {
             guard !Task.isCancelled, var a = attempt else { return }
             guard let c else {
                 if Date().timeIntervalSince(since) > dialTimeout {
-                    message = "Aircall didn't report this call. Log it by hand."
+                    message = "Aircall didn't report this call; logged as no answer. Change it under Last call if needed."
                     a.endedAt = Date()
-                    a.needsSync = true
                     attempt = a
-                    store.save(a)
-                    syncNow()
-                    go(.wrapUp)
-                    return
+                    return log(.noAnswer)
                 }
                 continue
             }
@@ -207,10 +203,11 @@ final class Session {
         }
     }
 
+    /// Every call logs itself and moves on, so auto-dialing never waits on the rep.
+    /// The outcome can be changed afterwards under Last call (`amend`).
     private func callEnded(answered: Bool) {
         if voicemailDropped { return log(.voicemail) }
-        if !answered { return log(.noAnswer) }
-        go(.wrapUp)
+        log(answered ? .connected : .noAnswer)
     }
 
     func hangUp() {
@@ -252,6 +249,7 @@ final class Session {
         a.needsSync = true
         attempt = nil
         store.save(a)
+        lastLoggedID = a.id
         if outcome.isFinal { history.finish(lead.id) }
         if let s = a.statusAfter { queue[index].status = s }
 
@@ -340,6 +338,25 @@ final class Session {
             syncNow()
             try? await Task.sleep(for: .seconds(60))
         }
+    }
+
+    // MARK: Last call
+
+    private(set) var lastLoggedID: UUID?
+    var lastLogged: Attempt? { lastLoggedID.flatMap { id in store.attempts.first { $0.id == id } } }
+
+    /// Changes the last call's outcome or note after the fact (Meeting booked, Not interested...).
+    /// Updates the same Salesforce Task.
+    func amend(outcome: Outcome? = nil, note: String? = nil) {
+        guard var a = lastLogged else { return }
+        if let outcome {
+            a.outcome = outcome
+            if outcome.isFinal { history.finish(a.leadID) }
+        }
+        if let note { a.note = note.trimmed }
+        a.needsSync = true
+        store.save(a)
+        syncNow()
     }
 
     // MARK: Moving
