@@ -24,7 +24,7 @@ enum Salesforce {
     static var isConnected: Bool { Keychain.read(.sfRefresh) != nil && Keychain.read(.sfInstance) != nil }
 
     static var loginHost: String {
-        get { UserDefaults.standard.string(forKey: "sfLoginHost") ?? "login.salesforce.com" }
+        get { UserDefaults.standard.string(forKey: "sfLoginHost") ?? "clarityconsultingllc.my.salesforce.com" }
         set { UserDefaults.standard.set(newValue, forKey: "sfLoginHost") }
     }
 
