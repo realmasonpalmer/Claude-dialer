@@ -12,6 +12,10 @@ struct DialerView: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // Aircall on the left, the dialer on the right.
+            AircallPhoneView()
+                .frame(width: 360)
+            Divider()
             VStack(spacing: 0) {
                 TopBar(lists: lists, listError: listError, reloadLists: loadLists)
                 Divider()
@@ -44,9 +48,6 @@ struct DialerView: View {
                     .background(.bar)
             }
             .frame(minWidth: 600)
-            Divider()
-            AircallPhoneView()
-                .frame(width: 360)
         }
         .task { await loadLists() }
     }
