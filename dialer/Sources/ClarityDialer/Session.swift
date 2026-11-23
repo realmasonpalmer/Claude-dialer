@@ -16,7 +16,7 @@ import Observation
     func callHistory(_ ids: [String]) async throws -> [String: [Date]]
     func statuses(_ object: SFObject) async -> [String]
     func logCall(_ a: Attempt) async throws -> String
-    func setStatus(_ lead: Lead, to value: String) async throws
+    func setStatus(leadID: String, to value: String) async throws
 }
 
 struct LivePhone: Phone {
@@ -34,7 +34,7 @@ struct LiveCRM: CRM {
     func callHistory(_ ids: [String]) async throws -> [String: [Date]] { try await Salesforce.callHistory(ids) }
     func statuses(_ object: SFObject) async -> [String] { await Salesforce.statuses(object) }
     func logCall(_ a: Attempt) async throws -> String { try await Salesforce.logCall(a) }
-    func setStatus(_ lead: Lead, to value: String) async throws { try await Salesforce.setStatus(lead, to: value) }
+    func setStatus(leadID: String, to value: String) async throws { try await Salesforce.setStatus(leadID: leadID, to: value) }
 }
 
 /// Where the dialer is. One value; the UI is a function of it.
@@ -167,6 +167,11 @@ final class Session {
             guard let c else {
                 if Date().timeIntervalSince(since) > dialTimeout {
                     message = "Aircall didn't report this call. Log it by hand."
+                    a.endedAt = Date()
+                    a.needsSync = true
+                    attempt = a
+                    store.save(a)
+                    syncNow()
                     go(.wrapUp)
                     return
                 }
@@ -178,8 +183,10 @@ final class Session {
             if c.answeredAt != nil, state == .dialing { state = .live }
             if c.isOver {
                 a.endedAt = c.endedAt ?? Date()
+                a.needsSync = true
                 attempt = a
                 store.save(a)
+                syncNow() // in Salesforce the moment the call ends, before any wrap-up
                 return callEnded(answered: c.answeredAt != nil)
             }
         }
@@ -217,6 +224,7 @@ final class Session {
         a.note = note.trimmed
         a.endedAt = a.endedAt ?? Date()
         if let status, status != lead.status, !status.isEmpty { a.statusAfter = status }
+        a.needsSync = true
         attempt = nil
         store.save(a)
         if outcome.isFinal { history.finish(lead.id) }
@@ -239,30 +247,71 @@ final class Session {
         advance()
     }
 
-    /// Text, Salesforce Task, status. Each step saves the attempt, so nothing is lost if one fails.
+    /// The follow-up text; the attempt then goes to Salesforce again with "text sent" on it.
     private func sync(_ attempt: Attempt, lead: Lead, text: String?, from: Int?) async {
-        var a = attempt
         if let text, let from, let mobile = lead.mobile.nonBlank {
-            do { try await phone.sendText(text, to: mobile, from: from); a.textSent = true; store.save(a) }
-            catch { message = "Text not sent: \(error.localizedDescription)" }
+            do {
+                try await phone.sendText(text, to: mobile, from: from)
+                if var a = store.attempts.first(where: { $0.id == attempt.id }) {
+                    a.textSent = true
+                    a.needsSync = true
+                    store.save(a)
+                }
+            } catch { message = "Text not sent: \(error.localizedDescription)" }
         }
-        await pushToSalesforce(a, lead: lead)
+        syncNow()
     }
 
-    private func pushToSalesforce(_ attempt: Attempt, lead: Lead?) async {
-        var a = attempt
-        do {
-            a.salesforceTaskID = try await crm.logCall(a)
+    // MARK: Salesforce sync
+
+    private var syncing = false
+    private var syncAgain = false
+
+    /// Sends every attempt Salesforce hasn't seen, one at a time (so one call never becomes two
+    /// Tasks). Each is re-read from the store, so it always sends the latest version. Anything that
+    /// fails stays marked and goes out on the next run (every minute, and at launch).
+    func syncNow() {
+        guard !syncing else { syncAgain = true; return }
+        syncing = true
+        Task {
+            defer { syncing = false }
+            repeat {
+                syncAgain = false
+                for id in store.unsynced.map(\.id) {
+                    guard var a = store.attempts.first(where: { $0.id == id }) else { continue }
+                    do {
+                        a.salesforceTaskID = try await crm.logCall(a)
+                        if let s = a.statusAfter, !a.statusSynced {
+                            try await crm.setStatus(leadID: a.leadID, to: s)
+                            a.statusSynced = true
+                        }
+                        // Changed while we were sending? Keep it marked so the change goes out too.
+                        let latest = store.attempts.first(where: { $0.id == id })
+                        var saved = latest ?? a
+                        saved.salesforceTaskID = a.salesforceTaskID
+                        saved.statusSynced = a.statusSynced
+                        saved.needsSync = latest.map { $0.outcome != a.outcome || $0.note != a.note || $0.textSent != a.textSent || $0.endedAt != a.endedAt || $0.statusAfter != a.statusAfter || $0.voicemailDropped != a.voicemailDropped } ?? false
+                        store.save(saved)
+                    } catch {
+                        message = "Saved on this Mac; will retry Salesforce: \(error.localizedDescription)"
+                    }
+                }
+            } while syncAgain
+        }
+    }
+
+    /// At launch: finishes calls the app was closed during, then keeps retrying every minute.
+    func startSync() async {
+        for var a in store.attempts where a.endedAt == nil && a.salesforceTaskID == nil
+            && Date().timeIntervalSince(a.dialedAt) > 600 {
+            a.endedAt = a.dialedAt
+            a.needsSync = true
             store.save(a)
-            if let s = a.statusAfter, let lead { try await crm.setStatus(lead, to: s) }
-        } catch {
-            message = "Saved here; Salesforce will retry: \(error.localizedDescription)"
         }
-    }
-
-    /// Calls logged while Salesforce was unreachable.
-    func retryUnsynced() async {
-        for a in store.unsynced { await pushToSalesforce(a, lead: nil) }
+        while !Task.isCancelled {
+            syncNow()
+            try? await Task.sleep(for: .seconds(60))
+        }
     }
 
     // MARK: Moving

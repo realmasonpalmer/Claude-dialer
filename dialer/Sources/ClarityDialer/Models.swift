@@ -155,6 +155,9 @@ struct Attempt: Codable, Identifiable, Hashable, Sendable {
     var note = ""
     var aircallCallID: Int?
     var salesforceTaskID: String?
+    /// Changed since Salesforce last saw it. Cleared only after Salesforce accepts the change.
+    var needsSync = false
+    var statusSynced = false
 
     /// Seconds a real person was on the line (0 unless the outcome is a connect).
     var talkSeconds: Int {

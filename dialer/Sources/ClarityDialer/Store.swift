@@ -65,7 +65,7 @@ final class Store {
     }
 
     /// Logged but not yet in Salesforce (offline, or Salesforce said no). Retried on launch.
-    var unsynced: [Attempt] { attempts.filter { $0.isLogged && $0.salesforceTaskID == nil } }
+    var unsynced: [Attempt] { attempts.filter(\.needsSync) }
 
     // MARK: Files
 

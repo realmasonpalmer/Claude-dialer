@@ -243,13 +243,20 @@ enum Salesforce {
         try await call("PATCH", "/services/data/\(apiVersion)/sobjects/\(lead.object.rawValue)/\(lead.id)", body: body)
     }
 
+    static func setStatus(leadID: String, to value: String) async throws {
+        let object: SFObject = leadID.hasPrefix("003") ? .contact : .lead
+        let stub = Lead(id: leadID, object: object, name: "", firstName: "", company: "", title: "",
+                        status: "", doNotCall: false)
+        try await setStatus(stub, to: value)
+    }
+
     static func setDoNotCall(_ lead: Lead) async throws {
         try await call("PATCH", "/services/data/\(apiVersion)/sobjects/\(lead.object.rawValue)/\(lead.id)", body: ["DoNotCall": true])
     }
 
     // MARK: Logging
 
-    /// Creates the call Task for an attempt. Returns the Task Id.
+    /// Creates the call Task for an attempt, or updates it if it already exists. Returns the Task Id.
     static func logCall(_ a: Attempt) async throws -> String {
         let outcome = a.outcome?.label ?? "Call"
         var description = a.note
@@ -267,6 +274,12 @@ enum Salesforce {
             "ActivityDate": day,
             "Description": String(description.prefix(30_000)),
         ]
+        if let id = a.salesforceTaskID {
+            var update = body
+            update["WhoId"] = nil
+            try await call("PATCH", "/services/data/\(apiVersion)/sobjects/Task/\(id)", body: update)
+            return id
+        }
         let json = try await call("POST", "/services/data/\(apiVersion)/sobjects/Task", body: body) as? [String: Any]
         guard let id = json?["id"] as? String else { throw SFError(message: "Salesforce didn't return the Task.") }
         return id

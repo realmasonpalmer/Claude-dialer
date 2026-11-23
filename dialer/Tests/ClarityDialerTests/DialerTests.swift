@@ -185,8 +185,16 @@ final class FakeCRM: CRM {
     func leads(of view: Salesforce.ListView) async throws -> [Lead] { people }
     func callHistory(_ ids: [String]) async throws -> [String: [Date]] { [:] }
     func statuses(_ object: SFObject) async -> [String] { ["New", "Contacted"] }
-    func logCall(_ a: Attempt) async throws -> String { logged.append(a); return "00T\(logged.count)" }
-    func setStatus(_ lead: Lead, to value: String) async throws { statusSet.append(value) }
+    var created = 0
+    var failNext = false
+    func logCall(_ a: Attempt) async throws -> String {
+        if failNext { failNext = false; throw Salesforce.SFError(message: "offline") }
+        logged.append(a)
+        if let id = a.salesforceTaskID { return id }
+        created += 1
+        return "00T\(created)"
+    }
+    func setStatus(leadID: String, to value: String) async throws { statusSet.append(value) }
 }
 
 @MainActor
@@ -239,6 +247,33 @@ final class SessionTests: XCTestCase {
         XCTAssertTrue(session.history.isFinished("00Q000000000001"))
     }
 
+    func testEveryCallIsLoggedWhenItEndsThenUpdated() async {
+        phone.answers = [true]
+        session.call()
+        await wait { session.state == .wrapUp }
+        // In Salesforce before the rep picks an outcome.
+        await wait { store.attempts.first?.salesforceTaskID != nil }
+        XCTAssertEqual(crm.created, 1)
+        XCTAssertNil(crm.logged.first?.outcome)
+        session.log(.connected, note: "Call back Monday")
+        await wait { crm.logged.last?.outcome == .connected }
+        XCTAssertEqual(crm.created, 1, "one call = one Task, updated in place")
+        XCTAssertEqual(crm.logged.last?.note, "Call back Monday")
+        XCTAssertEqual(store.unsynced.count, 0)
+    }
+
+    func testFailedSyncIsRetried() async {
+        crm.failNext = true
+        session.call()
+        await wait { session.index == 1 }
+        try? await Task.sleep(for: .milliseconds(100))
+        session.syncNow()
+        await wait { store.unsynced.isEmpty }
+        XCTAssertEqual(store.unsynced.count, 0)
+        XCTAssertEqual(crm.created, 1)
+        XCTAssertEqual(crm.logged.last?.outcome, .noAnswer)
+    }
+
     func testCallTwiceRedialsOnce() async {
         store.settings.callTwice = true
         session.call()
@@ -285,7 +320,7 @@ final class SessionTests: XCTestCase {
     func testAttemptsSurviveRelaunch() async {
         session.call()
         await wait { session.index == 1 }
-        await wait { store.attempts.first?.salesforceTaskID != nil }
+        await wait { store.unsynced.isEmpty && store.attempts.first?.salesforceTaskID != nil }
         let again = Store(folder: store.folderURL)
         XCTAssertEqual(again.attempts.count, 1)
         XCTAssertEqual(again.attempts.first?.outcome, .noAnswer)

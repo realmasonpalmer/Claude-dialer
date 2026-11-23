@@ -17,7 +17,7 @@ struct ClarityDialerApp: App {
                 .environment(store)
                 .environment(session)
                 .frame(minWidth: 980, minHeight: 640)
-                .task { await session.retryUnsynced() }
+                .task { await session.startSync() }
         }
         Window("Metrics", id: "metrics") {
             MetricsView()
