@@ -495,7 +495,6 @@ private struct ActionBar: View {
             default:
                 EmptyView()
             }
-            if !isCall { Spacer() }
             if store.settings.autoDial, session.list != nil, !isCall {
                 Button { session.togglePause() } label: {
                     Label(session.paused ? "Resume auto-dial" : "Pause auto-dial",
@@ -505,6 +504,7 @@ private struct ActionBar: View {
                 .keyboardShortcut("p", modifiers: .command)
                 .help(session.paused ? "Resume auto-dial (⌘P)" : "Pause auto-dial (⌘P). The current call finishes, then it stops.")
             }
+            if !isCall { Spacer() }
         }
         .onChange(of: session.state) { _, s in
             if s == .wrapUp, let lead = session.lead {
