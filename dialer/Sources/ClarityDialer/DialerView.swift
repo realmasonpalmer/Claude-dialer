@@ -125,18 +125,6 @@ extension TopBar {
     @ViewBuilder
     func trailing(labels: Bool, stats: TodayStrip.Style) -> some View {
         HStack(spacing: 10) {
-            if store.settings.autoDial, session.list != nil {
-                Button { session.togglePause() } label: {
-                    if labels {
-                        Label(session.paused ? "Resume auto-dial" : "Pause auto-dial", systemImage: session.paused ? "play.fill" : "pause.fill")
-                    } else {
-                        Image(systemName: session.paused ? "play.fill" : "pause.fill")
-                    }
-                }
-                .keyboardShortcut("p", modifiers: .command)
-                .tint(session.paused ? .green : nil)
-                .help(session.paused ? "Resume auto-dial (⌘P)" : "Pause auto-dial (⌘P). The current call finishes, then it stops.")
-            }
             if updater.updating {
                 ProgressView().controlSize(.small)
                 if labels { Text("Updating…").font(.caption).foregroundStyle(.secondary) }
@@ -488,7 +476,6 @@ private struct ActionBar: View {
             case .countdown(let n):
                 Text("Calling in \(n)…").font(.headline).monospacedDigit()
                 primary("Call now", "phone.fill") { session.call() }
-                Button("Pause") { session.togglePause() }.keyboardShortcut(.cancelAction).buttonStyle(BrandQuietButton())
                 Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
             case .dialing, .live:
                 CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
@@ -509,6 +496,15 @@ private struct ActionBar: View {
                 EmptyView()
             }
             if !isCall { Spacer() }
+            if store.settings.autoDial, session.list != nil, !isCall {
+                Button { session.togglePause() } label: {
+                    Label(session.paused ? "Resume auto-dial" : "Pause auto-dial",
+                          systemImage: session.paused ? "play.fill" : "pause.fill")
+                }
+                .buttonStyle(BrandQuietButton())
+                .keyboardShortcut("p", modifiers: .command)
+                .help(session.paused ? "Resume auto-dial (⌘P)" : "Pause auto-dial (⌘P). The current call finishes, then it stops.")
+            }
         }
         .onChange(of: session.state) { _, s in
             if s == .wrapUp, let lead = session.lead {
