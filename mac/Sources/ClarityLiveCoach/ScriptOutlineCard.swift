@@ -227,7 +227,12 @@ struct ScriptOutlineCard: View {
     }
 
     private func save(_ part: Part) {
-        let lines = draft.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        // Keep the blank lines made with Enter (as the page's blank mark); only the start and end are trimmed.
+        var lines = draft.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { ScriptPage.isBlank($0) ? ScriptPage.blank : $0 }
+        while let first = lines.first, ScriptPage.isBlank(first) { lines.removeFirst() }
+        while let last = lines.last, ScriptPage.isBlank(last) { lines.removeLast() }
         editingID = nil
         guard !lines.isEmpty, lines != part.raw else { return }
         let updated = pages.edit(script: coach.campaign.pastedScript, title: part.title, oldLines: part.raw, newLines: lines)
