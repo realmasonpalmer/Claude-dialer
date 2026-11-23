@@ -46,12 +46,14 @@ Sources/Dialer/
   Salesforce.swift       // OAuth + list views + leads + log call    ~250
   Aircall.swift          // REST: users, numbers, dial, text,        ~200
                          //   call status; webphone for audio/VM drop
+  Metrics.swift          // Attempt log + pure summaries           ~150
   Store.swift            // one JSON file: settings + scripts +      ~80
                          //   today's attempts; Keychain for tokens
   Views/
     DialerView.swift     // the one screen                           ~250
     ScriptView.swift     // paste / edit script, {{merge}} fields    ~100
     SettingsView.swift   // connections + outbound settings           ~200
+    MetricsView.swift    // today/week/all-time, breakdowns, funnel ~150
 Tests/DialerTests/       // Rules + Session with fake services
 ```
 
@@ -144,6 +146,52 @@ Keep what works: REST `startCall` on the chosen user + number, the WKWebView pho
 audio and the voicemail-drop button, `sendText`. Drop the audio capture JS (it only fed the
 coach). Beep detection for voicemail drop uses Aircall's own drop flow or a manual
 "Drop VM" button (one keystroke) instead of a custom audio detector.
+
+### Metrics (one event log, everything derived)
+
+No counters anywhere. Every dial appends one immutable record, and every number is a
+pure function over those records. Nothing can drift or be double-counted.
+
+```swift
+struct Attempt: Codable, Identifiable {        // one per dial, append-only
+    let id: UUID
+    let leadID: String, listID: String, scriptID: UUID
+    let attemptNumber: Int                     // 1st, 2nd... touch on this lead
+    let isRedial: Bool                         // call-twice second dial
+    let fromNumber: String, leadZone: CallZone?
+    let dialedAt: Date
+    var answeredAt: Date?, endedAt: Date?
+    var outcome: Outcome?
+    var voicemailDropped = false, textSent = false
+    var statusBefore: String, statusAfter: String?
+    var aircallCallID: Int?, salesforceTaskID: String?
+    var talkSeconds: Int { ... }               // answered -> ended
+    var isConversation: Bool { talkSeconds >= 30 }
+}
+
+enum Metrics {                                 // pure, fully unit-tested
+    static func summary(_ a: [Attempt], in range: DateInterval) -> Summary
+    static func by<K: Hashable>(_ a: [Attempt], _ key: (Attempt) -> K) -> [K: Summary]
+}
+struct Summary {
+    dials, uniqueLeads, connects, conversations, voicemails, meetings, badNumbers
+    connectRate, conversationRate, meetingRate      // per dial and per lead
+    talkTime, avgTalkTime, dialsPerHour, activeTime // idle gaps > 10 min excluded
+    dialsPerMeeting
+}
+```
+
+- **Storage:** `attempts.jsonl` (one line per attempt, append-only, survives crashes),
+  each one mirrored to its Salesforce Task (with `aircallCallID`) so team reporting
+  works in Salesforce dashboards too. Aircall's call record backfills true duration.
+- **Breakdowns for free** via `Metrics.by`: per day/week, per list, per script (A/B
+  your scripts), per hour of the lead's local time (best time to call), per time
+  zone, per attempt number (does touch #3 still pay?), per from-number, first dial
+  vs call-twice redial.
+- **Live in the UI:** a slim strip on the dialer, `42 dials · 9 connects (21%) · 2 mtgs
+  · 1h12m`, and a Metrics tab with today / week / all-time, the breakdowns above as
+  sortable tables, and a funnel (dials → connects → conversations → meetings).
+- **Export:** CSV of attempts in one click.
 
 ## The user experience
 
