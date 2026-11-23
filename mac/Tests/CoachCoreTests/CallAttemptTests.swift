@@ -56,6 +56,24 @@ final class CallAttemptTests: XCTestCase {
         XCTAssertEqual(PickupStats([neverPlaced]).placedDials, 0, "Fails before placement: no dial")
     }
 
+    func testRecordedGreetingIsNotAPerson() {
+        // Nov 23: "Thank you for calling uDig. We are a solutions company..." was a recording. The mic heard it
+        // twice (the second copy is filtered as echo of the rep's side), and it was counted as a gatekeeper.
+        let recording = call({ a in
+            a.prospect("Thank you for calling uDig.", at: at(4)); a.rep("We are a solutions company that leverages modern technologies", at: at(8))
+            a.prospect("We are a solutions company that leverages modern technologies", at: at(9))
+        })
+        check(recording, human: false, prospect: false, "Recorded greeting")
+        XCTAssertEqual(recording.outcome, .noAnswer, recording.classificationSource)
+        // A receptionist who asks something, or answers the rep, is still a person.
+        check(call({ a in a.prospect("Thank you for calling Acme, how can I help you?", at: at(4)) }),
+              human: true, prospect: false, "Greeting with a question")
+        check(call({ a in
+            a.prospect("Thank you for calling Acme.", at: at(3)); a.rep("Hi, is Dana in?", at: at(5))
+            a.prospect("Sure, one moment.", at: at(8))
+        }), human: true, prospect: false, "Greeting, then a reply")
+    }
+
     func testMenuWordsBeforeDetectionAreTheMenu() {
         let a = call { a in
             a.prospect("Thank you for calling Acme.", at: at(2)); a.prospect("For billing,", at: at(4))
