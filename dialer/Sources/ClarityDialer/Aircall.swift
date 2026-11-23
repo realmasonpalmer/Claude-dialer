@@ -95,7 +95,7 @@ enum Aircall {
 /// Aircall's own phone (workspace.aircall.io), inside the app. Calls placed through the API ring
 /// out here. The app only ever clicks Aircall's own Hang up and Voicemail drop buttons.
 @MainActor
-final class AircallPhone: NSObject, WKUIDelegate {
+final class AircallPhone: NSObject, ObservableObject, WKUIDelegate {
     static let shared = AircallPhone()
     let webView: WKWebView
     private var popups: [NSWindow] = []
@@ -105,50 +105,45 @@ final class AircallPhone: NSObject, WKUIDelegate {
         config.websiteDataStore = .default() // stays signed in
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        config.userContentController.addUserScript(
-            WKUserScript(source: Self.minimalScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 360, height: 640), configuration: config)
         // Aircall supports Chrome; look like it so the page loads.
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
         super.init()
         webView.uiDelegate = self
         webView.load(URLRequest(url: URL(string: "https://workspace.aircall.io")!))
+        measureStrip()
     }
 
     func reload() { webView.reload() }
 
-    /// Removes Aircall's left sidebar (Conversations, Calls, Campaigns...): only the phone shows.
-    /// Found by where it is, not by class names (which change) or labels (gone when Aircall shows
-    /// icons only): the narrow column running down the left edge of the page. Re-applied whenever
-    /// Aircall redraws.
-    private static let minimalScript = """
+    /// How much of Aircall's left edge to cut off: its sidebar strip. Measured from the page
+    /// every 2 seconds (the right edge of the narrow full-height column at the left), and the
+    /// phone view is shifted left by that much, so the strip is simply out of view. Nothing in
+    /// Aircall's page is changed.
+    @Published private(set) var cropLeft: CGFloat = 0
+
+    private static let measureScript = """
         (function () {
-          var hidden = null;
-          function navColumn() {
-            var H = window.innerHeight;
-            var hit = document.elementFromPoint(8, Math.floor(H / 2)) || document.elementFromPoint(8, 120);
-            var best = null;
-            for (var el = hit; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
-              var r = el.getBoundingClientRect();
-              if (r.left <= 2 && r.width >= 40 && r.width <= 140 && r.height >= H * 0.75) best = el;
-              else if (r.width > 140) break;
-            }
-            return best;
+          var H = window.innerHeight, edge = 0;
+          for (var el = document.elementFromPoint(4, Math.floor(H / 2)); el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+            var r = el.getBoundingClientRect();
+            if (r.left <= 2 && r.width >= 30 && r.width <= 160 && r.height >= H * 0.7) edge = r.right;
+            else if (r.width > 160) break;
           }
-          function apply() {
-            if (hidden && document.contains(hidden)) return;
-            var nav = navColumn();
-            if (nav) { nav.style.setProperty('display', 'none', 'important'); hidden = nav; }
-          }
-          var queued = false;
-          new MutationObserver(function () {
-            if (queued) return; queued = true;
-            setTimeout(function () { queued = false; apply(); }, 250);
-          }).observe(document.documentElement, { childList: true, subtree: true });
-          window.addEventListener('resize', function () { hidden = null; apply(); });
-          apply();
-        })();
+          return edge;
+        })()
         """
+
+    private func measureStrip() {
+        Task { @MainActor in
+            while true {
+                try? await Task.sleep(for: .seconds(2))
+                let w = (try? await webView.evaluateJavaScript(Self.measureScript)) as? Double ?? 0
+                let crop = CGFloat(w.rounded())
+                if abs(crop - cropLeft) > 2 { cropLeft = crop }
+            }
+        }
+    }
 
     /// Clicks Aircall's red Hang up button. True if it found one.
     func hangUp() async -> Bool { await click(#"/hang[ _-]?up|end[ _-]?call|end the call/"#, avoid: "/^$/") }
@@ -240,6 +235,18 @@ final class AircallPhone: NSObject, WKUIDelegate {
             w.close()
             return true
         }
+    }
+}
+
+/// The phone, `width` wide, with Aircall's sidebar strip cut off the left.
+struct AircallPane: View {
+    @ObservedObject private var phone = AircallPhone.shared
+    let width: CGFloat
+    var body: some View {
+        AircallPhoneView()
+            .frame(width: width + phone.cropLeft)
+            .frame(width: width, alignment: .trailing)
+            .clipped()
     }
 }
 

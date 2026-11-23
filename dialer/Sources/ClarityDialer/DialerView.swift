@@ -12,10 +12,6 @@ struct DialerView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Aircall on the left, the dialer on the right.
-            AircallPhoneView()
-                .frame(width: 360)
-            Divider()
             VStack(spacing: 0) {
                 TopBar(lists: lists, listError: listError, reloadLists: loadLists)
                 Divider()
@@ -47,7 +43,9 @@ struct DialerView: View {
                 OutboundPanel()
                     .background(Brand.navy)
             }
-            .frame(minWidth: 600)
+            .frame(minWidth: 560)
+            Divider()
+            AircallPane(width: 360)
         }
         .task { await loadLists() }
     }
@@ -244,36 +242,33 @@ private struct TodayCard: View {
             let overdue: Int = { if case .due(_, let d) = session.plan(for: lead) { return d } else { return 0 } }()
             let tint = overdue > 0 ? Self.late : Self.onTime
             Card {
-                VStack(alignment: .leading, spacing: 16) {
-                    track(steps, current: current, tint: tint, overdue: overdue)
-                    actions(steps[current], tint: tint)
+                VStack(alignment: .leading, spacing: 10) {
+                    track(steps, current: current, tint: tint)
+                    actions(steps[current], tint: tint, overdue: overdue)
                 }
             }
         }
     }
 
-    // MARK: Track
+    // MARK: Track (one slim line: dots and labels)
 
-    private func track(_ steps: [Step], current: Int, tint: Color, overdue: Int) -> some View {
-        HStack(alignment: .top, spacing: 0) {
+    private func track(_ steps: [Step], current: Int, tint: Color) -> some View {
+        HStack(spacing: 0) {
             ForEach(Array(steps.enumerated()), id: \.element.id) { i, step in
-                VStack(spacing: 6) {
-                    HStack(spacing: 0) {
-                        line(i == 0 ? .clear : (i <= current ? tint : Color.secondary.opacity(0.25)))
-                        node(i, current: current, tint: tint)
-                        line(i == steps.count - 1 ? .clear : (i < current ? tint : Color.secondary.opacity(0.25)))
+                HStack(spacing: 6) {
+                    node(i, current: current, tint: tint)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Day \(step.day)").font(.caption.weight(i == current ? .bold : .medium))
+                            .foregroundStyle(i == current ? tint : (i < current ? .primary : .secondary))
+                        Text(step.status).font(.caption2).foregroundStyle(.secondary)
                     }
-                    Text("Day \(step.day)").font(.callout.weight(i == current ? .bold : .regular))
-                        .foregroundStyle(i == current ? tint : (i < current ? .primary : .secondary))
-                    Text(step.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    if i == current {
-                        Text(overdue > 0 ? "\(overdue) day\(overdue == 1 ? "" : "s") late" : "Due today")
-                            .font(.caption.weight(.semibold)).foregroundStyle(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(tint, in: Capsule())
-                    }
+                    .lineLimit(1).fixedSize()
                 }
-                .frame(maxWidth: .infinity)
+                if i < steps.count - 1 {
+                    Rectangle().fill(i < current ? tint : Color.secondary.opacity(0.25))
+                        .frame(height: 2).frame(minWidth: 12, maxWidth: .infinity)
+                        .padding(.horizontal, 8)
+                }
             }
         }
     }
@@ -282,31 +277,26 @@ private struct TodayCard: View {
         ZStack {
             if i < current {
                 Circle().fill(tint.opacity(0.85))
-                Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                Image(systemName: "checkmark").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
             } else if i == current {
-                Circle().fill(tint.opacity(0.25)).frame(width: 38, height: 38)
                 Circle().fill(tint)
-                Text("\(i + 1)").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                Text("\(i + 1)").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
             } else {
-                Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 2)
-                Text("\(i + 1)").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1.5)
+                Text("\(i + 1)").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
             }
         }
-        .frame(width: 26, height: 26)
-        .frame(width: 38, height: 38)
-    }
-
-    private func line(_ color: Color) -> some View {
-        Rectangle().fill(color).frame(height: 3).frame(maxWidth: .infinity)
+        .frame(width: 18, height: 18)
     }
 
     // MARK: Today's actions
 
-    private func actions(_ step: Step, tint: Color) -> some View {
+    private func actions(_ step: Step, tint: Color, overdue: Int) -> some View {
         let calledToday = session.attempt != nil || session.history.dates(lead.id).contains { Calendar.current.isDateInToday($0) }
         let hasMobile = lead.mobile.nonBlank != nil
-        return HStack(spacing: 8) {
-            Text("TODAY").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        return HStack(spacing: 6) {
+            Text(overdue > 0 ? "\(overdue)D LATE" : "TODAY")
+                .font(.caption2.weight(.bold)).foregroundStyle(overdue > 0 ? AnyShapeStyle(tint) : AnyShapeStyle(.secondary))
             chip("phone.fill", "Call", done: calledToday, tint: tint)
             chip("arrow.up.right", step.status, done: lead.status.caseInsensitiveCompare(step.status) == .orderedSame, tint: tint)
             if let vm = step.voicemail {
@@ -324,9 +314,10 @@ private struct TodayCard: View {
 
     private func chip(_ icon: String, _ text: String, done: Bool, tint: Color, muted: Bool = false) -> some View {
         Label(text, systemImage: done ? "checkmark.circle.fill" : icon)
-            .font(.callout.weight(.medium)).lineLimit(1)
+            .font(.caption.weight(.medium)).lineLimit(1)
+            .labelStyle(TightLabel())
             .foregroundStyle(muted ? AnyShapeStyle(.tertiary) : done ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
-            .padding(.horizontal, 10).padding(.vertical, 5)
+            .padding(.horizontal, 7).padding(.vertical, 3)
             .background((done || muted ? Color.secondary.opacity(0.12) : tint.opacity(0.15)), in: Capsule())
     }
 
@@ -578,3 +569,10 @@ private struct CallClock: View {
     }
 }
 
+
+/// Icon and title with a small gap (the default label spacing is wide for chips).
+private struct TightLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) { configuration.icon.imageScale(.small); configuration.title }
+    }
+}
