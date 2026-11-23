@@ -119,8 +119,6 @@ struct OutboundSettings: Codable, Equatable, Sendable {
     var mobileOnly = false          // skip people with no Mobile
     var voicemailDrop = true        // show the Drop voicemail button (Aircall's recorded messages)
     var cadence = Cadence.standard  // the Day 1 / 3 / 5 sequence
-    var startHour = 8               // calling hours, in the lead's local time
-    var endHour = 17
     var maxAttemptsPerDay = 2
 
     init() {}
@@ -140,8 +138,6 @@ struct OutboundSettings: Codable, Equatable, Sendable {
         mobileOnly = v(.mobileOnly, d.mobileOnly)
         voicemailDrop = v(.voicemailDrop, d.voicemailDrop)
         cadence = v(.cadence, d.cadence)
-        startHour = v(.startHour, d.startHour)
-        endHour = v(.endHour, d.endHour)
         maxAttemptsPerDay = v(.maxAttemptsPerDay, d.maxAttemptsPerDay)
     }
 }

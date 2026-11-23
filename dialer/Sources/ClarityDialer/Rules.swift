@@ -34,7 +34,6 @@ struct History: Sendable, Equatable {
 /// Why a person isn't called right now.
 enum Skip: Equatable, Sendable {
     case doNotCall, noNumber, notNorthAmerican, noMobile, finished, calledToday
-    case outsideHours(String)
     case notDue(days: Int)
 
     var label: String {
@@ -45,7 +44,6 @@ enum Skip: Equatable, Sendable {
         case .noMobile: return "No mobile (Mobile only is on)"
         case .finished: return "Done (meeting, not interested, bad number, or cadence finished)"
         case .calledToday: return "Already called today"
-        case .outsideHours(let t): return "Outside calling hours (\(t) there)"
         case .notDue(let d): return "Next call due in \(d) day\(d == 1 ? "" : "s")"
         }
     }
@@ -69,10 +67,6 @@ enum Rules {
         case .due: break
         }
 
-        if let zone = lead.zone {
-            let h = zone.hour(at: now)
-            if h < s.startHour || h >= s.endHour { return .outsideHours(zone.timeString(at: now)) }
-        }
         return nil
     }
 

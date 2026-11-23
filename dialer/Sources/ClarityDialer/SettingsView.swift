@@ -111,11 +111,6 @@ private struct CallingTab: View {
             }
             Section("Who gets called") {
                 Toggle("Mobile numbers only", isOn: $store.settings.mobileOnly)
-                HStack {
-                    Stepper("From \(hour(store.settings.startHour))", value: $store.settings.startHour, in: 0...23)
-                    Stepper("to \(hour(store.settings.endHour))", value: $store.settings.endHour, in: 1...24)
-                    Text("their local time").foregroundStyle(.secondary)
-                }
             }
             Section("Voicemail") {
                 Toggle("Show Drop voicemail (⌘D). Which recording is set per day in Sequence.", isOn: $store.settings.voicemailDrop)
@@ -124,7 +119,6 @@ private struct CallingTab: View {
         .formStyle(.grouped)
     }
 
-    private func hour(_ h: Int) -> String { "\(h % 12 == 0 ? 12 : h % 12)\(h < 12 || h == 24 ? "am" : "pm")" }
 }
 
 /// The Day 1 / 3 / 5 sequence, one card per day.
