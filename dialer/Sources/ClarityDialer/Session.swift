@@ -1,0 +1,308 @@
+import Foundation
+import Observation
+
+/// The phone side of a call. Live: Aircall's API + the in-app Aircall phone. Tests: a fake.
+@MainActor protocol Phone {
+    func dial(_ to: String, user: Int, number: Int) async throws
+    func latestCall(user: Int, number: Int, since: Date) async throws -> Aircall.Call?
+    func sendText(_ body: String, to: String, from number: Int) async throws
+    func hangUp() async -> Bool
+    func dropVoicemail() async -> Bool
+}
+
+/// The CRM side. Live: Salesforce's REST API. Tests: a fake.
+@MainActor protocol CRM {
+    func leads(of view: Salesforce.ListView) async throws -> [Lead]
+    func callHistory(_ ids: [String]) async throws -> [String: [Date]]
+    func statuses(_ object: SFObject) async -> [String]
+    func logCall(_ a: Attempt) async throws -> String
+    func setStatus(_ lead: Lead, to value: String) async throws
+}
+
+struct LivePhone: Phone {
+    func dial(_ to: String, user: Int, number: Int) async throws { try await Aircall.dial(to, user: user, number: number) }
+    func latestCall(user: Int, number: Int, since: Date) async throws -> Aircall.Call? {
+        try await Aircall.latestCall(user: user, number: number, since: since)
+    }
+    func sendText(_ body: String, to: String, from number: Int) async throws { try await Aircall.sendText(body, to: to, from: number) }
+    func hangUp() async -> Bool { await AircallPhone.shared.hangUp() }
+    func dropVoicemail() async -> Bool { await AircallPhone.shared.dropVoicemail() }
+}
+
+struct LiveCRM: CRM {
+    func leads(of view: Salesforce.ListView) async throws -> [Lead] { try await Salesforce.leads(of: view) }
+    func callHistory(_ ids: [String]) async throws -> [String: [Date]] { try await Salesforce.callHistory(ids) }
+    func statuses(_ object: SFObject) async -> [String] { await Salesforce.statuses(object) }
+    func logCall(_ a: Attempt) async throws -> String { try await Salesforce.logCall(a) }
+    func setStatus(_ lead: Lead, to value: String) async throws { try await Salesforce.setStatus(lead, to: value) }
+}
+
+/// Where the dialer is. One value; the UI is a function of it.
+enum CallState: Equatable {
+    case idle               // no list loaded
+    case loading
+    case ready              // showing a person, waiting for the rep
+    case countdown(Int)     // auto-dial in N seconds
+    case dialing
+    case live
+    case wrapUp             // call over: pick an outcome
+    case finished           // nobody left to call
+}
+
+struct SkippedLead: Identifiable {
+    let lead: Lead
+    let reason: Skip
+    var id: String { lead.id }
+}
+
+/// The dialer. The only object with behavior: every change goes through `go(_:)`, which cancels
+/// whatever the last state was doing. Rules decide; Store records; Phone and CRM do I/O.
+@Observable @MainActor
+final class Session {
+    let store: Store
+    private let phone: Phone
+    private let crm: CRM
+    /// Seconds between Aircall status checks while a call is up.
+    var pollInterval: Duration = .milliseconds(1500)
+    /// Give up waiting for Aircall to report the call after this long.
+    var dialTimeout: TimeInterval = 45
+
+    private(set) var state: CallState = .idle
+    private(set) var list: Salesforce.ListView?
+    private(set) var queue: [Lead] = []
+    private(set) var index = 0
+    private(set) var skipped: [SkippedLead] = []
+    private(set) var history = History()
+    private(set) var attempt: Attempt?
+    private(set) var statusOptions: [String] = []
+    var message: String?
+
+    private var task: Task<Void, Never>?
+    private var voicemailDropped = false
+
+    init(store: Store, phone: Phone = LivePhone(), crm: CRM = LiveCRM()) {
+        self.store = store
+        self.phone = phone
+        self.crm = crm
+    }
+
+    var lead: Lead? { queue.indices.contains(index) ? queue[index] : nil }
+    var remaining: Int { max(0, queue.count - index) }
+    var settings: OutboundSettings { store.settings }
+
+    private func go(_ s: CallState) {
+        task?.cancel()
+        task = nil
+        state = s
+    }
+
+    // MARK: List
+
+    func load(_ view: Salesforce.ListView) async {
+        go(.loading)
+        list = view
+        message = nil
+        do {
+            let leads = try await crm.leads(of: view)
+            let sf = (try? await crm.callHistory(leads.map(\.id))) ?? [:]
+            history = History(salesforce: sf, attempts: store.attempts)
+            statusOptions = await crm.statuses(view.object)
+            var callable: [Lead] = []
+            skipped = []
+            for l in leads {
+                if let why = Rules.skip(l, settings, history) { skipped.append(SkippedLead(lead: l, reason: why)) } else { callable.append(l) }
+            }
+            queue = Rules.order(callable, settings)
+            index = 0
+            go(queue.isEmpty ? .finished : .ready)
+        } catch {
+            message = error.localizedDescription
+            go(.idle)
+        }
+    }
+
+    // MARK: Calling
+
+    func call(isRedial: Bool = false) {
+        guard let lead, [.ready, .wrapUp].contains(state) || isCountdown || isRedial else { return }
+        guard let number = lead.dialNumber else { return advance() }
+        guard let user = settings.aircallUserID, let from = settings.fromNumberID else {
+            message = "Pick your Aircall user and number in Settings."
+            return go(.ready)
+        }
+        let a = Attempt(
+            leadID: lead.id, leadName: lead.name, listID: list?.id ?? "", listName: list?.label ?? "",
+            scriptID: store.script?.id, scriptName: store.script?.name ?? "",
+            attemptNumber: history.dates(lead.id).count + 1, isRedial: isRedial,
+            fromNumber: settings.fromNumberDigits, leadZone: lead.zone, dialedAt: Date(),
+            statusBefore: lead.status)
+        attempt = a
+        voicemailDropped = false
+        message = nil
+        store.save(a)
+        history.add(lead.id, at: a.dialedAt)
+        go(.dialing)
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await phone.dial(number, user: user, number: from)
+            } catch {
+                guard !Task.isCancelled else { return }
+                message = error.localizedDescription
+                return go(.ready)
+            }
+            await watch(user: user, number: from, since: a.dialedAt)
+        }
+    }
+
+    private var isCountdown: Bool { if case .countdown = state { return true } else { return false } }
+
+    /// Follows the call in Aircall until it's over.
+    private func watch(user: Int, number: Int, since: Date) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: pollInterval)
+            guard !Task.isCancelled, attempt != nil else { return }
+            let c = try? await phone.latestCall(user: user, number: number, since: since)
+            guard !Task.isCancelled, var a = attempt else { return }
+            guard let c else {
+                if Date().timeIntervalSince(since) > dialTimeout {
+                    message = "Aircall didn't report this call. Log it by hand."
+                    go(.wrapUp)
+                    return
+                }
+                continue
+            }
+            a.aircallCallID = c.id
+            a.answeredAt = c.answeredAt
+            attempt = a
+            if c.answeredAt != nil, state == .dialing { state = .live }
+            if c.isOver {
+                a.endedAt = c.endedAt ?? Date()
+                attempt = a
+                store.save(a)
+                return callEnded(answered: c.answeredAt != nil)
+            }
+        }
+    }
+
+    private func callEnded(answered: Bool) {
+        if voicemailDropped { return log(.voicemail) }
+        if !answered { return log(.noAnswer) }
+        go(.wrapUp)
+    }
+
+    func hangUp() {
+        Task { if !(await phone.hangUp()) { message = "Couldn't find Aircall's hang-up button. Hang up in the phone." } }
+    }
+
+    /// Drops the recorded voicemail. The call is logged as a voicemail when Aircall ends it.
+    func dropVoicemail() {
+        guard state == .live || state == .dialing else { return }
+        Task {
+            if await phone.dropVoicemail() {
+                voicemailDropped = true
+                attempt?.voicemailDropped = true
+            } else {
+                message = "Couldn't find Aircall's voicemail drop button. Record a drop in Aircall first."
+            }
+        }
+    }
+
+    // MARK: Wrap-up
+
+    /// Records the outcome, syncs to Salesforce in the background, then redials or moves on.
+    func log(_ outcome: Outcome, note: String = "", status: String? = nil) {
+        guard var a = attempt, let lead else { return }
+        a.outcome = outcome
+        a.note = note.trimmed
+        a.endedAt = a.endedAt ?? Date()
+        if let status, status != lead.status, !status.isEmpty { a.statusAfter = status }
+        attempt = nil
+        store.save(a)
+        if outcome.isFinal { history.finish(lead.id) }
+        if let s = a.statusAfter { queue[index].status = s }
+
+        let text = Rules.followUpText(after: outcome, to: lead, settings)
+        let textFrom = settings.textNumberID ?? settings.fromNumberID
+        Task { await sync(a, lead: lead, text: text, from: textFrom) }
+
+        let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
+        if Rules.shouldRedial(outcome, dialsToday: dialsToday, settings) {
+            go(.dialing)
+            task = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                self?.call(isRedial: true)
+            }
+            return
+        }
+        advance()
+    }
+
+    /// Text, Salesforce Task, status. Each step saves the attempt, so nothing is lost if one fails.
+    private func sync(_ attempt: Attempt, lead: Lead, text: String?, from: Int?) async {
+        var a = attempt
+        if let text, let from, let mobile = lead.mobile.nonBlank {
+            do { try await phone.sendText(text, to: mobile, from: from); a.textSent = true; store.save(a) }
+            catch { message = "Text not sent: \(error.localizedDescription)" }
+        }
+        await pushToSalesforce(a, lead: lead)
+    }
+
+    private func pushToSalesforce(_ attempt: Attempt, lead: Lead?) async {
+        var a = attempt
+        do {
+            a.salesforceTaskID = try await crm.logCall(a)
+            store.save(a)
+            if let s = a.statusAfter, let lead { try await crm.setStatus(lead, to: s) }
+        } catch {
+            message = "Saved here; Salesforce will retry: \(error.localizedDescription)"
+        }
+    }
+
+    /// Calls logged while Salesforce was unreachable.
+    func retryUnsynced() async {
+        for a in store.unsynced { await pushToSalesforce(a, lead: nil) }
+    }
+
+    // MARK: Moving
+
+    func skip() {
+        guard [.ready, .finished].contains(state) || isCountdown else { return }
+        advance(autoDial: false)
+    }
+
+    func back() {
+        guard index > 0, [.ready, .finished].contains(state) || isCountdown else { return }
+        index -= 1
+        go(.ready)
+    }
+
+    /// Stops auto-dial; stays on this person.
+    func pause() { if isCountdown { go(.ready) } }
+
+    private func advance(autoDial: Bool = true) {
+        index += 1
+        // Re-check as we go: calling hours change during the day.
+        while let l = lead, let why = Rules.skip(l, settings, history) {
+            skipped.append(SkippedLead(lead: l, reason: why))
+            queue.remove(at: index)
+        }
+        guard lead != nil else { return go(.finished) }
+        guard autoDial, settings.autoDial else { return go(.ready) }
+        countdown(settings.countdown)
+    }
+
+    private func countdown(_ seconds: Int) {
+        guard seconds > 0 else { go(.ready); return call() }
+        go(.countdown(seconds))
+        task = Task { [weak self] in
+            for left in stride(from: seconds, through: 1, by: -1) {
+                self?.state = .countdown(left)
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            self?.call()
+        }
+    }
+}
