@@ -36,7 +36,7 @@ final class Store {
             scripts = [Script(name: "My script", body: """
             Hi {{FirstName}}, it's {{Rep}}. Did I catch you at a bad time?
 
-            (Paste your script here: Settings > Script. Merge fields like {{FirstName}} and {{Company}} fill in for each person.)
+            (Paste your script here: click this text to edit it. Merge fields like {{FirstName}} and {{Company}} fill in for each person.)
             """)]
         }
         attempts = Self.readAttempts(attemptsURL)
