@@ -20,10 +20,6 @@ struct DialerView: View {
                         if let m = updater.message {
                             Label(m, systemImage: "arrow.down.circle").foregroundStyle(.secondary).font(.callout)
                         }
-                        if session.paused {
-                            Label("Auto-dial paused. Press ⌘P or Resume to keep going.", systemImage: "pause.circle")
-                                .foregroundStyle(.secondary).font(.callout)
-                        }
                         if let m = session.linkedInStatus {
                             Label(m, systemImage: "person.badge.plus").foregroundStyle(.secondary).font(.callout)
                         }
@@ -470,7 +466,12 @@ private struct ActionBar: View {
         HStack(spacing: 10) {
             switch session.state {
             case .ready:
-                primary("Call", "phone.fill") { session.call() }
+                if store.settings.autoDial {
+                    primary("Start auto-dialing", "play.fill") { session.startAutoDialing() }
+                        .help("Calls this person now, then each next one after a \(store.settings.countdown)s countdown. ⌘P stops.")
+                } else {
+                    primary("Call", "phone.fill") { session.call() }
+                }
                 Button("Skip") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
                 Button("Back") { session.back() }.keyboardShortcut(.leftArrow, modifiers: .command).disabled(session.index == 0).buttonStyle(BrandQuietButton())
             case .countdown(let n):
@@ -495,14 +496,11 @@ private struct ActionBar: View {
             default:
                 EmptyView()
             }
-            if store.settings.autoDial, session.list != nil, !isCall {
-                Button { session.togglePause() } label: {
-                    Label(session.paused ? "Resume auto-dial" : "Pause auto-dial",
-                          systemImage: session.paused ? "play.fill" : "pause.fill")
-                }
-                .buttonStyle(BrandQuietButton())
-                .keyboardShortcut("p", modifiers: .command)
-                .help(session.paused ? "Resume auto-dial (⌘P)" : "Pause auto-dial (⌘P). The current call finishes, then it stops.")
+            if store.settings.autoDial, !session.paused, session.state != .ready {
+                Button { session.stopAutoDialing() } label: { Label("Stop auto-dialing", systemImage: "stop.fill") }
+                    .buttonStyle(BrandQuietButton())
+                    .keyboardShortcut("p", modifiers: .command)
+                    .help("⌘P. The current call finishes, then it stays on the next person.")
             }
             if !isCall { Spacer() }
         }

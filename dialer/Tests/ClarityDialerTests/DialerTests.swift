@@ -353,7 +353,7 @@ final class SessionTests: XCTestCase {
         store.settings.autoDial = true
         store.settings.countdown = 1
         phone.answers = [true]
-        session.call()
+        session.startAutoDialing()
         await wait { [self] in session.state == .wrapUp }
         session.togglePause()
         session.log(.connected)
@@ -425,7 +425,7 @@ final class SessionTests: XCTestCase {
     func testAutoDialCountsDownThenCalls() async {
         store.settings.autoDial = true
         store.settings.countdown = 1
-        session.call()
+        session.startAutoDialing()
         await wait { [self] in phone.dialed.count == 2 }
         XCTAssertEqual(phone.dialed.count, 2)
     }
@@ -433,7 +433,7 @@ final class SessionTests: XCTestCase {
     func testPauseStopsCountdown() async {
         store.settings.autoDial = true
         store.settings.countdown = 3
-        session.call()
+        session.startAutoDialing()
         await wait { [self] in if case .countdown = session.state { return true } else { return false } }
         session.pause()
         try? await Task.sleep(for: .seconds(1))

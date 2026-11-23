@@ -76,8 +76,9 @@ final class Session {
     private(set) var attempt: Attempt?
     private(set) var statusOptions: [String] = []
     var message: String?
-    /// Auto-dial is paused: finish the current call, then stay on the next person.
-    private(set) var paused = false
+    /// Auto-dialing is off until the rep presses Start auto-dialing; Stop turns it off again
+    /// (the current call finishes, then it stays on the next person).
+    private(set) var paused = true
 
     private var task: Task<Void, Never>?
     private var voicemailDropped = false
@@ -460,6 +461,14 @@ final class Session {
     }
 
     func pause() { if !paused { togglePause() } }
+
+    /// Start auto-dialing: calls this person now, then each next one after the countdown.
+    func startAutoDialing() {
+        paused = false
+        if state == .ready || isCountdown { call() }
+    }
+
+    func stopAutoDialing() { pause() }
 
     private func advance(autoDial: Bool = true) {
         index += 1
