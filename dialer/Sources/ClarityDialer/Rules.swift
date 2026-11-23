@@ -11,21 +11,23 @@ struct History: Sendable, Equatable {
     func dates(_ id: String) -> [Date] { calls[Self.key(id)] ?? [] }
     func isFinished(_ id: String) -> Bool { finished.contains(Self.key(id)) }
 
-    mutating func add(_ id: String, at date: Date) {
+    /// `fromSalesforce`: Salesforce may already know a call this Mac made; within 2 minutes of
+    /// one we have, it's the same call. Calls made here are always distinct (a redial seconds
+    /// later is a second call).
+    mutating func add(_ id: String, at date: Date, fromSalesforce: Bool = false) {
         let k = Self.key(id)
-        // Salesforce and this Mac can both know the same call; within 2 minutes counts once.
-        if calls[k, default: []].contains(where: { abs($0.timeIntervalSince(date)) < 120 }) { return }
+        if fromSalesforce, calls[k, default: []].contains(where: { abs($0.timeIntervalSince(date)) < 120 }) { return }
         calls[k, default: []].append(date)
     }
 
     mutating func finish(_ id: String) { finished.insert(Self.key(id)) }
 
     init(salesforce: [String: [Date]] = [:], attempts: [Attempt] = []) {
-        for (id, dates) in salesforce { for d in dates { add(id, at: d) } }
         for a in attempts {
             add(a.leadID, at: a.dialedAt)
             if a.outcome?.isFinal == true { finish(a.leadID) }
         }
+        for (id, dates) in salesforce { for d in dates { add(id, at: d, fromSalesforce: true) } }
     }
 }
 

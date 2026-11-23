@@ -46,7 +46,13 @@ final class Store {
     // MARK: Attempts
 
     /// Adds or replaces an attempt (by id) and appends it to the log.
-    func save(_ a: Attempt) {
+    func save(_ incoming: Attempt) {
+        var a = incoming
+        // Never forget Salesforce's Task Id: a stale copy of the attempt must not start a second Task.
+        if let old = attempts.first(where: { $0.id == a.id }) {
+            if a.salesforceTaskID == nil { a.salesforceTaskID = old.salesforceTaskID }
+            a.statusSynced = a.statusSynced || old.statusSynced
+        }
         if let i = attempts.firstIndex(where: { $0.id == a.id }) { attempts[i] = a } else { attempts.append(a) }
         guard var line = try? Self.encoder.encode(a) else { return }
         line.append(0x0A)

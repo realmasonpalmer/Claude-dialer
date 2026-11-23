@@ -56,6 +56,9 @@ final class RulesTests: XCTestCase {
                         attemptNumber: 1, isRedial: false, fromNumber: "", dialedAt: noonPacific, statusBefore: "")
         let h = History(salesforce: ["00Q000000000001": [noonPacific.addingTimeInterval(30)]], attempts: [a])
         XCTAssertEqual(h.dates("00Q000000000001XYZ").count, 1)
+        var redial = History(attempts: [a])
+        redial.add("00Q000000000001", at: noonPacific.addingTimeInterval(5))
+        XCTAssertEqual(redial.dates("00Q000000000001").count, 2, "a redial is a second call")
     }
 
     func testRedial() {
