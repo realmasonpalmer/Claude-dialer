@@ -601,7 +601,7 @@ enum SalesforceChrome {
         let open = meeting.open
         lock.unlock()
         if first {
-            queue.sync { check() } // once, so the app never starts a "call" before it knows
+            if !busyOnThisThread { syncOnQueue { check() } } // once, so the app never starts a "call" before it knows
             lock.lock(); defer { lock.unlock() }
             return meeting.open
         }
@@ -645,14 +645,39 @@ enum SalesforceChrome {
         return (url, title)
     }
 
+    /// Set on a thread while it is inside an AppleScript run from `syncOnQueue`.
+    private static let busyKey = "SalesforceChrome.busy"
+
+    private static var busyOnThisThread: Bool {
+        Thread.current.threadDictionary[busyKey] != nil
+    }
+
+    /// `queue.sync`, but remembers that this thread is inside it. `queue.sync` runs the block on the
+    /// calling thread, and NSAppleScript keeps the main run loop turning while it waits for Chrome, so
+    /// SwiftUI can redraw in the middle of a script. A redraw that reads the tab then calls `queue.sync`
+    /// again on a queue this thread already owns, which libdispatch turns into a crash.
+    private static func syncOnQueue<T>(_ work: () -> T) -> T {
+        queue.sync {
+            let threadDict = Thread.current.threadDictionary
+            threadDict[busyKey] = true
+            defer { threadDict.removeObject(forKey: busyKey) }
+            return work()
+        }
+    }
+
     /// The snapshot if it's fresh enough, else a live read.
     private static func current(live: Bool) -> (url: String?, title: String?) {
+        // Called from inside a running script (a redraw): never wait on the queue again, use the last snapshot.
+        if busyOnThisThread {
+            lock.lock(); let s = snapshot; lock.unlock()
+            return (s?.url, s?.title)
+        }
         startWatching()
         if !live {
             lock.lock(); let s = snapshot; lock.unlock()
             if let s, Date().timeIntervalSince(s.at) < maxAge { return (s.url, s.title) }
         }
-        return queue.sync { takeSnapshot() }
+        return syncOnQueue { takeSnapshot() }
     }
 
     /// After the app changes the page, plain reads wait for a new snapshot.
@@ -662,7 +687,8 @@ enum SalesforceChrome {
 
     /// Runs an AppleScript action on the AppleScript queue (waits for it).
     private static func run(_ action: String) -> String? {
-        queue.sync { runNow(action) }
+        if busyOnThisThread { return nil } // called from a redraw inside a running script: don't nest
+        return syncOnQueue { runNow(action) }
     }
 
     /// Runs an AppleScript action against the Salesforce tab. The action uses `theTab`
