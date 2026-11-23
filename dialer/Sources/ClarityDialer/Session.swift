@@ -100,9 +100,16 @@ final class Session {
 
     // MARK: List
 
+    /// The list loaded last, reopened at launch.
+    static var lastList: Salesforce.ListView? {
+        get { UserDefaults.standard.data(forKey: "lastList").flatMap { try? JSONDecoder().decode(Salesforce.ListView.self, from: $0) } }
+        set { UserDefaults.standard.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: "lastList") }
+    }
+
     func load(_ view: Salesforce.ListView) async {
         go(.loading)
         list = view
+        Self.lastList = view
         message = nil
         do {
             let leads = try await crm.leads(of: view)

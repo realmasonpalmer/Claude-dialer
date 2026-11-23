@@ -68,6 +68,10 @@ struct DialerView: View {
     private func loadLists() async {
         guard Salesforce.isConnected else { listError = "Connect Salesforce in Settings."; return }
         do { lists = try await Salesforce.listViews(); listError = nil } catch { listError = error.localizedDescription }
+        // Pick up where you left off: reopen the last list.
+        if session.list == nil, session.state == .idle, let last = Session.lastList {
+            await session.load(last)
+        }
     }
 }
 
@@ -219,63 +223,121 @@ private struct LeadCard: View {
     }
 }
 
-/// Today's step of the sequence: what to do, and what's done.
+/// Where this person is in the sequence, drawn as a track, with today's actions under it.
+/// Light blue = on time, red = overdue for this step.
 private struct TodayCard: View {
     @Environment(Store.self) private var store
     @Environment(Session.self) private var session
     let lead: Lead
 
+    static let onTime = Color(red: 0.35, green: 0.72, blue: 1.0)
+    static let late = Color(red: 0.95, green: 0.27, blue: 0.27)
+
     var body: some View {
         let steps = store.settings.cadence.steps
-        if let i = session.todayStep(for: lead), steps.indices.contains(i) {
-            let step = steps[i]
+        if let current = session.todayStep(for: lead), steps.indices.contains(current) {
+            let overdue: Int = { if case .due(_, let d) = session.plan(for: lead) { return d } else { return 0 } }()
+            let tint = overdue > 0 ? Self.late : Self.onTime
             Card {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("DAY \(step.day) · STEP \(i + 1) OF \(steps.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        if case .due(_, let late) = session.plan(for: lead), late > 0 {
-                            Text("\(late) day\(late == 1 ? "" : "s") overdue").font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                        }
-                        Spacer()
-                    }
-                    item("phone", "Call", done: session.attempt != nil || session.history.dates(lead.id).contains { Calendar.current.isDateInToday($0) })
-                    item("arrow.up.right", "Status → \(step.status)", done: lead.status.caseInsensitiveCompare(step.status) == .orderedSame)
-                    if let vm = step.voicemail { item("recordingtape", "If no answer: drop \(vm) (⌘D)", done: session.attempt?.voicemailDropped == true) }
-                    else { item("recordingtape", "No voicemail today", done: false, muted: true) }
-                    if step.text != nil {
-                        item("message", lead.mobile.nonBlank == nil ? "Text: no mobile number" : "If no answer: text goes out automatically",
-                             done: session.textSentToday(lead), muted: lead.mobile.nonBlank == nil)
-                    }
-                    if let note = step.linkedInNote { linkedIn(note) }
+                VStack(alignment: .leading, spacing: 16) {
+                    track(steps, current: current, tint: tint, overdue: overdue)
+                    actions(steps[current], tint: tint)
                 }
             }
         }
     }
 
-    private func item(_ icon: String, _ text: String, done: Bool, muted: Bool = false) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: done ? "checkmark.circle.fill" : icon)
-                .foregroundStyle(done ? Color.green : Color.secondary).frame(width: 18)
-            Text(text).foregroundStyle(muted ? .tertiary : .primary).strikethrough(done, color: .secondary)
+    // MARK: Track
+
+    private func track(_ steps: [Step], current: Int, tint: Color, overdue: Int) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(steps.enumerated()), id: \.element.id) { i, step in
+                VStack(spacing: 6) {
+                    HStack(spacing: 0) {
+                        line(i == 0 ? .clear : (i <= current ? tint : Color.secondary.opacity(0.25)))
+                        node(i, current: current, tint: tint)
+                        line(i == steps.count - 1 ? .clear : (i < current ? tint : Color.secondary.opacity(0.25)))
+                    }
+                    Text("Day \(step.day)").font(.callout.weight(i == current ? .bold : .regular))
+                        .foregroundStyle(i == current ? tint : (i < current ? .primary : .secondary))
+                    Text(step.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if i == current {
+                        Text(overdue > 0 ? "\(overdue) day\(overdue == 1 ? "" : "s") late" : "Due today")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(tint, in: Capsule())
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 
-    private func linkedIn(_ note: String) -> some View {
-        let sent = session.linkedInSentToday(lead)
-        return HStack(spacing: 8) {
-            Image(systemName: sent ? "checkmark.circle.fill" : "person.badge.plus")
-                .foregroundStyle(sent ? Color.green : Color.secondary).frame(width: 18)
-            Text("LinkedIn request").strikethrough(sent, color: .secondary)
-            Spacer()
-            Button(sent ? "Open again" : "Copy note & open LinkedIn") {
-                let body = Merge.fill(note, lead: lead, rep: store.settings.repName)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(body, forType: .string)
-                NSWorkspace.shared.open(profileURL)
-                session.markLinkedInSent()
+    private func node(_ i: Int, current: Int, tint: Color) -> some View {
+        ZStack {
+            if i < current {
+                Circle().fill(tint.opacity(0.85))
+                Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+            } else if i == current {
+                Circle().fill(tint.opacity(0.25)).frame(width: 38, height: 38)
+                Circle().fill(tint)
+                Text("\(i + 1)").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+            } else {
+                Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 2)
+                Text("\(i + 1)").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
             }
-            .help("Copies the note, opens their profile. Click Connect, then Add a note, then paste (⌘V).")
         }
+        .frame(width: 26, height: 26)
+        .frame(width: 38, height: 38)
+    }
+
+    private func line(_ color: Color) -> some View {
+        Rectangle().fill(color).frame(height: 3).frame(maxWidth: .infinity)
+    }
+
+    // MARK: Today's actions
+
+    private func actions(_ step: Step, tint: Color) -> some View {
+        let calledToday = session.attempt != nil || session.history.dates(lead.id).contains { Calendar.current.isDateInToday($0) }
+        let hasMobile = lead.mobile.nonBlank != nil
+        return HStack(spacing: 8) {
+            Text("TODAY").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            chip("phone.fill", "Call", done: calledToday, tint: tint)
+            chip("arrow.up.right", step.status, done: lead.status.caseInsensitiveCompare(step.status) == .orderedSame, tint: tint)
+            if let vm = step.voicemail {
+                chip("recordingtape", vm, done: session.attempt?.voicemailDropped == true, tint: tint)
+                    .help("If no answer: ⌘D drops \(vm)")
+            }
+            if step.text != nil {
+                chip("message.fill", hasMobile ? "Text" : "No mobile", done: session.textSentToday(lead), tint: tint, muted: !hasMobile)
+                    .help(hasMobile ? "Goes out automatically if they don't pick up" : "No mobile number: no text")
+            }
+            if let note = step.linkedInNote { linkedIn(note, tint: tint) }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func chip(_ icon: String, _ text: String, done: Bool, tint: Color, muted: Bool = false) -> some View {
+        Label(text, systemImage: done ? "checkmark.circle.fill" : icon)
+            .font(.callout.weight(.medium)).lineLimit(1)
+            .foregroundStyle(muted ? AnyShapeStyle(.tertiary) : done ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background((done || muted ? Color.secondary.opacity(0.12) : tint.opacity(0.15)), in: Capsule())
+    }
+
+    private func linkedIn(_ note: String, tint: Color) -> some View {
+        let sent = session.linkedInSentToday(lead)
+        return Button {
+            let body = Merge.fill(note, lead: lead, rep: store.settings.repName)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(body, forType: .string)
+            NSWorkspace.shared.open(profileURL)
+            session.markLinkedInSent()
+        } label: {
+            chip(sent ? "checkmark.circle.fill" : "person.badge.plus", "LinkedIn", done: sent, tint: tint)
+        }
+        .buttonStyle(.plain)
+        .help("Copies the note and opens their profile: Connect, Add a note, paste (⌘V).")
     }
 
     private var profileURL: URL {
