@@ -6,7 +6,6 @@ struct SettingsView: View {
             ConnectionsTab().tabItem { Label("Connections", systemImage: "link") }
             CallingTab().tabItem { Label("Calling", systemImage: "phone") }
             SequenceTab().tabItem { Label("Sequence", systemImage: "calendar") }
-            ScriptTab().tabItem { Label("Script", systemImage: "text.alignleft") }
         }
         .frame(width: 620, height: 520)
     }
@@ -127,41 +126,6 @@ private struct CallingTab: View {
     }
 
     private func hour(_ h: Int) -> String { "\(h % 12 == 0 ? 12 : h % 12)\(h < 12 || h == 24 ? "am" : "pm")" }
-}
-
-private struct ScriptTab: View {
-    @Environment(Store.self) private var store
-
-    var body: some View {
-        @Bindable var store = store
-        HSplitView {
-            List(selection: $store.selectedScriptID) {
-                ForEach(store.scripts) { s in Text(s.name).tag(Optional(s.id)) }
-            }
-            .frame(minWidth: 150, maxWidth: 190)
-            .safeAreaInset(edge: .bottom) {
-                HStack {
-                    Button { let s = Script(name: "New script", body: ""); store.scripts.append(s); store.selectedScriptID = s.id } label: { Image(systemName: "plus") }
-                    Button {
-                        store.scripts.removeAll { $0.id == store.selectedScriptID }
-                        store.selectedScriptID = store.scripts.first?.id
-                    } label: { Image(systemName: "minus") }
-                    .disabled(store.scripts.count < 2)
-                    Spacer()
-                }
-                .buttonStyle(.borderless).padding(8)
-            }
-            if let i = store.scripts.firstIndex(where: { $0.id == (store.selectedScriptID ?? store.scripts.first?.id) }) {
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField("Name", text: $store.scripts[i].name).font(.headline)
-                    TextEditor(text: $store.scripts[i].body).font(.system(size: 14))
-                    Text("Paste your script. Merge fields: " + Merge.fields.map { "{{\($0)}}" }.joined(separator: " ") + ". **Bold** works.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(12)
-            }
-        }
-    }
 }
 
 /// The Day 1 / 3 / 5 sequence, one card per day.

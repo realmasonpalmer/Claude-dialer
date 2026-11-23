@@ -298,6 +298,75 @@ enum Salesforce {
         return id
     }
 
+    // MARK: Shared scripts (Salesforce Files, shared with the whole company)
+
+    static let scriptPrefix = "Clarity Dialer Script - "
+
+    struct SharedScript {
+        let docID: String
+        let name: String
+        let body: String
+        let modified: Date
+    }
+
+    /// Every shared script, latest version of each.
+    static func sharedScripts() async throws -> [SharedScript] {
+        let rows = try await query("SELECT Id, ContentDocumentId, Title, LastModifiedDate FROM ContentVersion "
+            + "WHERE IsLatest = true AND Title LIKE 'Clarity Dialer Script - %' ORDER BY Title")
+        var out: [SharedScript] = []
+        for r in rows {
+            guard let id = r["Id"] as? String, let doc = r["ContentDocumentId"] as? String,
+                  let title = r["Title"] as? String else { continue }
+            let data = try await download("/services/data/\(apiVersion)/sobjects/ContentVersion/\(id)/VersionData")
+            out.append(SharedScript(docID: doc, name: String(title.dropFirst(scriptPrefix.count)),
+                                    body: String(decoding: data, as: UTF8.self),
+                                    modified: sfDate(r["LastModifiedDate"] as? String) ?? Date()))
+        }
+        return out
+    }
+
+    /// Saves the script as a new version of its File (or a new File shared with the company,
+    /// editable by everyone). Returns the File's ContentDocumentId.
+    static func publish(_ script: Script) async throws -> String {
+        var body: [String: Any] = [
+            "Title": scriptPrefix + script.name,
+            "PathOnClient": "script.txt",
+            "VersionData": Data(script.body.utf8).base64EncodedString(),
+        ]
+        if let doc = script.sharedDocID { body["ContentDocumentId"] = doc }
+        let created = try await call("POST", "/services/data/\(apiVersion)/sobjects/ContentVersion", body: body) as? [String: Any]
+        if let doc = script.sharedDocID { return doc }
+        guard let versionID = created?["id"] as? String,
+              let doc = try await query("SELECT ContentDocumentId FROM ContentVersion WHERE Id = '\(versionID)'")
+                .first?["ContentDocumentId"] as? String else { throw SFError(message: "Salesforce didn't save the script.") }
+        // Share with everyone in the company, as collaborators (they can save new versions).
+        if let org = try await query("SELECT Id FROM Organization").first?["Id"] as? String {
+            try await call("POST", "/services/data/\(apiVersion)/sobjects/ContentDocumentLink",
+                           body: ["ContentDocumentId": doc, "LinkedEntityId": org, "ShareType": "C", "Visibility": "AllUsers"])
+        }
+        return doc
+    }
+
+    private static func download(_ path: String, retry: Bool = true) async throws -> Data {
+        guard let instance = Keychain.read(.sfInstance) else { throw SFError(message: "Connect Salesforce in Settings.") }
+        var req = URLRequest(url: URL(string: instance + path)!)
+        req.timeoutInterval = 20
+        req.setValue("Bearer \(Keychain.read(.sfAccess) ?? "")", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401, retry { try await refresh(); return try await download(path, retry: false) }
+        guard code == 200 else { throw SFError(message: "Salesforce: error \(code)") }
+        return data
+    }
+
+    static func sfDate(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let fixed = raw.replacingOccurrences(of: "+0000", with: "Z")
+        return f.date(from: fixed) ?? ISO8601DateFormatter().date(from: fixed)
+    }
+
     static func recordURL(_ id: String) -> URL? {
         Keychain.read(.sfInstance).flatMap { URL(string: "\($0)/\(id)") }
     }

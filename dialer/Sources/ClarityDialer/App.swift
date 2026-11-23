@@ -5,11 +5,13 @@ struct ClarityDialerApp: App {
     @State private var store: Store
     @State private var session: Session
     @State private var updater = Updater()
+    @State private var scriptSync: ScriptSync
 
     init() {
         let store = Store()
         _store = State(initialValue: store)
         _session = State(initialValue: Session(store: store))
+        _scriptSync = State(initialValue: ScriptSync(store: store))
     }
 
     var body: some Scene {
@@ -18,9 +20,11 @@ struct ClarityDialerApp: App {
                 .environment(store)
                 .environment(session)
                 .environment(updater)
+                .environment(scriptSync)
                 .frame(minWidth: 980, minHeight: 640)
                 .task { await session.startSync() }
                 .task { await updater.run() }
+                .task { await scriptSync.run() }
         }
         Window("Metrics", id: "metrics") {
             MetricsView()

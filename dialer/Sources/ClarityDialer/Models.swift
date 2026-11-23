@@ -59,6 +59,27 @@ struct Script: Codable, Identifiable, Hashable, Sendable {
     var id = UUID()
     var name: String
     var body: String
+    /// The Salesforce File it's shared as (nil = not shared yet).
+    var sharedDocID: String?
+    /// When this text was last written, here or by anyone in Salesforce. Newest wins.
+    var updatedAt = Date.distantPast
+    /// Edited here but not in Salesforce yet (offline). Retried until it goes.
+    var needsPublish = false
+
+    init(name: String, body: String) {
+        self.name = name
+        self.body = body
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(UUID.self, forKey: .id)) ?? UUID()
+        name = (try? c.decode(String.self, forKey: .name)) ?? "Script"
+        body = (try? c.decode(String.self, forKey: .body)) ?? ""
+        sharedDocID = try? c.decodeIfPresent(String.self, forKey: .sharedDocID)
+        updatedAt = (try? c.decodeIfPresent(Date.self, forKey: .updatedAt)) ?? .distantPast
+        needsPublish = (try? c.decodeIfPresent(Bool.self, forKey: .needsPublish)) ?? false
+    }
 
     func render(for lead: Lead?, rep: String) -> String {
         Merge.fill(body, lead: lead, rep: rep)

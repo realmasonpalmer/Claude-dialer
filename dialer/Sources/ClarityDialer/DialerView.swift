@@ -247,17 +247,99 @@ private struct TodayCard: View {
     }
 }
 
+/// The script. Click it to edit; Save shares it with everyone using it.
 private struct ScriptCard: View {
     @Environment(Store.self) private var store
+    @Environment(ScriptSync.self) private var sync
     let lead: Lead
+    @State private var editing = false
+    @State private var name = ""
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                Text(store.script?.name.uppercased() ?? "SCRIPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(LocalizedStringKey(store.script?.render(for: lead, rep: store.settings.repName) ?? "Add a script in Settings."))
-                    .font(.system(size: 17)).lineSpacing(5).textSelection(.enabled)
+                header
+                if editing { editor } else { reading }
             }
         }
+        .onChange(of: store.script?.id) { _, _ in editing = false }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(store.scripts) { s in
+                    Button(s.name) { store.selectedScriptID = s.id }
+                }
+                Divider()
+                Button("New script") {
+                    var s = Script(name: "New script", body: "")
+                    s.updatedAt = Date()
+                    store.scripts.append(s)
+                    store.selectedScriptID = s.id
+                    startEditing()
+                }
+            } label: {
+                Text(store.script?.name.uppercased() ?? "SCRIPT").font(.caption.weight(.semibold))
+            }
+            .menuStyle(.borderlessButton).fixedSize().foregroundStyle(.secondary)
+            if store.script?.needsPublish == true {
+                Label("Not shared yet", systemImage: "icloud.slash").font(.caption).foregroundStyle(.orange)
+                    .help(sync.status)
+            } else if store.script?.sharedDocID != nil {
+                Label("Shared with team", systemImage: "person.2").font(.caption).foregroundStyle(.tertiary)
+            }
+            Spacer()
+            if !editing {
+                Button { startEditing() } label: { Label("Edit", systemImage: "pencil") }
+                    .buttonStyle(.borderless).font(.caption)
+            }
+        }
+    }
+
+    private var reading: some View {
+        Text(LocalizedStringKey(store.script?.render(for: lead, rep: store.settings.repName) ?? "Click to add a script."))
+            .font(.system(size: 17)).lineSpacing(5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { startEditing() }
+            .help("Click to edit")
+    }
+
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Script name", text: $name).textFieldStyle(.roundedBorder).font(.headline)
+            TextEditor(text: $draft)
+                .font(.system(size: 16)).lineSpacing(4)
+                .frame(minHeight: 320)
+                .focused($focused)
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+            HStack {
+                Text("Merge fields: " + Merge.fields.map { "{{\($0)}}" }.joined(separator: " ") + " · **bold** works")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") { editing = false }.keyboardShortcut(.cancelAction)
+                Button("Save & share") { save() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut("s", modifiers: .command)
+                    .help("⌘S. Saves and updates this script for everyone who uses it.")
+            }
+        }
+    }
+
+    private func startEditing() {
+        guard let s = store.script else { return }
+        name = s.name
+        draft = s.body
+        editing = true
+        focused = true
+    }
+
+    private func save() {
+        if let id = store.script?.id { sync.save(id, name: name, body: draft) }
+        editing = false
     }
 }
 
