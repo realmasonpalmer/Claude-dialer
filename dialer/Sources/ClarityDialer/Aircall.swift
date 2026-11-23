@@ -118,41 +118,34 @@ final class AircallPhone: NSObject, WKUIDelegate {
     func reload() { webView.reload() }
 
     /// Removes Aircall's left sidebar (Conversations, Calls, Campaigns...): only the phone shows.
-    /// Finds it by what's in it (its labels) rather than by class names, which
-    /// change, and hides it. Re-applied whenever Aircall redraws.
+    /// Found by where it is, not by class names (which change) or labels (gone when Aircall shows
+    /// icons only): the narrow column running down the left edge of the page. Re-applied whenever
+    /// Aircall redraws.
     private static let minimalScript = """
         (function () {
-          window.__clarityMinimal = true;
-          var labels = ['Conversations', 'Power Dialer', 'Campaigns', 'Performance', 'Contacts', 'Messages'];
-          var hidden = [];
-          function isNav(el) {
-            var t = el.innerText || '';
-            var hits = labels.filter(function (l) { return t.indexOf(l) >= 0; }).length;
-            var r = el.getBoundingClientRect();
-            return hits >= 3 && r.width > 0 && r.width < 260 && r.height > window.innerHeight * 0.5 && r.left < 20;
+          var hidden = null;
+          function navColumn() {
+            var H = window.innerHeight;
+            var hit = document.elementFromPoint(8, Math.floor(H / 2)) || document.elementFromPoint(8, 120);
+            var best = null;
+            for (var el = hit; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+              var r = el.getBoundingClientRect();
+              if (r.left <= 2 && r.width >= 40 && r.width <= 140 && r.height >= H * 0.75) best = el;
+              else if (r.width > 140) break;
+            }
+            return best;
           }
           function apply() {
-            // Already hidden and still on the page: nothing to do (no flicker).
-            if (window.__clarityMinimal && hidden.length && document.contains(hidden[0])) return;
-            hidden.forEach(function (el) { el.style.removeProperty('display'); });
-            hidden = [];
-            if (!window.__clarityMinimal) return;
-            // The smallest element that holds the nav labels and runs down the left edge.
-            var best = null;
-            var cands = document.querySelectorAll('nav, aside, [role=navigation], header, div');
-            for (var i = 0; i < cands.length; i++) {
-              var el = cands[i];
-              if (!isNav(el)) continue;
-              if (!best || best.contains(el)) best = el;
-            }
-            if (best) { best.style.setProperty('display', 'none', 'important'); hidden.push(best); }
+            if (hidden && document.contains(hidden)) return;
+            var nav = navColumn();
+            if (nav) { nav.style.setProperty('display', 'none', 'important'); hidden = nav; }
           }
-          window.__clarityApply = apply;
           var queued = false;
           new MutationObserver(function () {
             if (queued) return; queued = true;
-            setTimeout(function () { queued = false; apply(); }, 300);
+            setTimeout(function () { queued = false; apply(); }, 250);
           }).observe(document.documentElement, { childList: true, subtree: true });
+          window.addEventListener('resize', function () { hidden = null; apply(); });
           apply();
         })();
         """
