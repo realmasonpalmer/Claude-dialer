@@ -478,6 +478,8 @@ final class Session {
         go(.countdown(seconds))
         task = Task { [weak self] in
             for left in stride(from: seconds, through: 1, by: -1) {
+                // Paused or skipped before this task got to run: don't put the countdown back.
+                if Task.isCancelled { return }
                 self?.state = .countdown(left)
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { return }
