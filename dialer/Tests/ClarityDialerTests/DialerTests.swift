@@ -117,11 +117,9 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(Rules.order([new, due, late], s, hist, now: noonPacific, calendar: cal).map(\.id), ["L", "D", "N"])
     }
 
-    func testEastToWestWithinTheSameTier() {
+    func testListOrderWithinTheSameTier() {
         let ny = lead("1", mobile: "212-555-0100", state: "NY"), ca = lead("2", state: "CA"), tx = lead("3", mobile: "214-555-0100", state: "TX")
-        XCTAssertEqual(Rules.order([ca, ny, tx], s, History(), now: noonPacific, calendar: cal).map(\.id), ["1", "3", "2"])
-        var off = s; off.eastToWest = false
-        XCTAssertEqual(Rules.order([ca, ny, tx], off, History(), now: noonPacific, calendar: cal).map(\.id), ["2", "1", "3"])
+        XCTAssertEqual(Rules.order([ca, ny, tx], s, History(), now: noonPacific, calendar: cal).map(\.id), ["2", "1", "3"])
     }
 
     func testStatusForEachStep() {

@@ -39,7 +39,6 @@ struct OutboundPanel: View {
         .task { numbers = (try? await Aircall.numbers()) ?? [] }
         // Who's on the list depends on these: reload between calls so the change shows.
         .onChange(of: store.settings.mobileOnly) { reloadIfIdle() }
-        .onChange(of: store.settings.eastToWest) { reloadIfIdle() }
         .onChange(of: store.settings.startHour) { reloadIfIdle() }
         .onChange(of: store.settings.endHour) { reloadIfIdle() }
     }
@@ -47,7 +46,7 @@ struct OutboundPanel: View {
     private var summary: String {
         let s = store.settings
         return [s.autoDial ? "Auto dial" : "Manual dial", s.callTwice ? "Call twice" : nil,
-                s.mobileOnly ? "Mobile only" : nil, s.eastToWest ? "East first" : nil]
+                s.mobileOnly ? "Mobile only" : nil]
             .compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -91,7 +90,6 @@ struct OutboundPanel: View {
             check("Auto Dial", $store.settings.autoDial, "Calls the next person by itself after a countdown. ⌘P pauses.")
             check("Call Twice", $store.settings.callTwice, "If they don't pick up, call once more right away.")
             check("Mobile Only", $store.settings.mobileOnly, "Skip anyone with no Mobile in Salesforce.")
-            check("East Coast First", $store.settings.eastToWest, "Within each priority, call Eastern time zones first.")
             HStack(spacing: 6) {
                 Image(systemName: "clock").foregroundStyle(.secondary)
                 Picker("", selection: $store.settings.startHour) { ForEach(5..<13) { Text(hour($0)).tag($0) } }

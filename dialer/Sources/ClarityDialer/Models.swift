@@ -121,7 +121,6 @@ struct OutboundSettings: Codable, Equatable, Sendable {
     var cadence = Cadence.standard  // the Day 1 / 3 / 5 sequence
     var startHour = 8               // calling hours, in the lead's local time
     var endHour = 17
-    var eastToWest = true           // order the queue East -> West
     var maxAttemptsPerDay = 2
 
     init() {}
@@ -143,7 +142,6 @@ struct OutboundSettings: Codable, Equatable, Sendable {
         cadence = v(.cadence, d.cadence)
         startHour = v(.startHour, d.startHour)
         endHour = v(.endHour, d.endHour)
-        eastToWest = v(.eastToWest, d.eastToWest)
         maxAttemptsPerDay = v(.maxAttemptsPerDay, d.maxAttemptsPerDay)
     }
 }

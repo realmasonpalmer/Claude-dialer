@@ -77,7 +77,7 @@ enum Rules {
     }
 
     /// Queue order: most overdue first, then other follow-ups due today, then new people (Day 1).
-    /// Within each, East -> West when on (unknown zones last), then the list's own order.
+    /// Within each, the list's own order.
     static func order(_ leads: [Lead], _ s: OutboundSettings, _ history: History,
                       now: Date = Date(), calendar cal: Calendar = .current) -> [Lead] {
         func key(_ l: Lead) -> (Int, Int, Int) {
@@ -86,7 +86,7 @@ enum Rules {
                 overdue = late
                 isNew = step == 0 ? 1 : 0
             }
-            return (-overdue, isNew, s.eastToWest ? (l.zone?.eastRank ?? 99) : 0)
+            return (-overdue, isNew, 0)
         }
         return leads.enumerated().sorted { a, b in
             let ka = key(a.element), kb = key(b.element)

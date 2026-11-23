@@ -111,7 +111,6 @@ private struct CallingTab: View {
             }
             Section("Who gets called") {
                 Toggle("Mobile numbers only", isOn: $store.settings.mobileOnly)
-                Toggle("East to West (call earlier time zones first)", isOn: $store.settings.eastToWest)
                 HStack {
                     Stepper("From \(hour(store.settings.startHour))", value: $store.settings.startHour, in: 0...23)
                     Stepper("to \(hour(store.settings.endHour))", value: $store.settings.endHour, in: 1...24)
