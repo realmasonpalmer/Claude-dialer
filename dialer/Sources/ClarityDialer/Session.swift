@@ -80,10 +80,10 @@ final class Session {
     private var task: Task<Void, Never>?
     private var voicemailDropped = false
 
-    init(store: Store, phone: Phone = LivePhone(), crm: CRM = LiveCRM()) {
+    init(store: Store, phone: Phone? = nil, crm: CRM? = nil) {
         self.store = store
-        self.phone = phone
-        self.crm = crm
+        self.phone = phone ?? LivePhone()
+        self.crm = crm ?? LiveCRM()
     }
 
     var lead: Lead? { queue.indices.contains(index) ? queue[index] : nil }

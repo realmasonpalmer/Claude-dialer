@@ -117,9 +117,7 @@ private struct CallingTab: View {
                     Stepper("to \(hour(store.settings.endHour))", value: $store.settings.endHour, in: 1...24)
                     Text("their local time").foregroundStyle(.secondary)
                 }
-                TextField("Cadence (days after first call)", text: Binding(
-                    get: { store.settings.cadenceDays.map(String.init).joined(separator: ", ") },
-                    set: { store.settings.cadenceDays = $0.split(separator: ",").compactMap { Int($0.trimmed) }.sorted() }))
+                TextField("Cadence (days after first call)", text: cadence)
                 Text("e.g. 0, 2, 5, 9, 14 = five call days. After the last one they stop coming up.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -134,6 +132,14 @@ private struct CallingTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var cadence: Binding<String> {
+        Binding<String>(
+            get: { store.settings.cadenceDays.map { String($0) }.joined(separator: ", ") },
+            set: { (text: String) in
+                store.settings.cadenceDays = text.split(separator: ",").compactMap { Int(String($0).trimmed) }.sorted()
+            })
     }
 
     private func hour(_ h: Int) -> String { "\(h % 12 == 0 ? 12 : h % 12)\(h < 12 || h == 24 ? "am" : "pm")" }

@@ -132,14 +132,15 @@ enum Metrics {
         func cell(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
         var lines = ["dialed_at,lead_id,lead,list,script,attempt,redial,from_number,zone,outcome,answered_at,ended_at,talk_seconds,voicemail_dropped,text_sent,status_before,status_after,note,aircall_call_id,salesforce_task_id"]
         for a in attempts.sorted(by: { $0.dialedAt < $1.dialedAt }) {
-            lines.append([
-                iso.string(from: a.dialedAt), a.leadID, cell(a.leadName), cell(a.listName), cell(a.scriptName),
-                String(a.attemptNumber), String(a.isRedial), a.fromNumber, a.leadZone?.label ?? "",
-                a.outcome?.label ?? "", a.answeredAt.map(iso.string) ?? "", a.endedAt.map(iso.string) ?? "",
-                String(a.talkSeconds), String(a.voicemailDropped), String(a.textSent),
-                cell(a.statusBefore), cell(a.statusAfter ?? ""), cell(a.note),
-                a.aircallCallID.map(String.init) ?? "", a.salesforceTaskID ?? "",
-            ].joined(separator: ","))
+            let who: [String] = [iso.string(from: a.dialedAt), a.leadID, cell(a.leadName), cell(a.listName), cell(a.scriptName)]
+            let dial: [String] = [String(a.attemptNumber), String(a.isRedial), a.fromNumber, a.leadZone?.label ?? ""]
+            let answered: String = a.answeredAt.map { iso.string(from: $0) } ?? ""
+            let ended: String = a.endedAt.map { iso.string(from: $0) } ?? ""
+            let result: [String] = [a.outcome?.label ?? "", answered, ended, String(a.talkSeconds),
+                                    String(a.voicemailDropped), String(a.textSent)]
+            let crm: [String] = [cell(a.statusBefore), cell(a.statusAfter ?? ""), cell(a.note),
+                                 a.aircallCallID.map { String($0) } ?? "", a.salesforceTaskID ?? ""]
+            lines.append((who + dial + result + crm).joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
     }
