@@ -95,7 +95,7 @@ struct OutboundPanel: View {
         @Bindable var store = store
         return box("Follow-Up", icon: "paperplane") {
             check("Auto Voicemail Drop", $store.settings.voicemailDrop, "Drops that day's recording (Voicemail 1 on Day 1, Voicemail 2 on Day 3). Press ⌘D at the beep.")
-            check("Auto LinkedIn Connect", $linkedInOn, "On Day 1, sends the connection request with your note in Chrome while the call rings. Max 20 a day, 100 a week; pauses itself on any LinkedIn warning.")
+            check("Auto LinkedIn Connect", $linkedInOn, "On Day 1, sends the connection request with your note in Chrome as soon as the person loads. Max 20 a day, 100 a week; pauses itself on any LinkedIn warning.")
             Label("Texts and LinkedIn follow the Day 1 / 3 / 5 sequence", systemImage: "calendar")
                 .font(.callout).foregroundStyle(.secondary)
             SettingsLink { Text("Edit sequence…") }

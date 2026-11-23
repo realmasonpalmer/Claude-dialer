@@ -125,6 +125,7 @@ final class Session {
             queue = Rules.order(callable, settings, history)
             index = 0
             go(queue.isEmpty ? .finished : .ready)
+            leadShown()
         } catch {
             message = error.localizedDescription
             go(.idle)
@@ -155,7 +156,6 @@ final class Session {
         message = nil
         store.save(a)
         history.add(lead.id, at: a.dialedAt)
-        if !isRedial { connectOnLinkedIn(lead) }
         go(.dialing)
         task = Task { [weak self] in
             guard let self else { return }
@@ -353,6 +353,7 @@ final class Session {
         guard index > 0, [.ready, .finished].contains(state) || isCountdown else { return }
         index -= 1
         go(.ready)
+        leadShown()
     }
 
     /// Stops auto-dial; stays on this person.
@@ -398,6 +399,15 @@ final class Session {
 
     /// Day 1: sends the connection request with the sequence's note, in the rep's own Chrome,
     /// while the call rings (like Clarity Live Coach). Skips quietly when it can't.
+    /// A person just came on screen: on their LinkedIn day, send the request right away
+    /// (once per person per session, so going Back doesn't send twice).
+    private func leadShown() {
+        guard let lead, linkedInTried.insert(History.key(lead.id)).inserted else { return }
+        connectOnLinkedIn(lead)
+    }
+
+    private var linkedInTried: Set<String> = []
+
     func connectOnLinkedIn(_ lead: Lead) {
         guard LinkedInBot.isOn, let note = currentStep(for: lead)?.linkedInNote?.nonBlankString,
               !linkedInSentToday(lead) else { return }
@@ -478,6 +488,7 @@ final class Session {
             queue.remove(at: index)
         }
         guard lead != nil else { return go(.finished) }
+        leadShown()
         guard autoDial, settings.autoDial, !paused else { return go(.ready) }
         countdown(settings.countdown)
     }
