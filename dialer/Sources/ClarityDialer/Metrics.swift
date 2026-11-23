@@ -45,7 +45,7 @@ enum Period: String, CaseIterable, Identifiable {
 /// The ways attempts can be broken down.
 enum Breakdown: String, CaseIterable, Identifiable {
     case day = "Day", list = "List", script = "Script", localHour = "Their local hour",
-         zone = "Time zone", attemptNumber = "Attempt #", fromNumber = "From number", redial = "First dial vs redial"
+         zone = "Time zone", sequenceStep = "Sequence step", attemptNumber = "Attempt #", fromNumber = "From number", redial = "First dial vs redial"
     var id: String { rawValue }
 
     /// (sort key, label) for an attempt.
@@ -62,6 +62,8 @@ enum Breakdown: String, CaseIterable, Identifiable {
             let h = c.component(.hour, from: a.dialedAt)
             return (String(format: "%02d", h), "\(h % 12 == 0 ? 12 : h % 12)\(h < 12 ? "am" : "pm")")
         case .zone: return (String(a.leadZone?.eastRank ?? 99), a.leadZone?.label ?? "Unknown")
+        case .sequenceStep:
+            return (String(format: "%02d", a.cadenceStep ?? 99), a.cadenceStep.map { "Step \($0 + 1)" } ?? "Off sequence")
         case .attemptNumber:
             let n = min(a.attemptNumber, 6)
             return (String(format: "%02d", n), n == 6 ? "6+" : "#\(n)")

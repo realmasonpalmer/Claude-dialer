@@ -60,17 +60,11 @@ enum Rules {
         if !isNorthAmerican(number) { return .notNorthAmerican }
         if history.isFinished(lead.id) { return .finished }
 
-        let today = cal.startOfDay(for: now)
-        let dates = history.dates(lead.id)
-        if dates.contains(where: { cal.isDate($0, inSameDayAs: now) }) { return .calledToday }
-
-        // Cadence: the Nth call day is due `cadenceDays[N]` days after the first.
-        let days = Set(dates.map { cal.startOfDay(for: $0) }).filter { $0 < today }.sorted()
-        if !days.isEmpty {
-            guard days.count < s.cadenceDays.count else { return .finished }
-            if let due = cal.date(byAdding: .day, value: s.cadenceDays[days.count], to: days[0]), due > today {
-                return .notDue(days: cal.dateComponents([.day], from: today, to: due).day ?? 1)
-            }
+        switch s.cadence.plan(callDates: history.dates(lead.id), now: now, calendar: cal) {
+        case .done: return .finished
+        case .calledToday: return .calledToday
+        case .notYet(_, let days): return .notDue(days: days)
+        case .due: break
         }
 
         if let zone = lead.zone {
@@ -80,12 +74,21 @@ enum Rules {
         return nil
     }
 
-    /// Queue order: East -> West when on (unknown zones last), otherwise the list's own order.
-    static func order(_ leads: [Lead], _ s: OutboundSettings) -> [Lead] {
-        guard s.eastToWest else { return leads }
+    /// Queue order: most overdue first, then other follow-ups due today, then new people (Day 1).
+    /// Within each, East -> West when on (unknown zones last), then the list's own order.
+    static func order(_ leads: [Lead], _ s: OutboundSettings, _ history: History,
+                      now: Date = Date(), calendar cal: Calendar = .current) -> [Lead] {
+        func key(_ l: Lead) -> (Int, Int, Int) {
+            var overdue = 0, isNew = 1
+            if case .due(let step, let late) = s.cadence.plan(callDates: history.dates(l.id), now: now, calendar: cal) {
+                overdue = late
+                isNew = step == 0 ? 1 : 0
+            }
+            return (-overdue, isNew, s.eastToWest ? (l.zone?.eastRank ?? 99) : 0)
+        }
         return leads.enumerated().sorted { a, b in
-            let ra = a.element.zone?.eastRank ?? 99, rb = b.element.zone?.eastRank ?? 99
-            return ra != rb ? ra < rb : a.offset < b.offset
+            let ka = key(a.element), kb = key(b.element)
+            return ka != kb ? ka < kb : a.offset < b.offset
         }.map(\.element)
     }
 
@@ -94,25 +97,11 @@ enum Rules {
         s.callTwice && outcome == .noAnswer && dialsToday < max(2, s.maxAttemptsPerDay)
     }
 
-    /// New -> 1st contact -> 2nd contact -> 3rd contact.
-    static let contactLadder = ["New", "1st contact", "2nd contact", "3rd contact"]
-
-    /// The status to move someone to after a call: one step up the ladder, only on their first
-    /// call of the day (redials and later calls the same day never step it again), and only to a
-    /// value the org has (matched ignoring case, so "1st Contact" works too). nil = leave it.
-    static func steppedStatus(from current: String, callsToday: Int, options: [String]) -> String? {
-        guard callsToday == 1,
-              let i = contactLadder.firstIndex(where: { $0.caseInsensitiveCompare(current.trimmed) == .orderedSame }),
-              i + 1 < contactLadder.count else { return nil }
-        let next = contactLadder[i + 1]
-        return options.first { $0.caseInsensitiveCompare(next) == .orderedSame }
-    }
-
-    /// The follow-up text after a voicemail, or nil when it shouldn't go out.
-    static func followUpText(after outcome: Outcome, to lead: Lead, _ s: OutboundSettings) -> String? {
-        guard outcome == .voicemail, s.textAfterVoicemail, lead.mobile.nonBlank != nil,
-              !s.textTemplate.trimmed.isEmpty else { return nil }
-        return Merge.fill(s.textTemplate, lead: lead, rep: s.repName)
+    /// The text for today's step, sent only when they didn't pick up and they have a mobile.
+    static func text(for step: Step?, after outcome: Outcome, to lead: Lead, rep: String) -> String? {
+        guard [.voicemail, .noAnswer].contains(outcome), lead.mobile.nonBlank != nil,
+              let body = step?.text?.trimmed, !body.isEmpty else { return nil }
+        return Merge.fill(body, lead: lead, rep: rep)
     }
 
     /// "(555) 555-0123" -> "+15555550123". US and Canada only.

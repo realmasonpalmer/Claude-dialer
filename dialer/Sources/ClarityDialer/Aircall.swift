@@ -118,12 +118,41 @@ final class AircallPhone: NSObject, WKUIDelegate {
     /// Clicks Aircall's red Hang up button. True if it found one.
     func hangUp() async -> Bool { await click(#"/hang[ _-]?up|end[ _-]?call|end the call/"#, avoid: "/^$/") }
 
-    /// Clicks Aircall's voicemail drop button (drops the default recorded message).
-    func dropVoicemail() async -> Bool {
-        await click(#"/voice[ _-]?mail|vm[ _-]?drop|drop/"#, avoid: #"/chevron|arrow|dropdown|caret|expand|menu|hang|mute|hold|keypad|transfer/"#)
+    /// Drops the recorded voicemail called `name` (Aircall's arrow next to the drop button lists
+    /// them). If that menu can't be found, drops Aircall's default message.
+    func dropVoicemail(named name: String) async -> Bool {
+        let quoted = name.lowercased().replacingOccurrences(of: "'", with: "\\'")
+        // 1. Open the list of recorded drops (the arrow half of the split button).
+        if await click(#"/voice[ _-]?mail|vm[ _-]?drop|drop/"#, avoid: "/hang|mute|hold|keypad|transfer/", needsMenu: true) {
+            try? await Task.sleep(for: .milliseconds(500))
+            // 2. Click the one whose text is the name.
+            let js = """
+            (function () {
+              function deep(root, out) {
+                root.querySelectorAll('*').forEach(function (e) { out.push(e); if (e.shadowRoot) deep(e.shadowRoot, out); });
+                return out;
+              }
+              var all = deep(document, []);
+              for (var i = 0; i < all.length; i++) {
+                var e = all[i];
+                if (!e.getClientRects().length || e.children.length > 3) continue;
+                if ((e.textContent || '').trim().toLowerCase() === '\(quoted)') {
+                  (e.closest('button,[role=option],[role=menuitem],li') || e).click(); return 'yes';
+                }
+              }
+              return 'no';
+            })()
+            """
+            if ((try? await webView.evaluateJavaScript(js)) as? String) == "yes" { return true }
+        }
+        // Fallback: the main drop button (Aircall's default message).
+        return await click(#"/voice[ _-]?mail|vm[ _-]?drop|drop/"#, avoid: #"/chevron|arrow|dropdown|caret|expand|menu|hang|mute|hold|keypad|transfer/"#)
     }
 
-    private func click(_ pattern: String, avoid: String) async -> Bool {
+    /// Clicks the first visible button matching `pattern`. `needsMenu`: only a button that opens
+    /// a menu (an arrow half); otherwise never one.
+    @discardableResult
+    private func click(_ pattern: String, avoid: String, needsMenu: Bool = false) async -> Bool {
         let js = """
         (function () {
           function deep(root, out) {
@@ -139,7 +168,8 @@ final class AircallPhone: NSObject, WKUIDelegate {
             var t = (b.textContent || '').trim();
             var words = [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
                          b.getAttribute('data-testid'), t.length < 30 ? t : ''].join(' ');
-            if (want.test(words) && !avoid.test(words) && b.getAttribute('aria-haspopup') !== 'true') { b.click(); return 'yes'; }
+            var menu = b.getAttribute('aria-haspopup') === 'true' || b.getAttribute('aria-haspopup') === 'menu' || b.getAttribute('aria-haspopup') === 'listbox';
+            if (want.test(words) && !avoid.test(words) && menu === \(needsMenu)) { b.click(); return 'yes'; }
           }
           return 'no';
         })()

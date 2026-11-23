@@ -20,6 +20,7 @@ struct Lead: Identifiable, Codable, Hashable, Sendable {
     var state: String?
     var status: String
     var doNotCall: Bool
+    var linkedIn: String? = nil
 
     /// Mobile first, then Phone.
     var dialNumber: String? { mobile.nonBlank ?? phone.nonBlank }
@@ -95,14 +96,12 @@ struct OutboundSettings: Codable, Equatable, Sendable {
     var countdown = 3               // seconds before auto-dial
     var callTwice = false           // redial once right away if unanswered
     var mobileOnly = false          // skip people with no Mobile
-    var voicemailDrop = true        // show the Drop voicemail button (Aircall's recorded message)
-    var textAfterVoicemail = false  // text their Mobile after a voicemail
-    var textTemplate = "Hi {{FirstName}}, it's {{Rep}}. Just tried you by phone. Is there a better time to connect?"
+    var voicemailDrop = true        // show the Drop voicemail button (Aircall's recorded messages)
+    var cadence = Cadence.standard  // the Day 1 / 3 / 5 sequence
     var startHour = 8               // calling hours, in the lead's local time
     var endHour = 17
     var eastToWest = true           // order the queue East -> West
     var maxAttemptsPerDay = 2
-    var cadenceDays = [0, 2, 5, 9, 14] // days after the first call on which to call again
 
     init() {}
 
@@ -120,13 +119,11 @@ struct OutboundSettings: Codable, Equatable, Sendable {
         callTwice = v(.callTwice, d.callTwice)
         mobileOnly = v(.mobileOnly, d.mobileOnly)
         voicemailDrop = v(.voicemailDrop, d.voicemailDrop)
-        textAfterVoicemail = v(.textAfterVoicemail, d.textAfterVoicemail)
-        textTemplate = v(.textTemplate, d.textTemplate)
+        cadence = v(.cadence, d.cadence)
         startHour = v(.startHour, d.startHour)
         endHour = v(.endHour, d.endHour)
         eastToWest = v(.eastToWest, d.eastToWest)
         maxAttemptsPerDay = v(.maxAttemptsPerDay, d.maxAttemptsPerDay)
-        cadenceDays = v(.cadenceDays, d.cadenceDays)
     }
 }
 
@@ -148,8 +145,10 @@ struct Attempt: Codable, Identifiable, Hashable, Sendable {
     var answeredAt: Date?
     var endedAt: Date?
     var outcome: Outcome?
+    var cadenceStep: Int?           // 0 = Day 1, 1 = Day 3, ... (index into the sequence)
     var voicemailDropped = false
     var textSent = false
+    var linkedInSent = false
     var statusBefore: String
     var statusAfter: String?
     var note = ""
@@ -176,5 +175,6 @@ extension Optional where Wrapped == String {
 }
 
 extension String {
+    var nonBlankString: String? { trimmed.isEmpty ? nil : trimmed }
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }

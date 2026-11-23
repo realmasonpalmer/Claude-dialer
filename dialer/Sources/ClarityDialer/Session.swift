@@ -7,7 +7,7 @@ import Observation
     func latestCall(user: Int, number: Int, since: Date) async throws -> Aircall.Call?
     func sendText(_ body: String, to: String, from number: Int) async throws
     func hangUp() async -> Bool
-    func dropVoicemail() async -> Bool
+    func dropVoicemail(named: String) async -> Bool
 }
 
 /// The CRM side. Live: Salesforce's REST API. Tests: a fake.
@@ -26,7 +26,7 @@ struct LivePhone: Phone {
     }
     func sendText(_ body: String, to: String, from number: Int) async throws { try await Aircall.sendText(body, to: to, from: number) }
     func hangUp() async -> Bool { await AircallPhone.shared.hangUp() }
-    func dropVoicemail() async -> Bool { await AircallPhone.shared.dropVoicemail() }
+    func dropVoicemail(named: String) async -> Bool { await AircallPhone.shared.dropVoicemail(named: named) }
 }
 
 struct LiveCRM: CRM {
@@ -114,7 +114,7 @@ final class Session {
             for l in leads {
                 if let why = Rules.skip(l, settings, history) { skipped.append(SkippedLead(lead: l, reason: why)) } else { callable.append(l) }
             }
-            queue = Rules.order(callable, settings)
+            queue = Rules.order(callable, settings, history)
             index = 0
             go(queue.isEmpty ? .finished : .ready)
         } catch {
@@ -132,12 +132,16 @@ final class Session {
             message = "Pick your Aircall user and number in Settings."
             return go(.ready)
         }
-        let a = Attempt(
+        let fresh = Attempt(
             leadID: lead.id, leadName: lead.name, listID: list?.id ?? "", listName: list?.label ?? "",
             scriptID: store.script?.id, scriptName: store.script?.name ?? "",
             attemptNumber: history.dates(lead.id).count + 1, isRedial: isRedial,
             fromNumber: settings.fromNumberDigits, leadZone: lead.zone, dialedAt: Date(),
             statusBefore: lead.status)
+        var started = fresh
+        started.cadenceStep = todayStep(for: lead)
+        started.linkedInSent = linkedInSentToday(lead)
+        let a = started
         attempt = a
         voicemailDropped = false
         message = nil
@@ -204,11 +208,16 @@ final class Session {
         Task { if !(await phone.hangUp()) { message = "Couldn't find Aircall's hang-up button. Hang up in the phone." } }
     }
 
-    /// Drops the recorded voicemail. The call is logged as a voicemail when Aircall ends it.
+    /// Drops today's recorded voicemail (Voicemail 1 on Day 1, Voicemail 2 on Day 3...).
+    /// The call is logged as a voicemail when Aircall ends it.
     func dropVoicemail() {
         guard state == .live || state == .dialing else { return }
+        guard let name = currentStep?.voicemail?.nonBlankString else {
+            message = "No voicemail on this day of the sequence. Just hang up (⌘.)."
+            return
+        }
         Task {
-            if await phone.dropVoicemail() {
+            if await phone.dropVoicemail(named: name) {
                 voicemailDropped = true
                 attempt?.voicemailDropped = true
             } else {
@@ -228,20 +237,24 @@ final class Session {
         if let status = status.nonBlank {
             if status != lead.status { a.statusAfter = status } // the rep's pick wins (the picker starts on the step-up)
         } else if let stepped = autoStatus(for: lead) {
-            a.statusAfter = stepped                      // New -> 1st -> 2nd -> 3rd contact, once a day
+            a.statusAfter = stepped                      // the sequence's status for today, once a day
         }
+        a.linkedInSent = a.linkedInSent || linkedInSentToday(lead)
         a.needsSync = true
         attempt = nil
         store.save(a)
         if outcome.isFinal { history.finish(lead.id) }
         if let s = a.statusAfter { queue[index].status = s }
 
-        let text = Rules.followUpText(after: outcome, to: lead, settings)
+        let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
+        let redial = Rules.shouldRedial(outcome, dialsToday: dialsToday, settings)
+        // Today's text goes once, after the last dial of the day (not before a redial).
+        let text = redial || textSentToday(lead) ? nil
+            : Rules.text(for: currentStep(for: lead), after: outcome, to: lead, rep: settings.repName)
         let textFrom = settings.textNumberID ?? settings.fromNumberID
         Task { await sync(a, lead: lead, text: text, from: textFrom) }
 
-        let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
-        if Rules.shouldRedial(outcome, dialsToday: dialsToday, settings) {
+        if redial {
             go(.dialing)
             task = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(2))
@@ -296,7 +309,7 @@ final class Session {
                         var saved = latest ?? a
                         saved.salesforceTaskID = a.salesforceTaskID
                         saved.statusSynced = a.statusSynced
-                        saved.needsSync = latest.map { $0.outcome != a.outcome || $0.note != a.note || $0.textSent != a.textSent || $0.endedAt != a.endedAt || $0.statusAfter != a.statusAfter || $0.voicemailDropped != a.voicemailDropped } ?? false
+                        saved.needsSync = latest.map { $0.outcome != a.outcome || $0.note != a.note || $0.textSent != a.textSent || $0.endedAt != a.endedAt || $0.statusAfter != a.statusAfter || $0.voicemailDropped != a.voicemailDropped || $0.linkedInSent != a.linkedInSent } ?? false
                         store.save(saved)
                     } catch {
                         message = "Saved on this Mac; will retry Salesforce: \(error.localizedDescription)"
@@ -334,10 +347,55 @@ final class Session {
     }
 
     /// Stops auto-dial; stays on this person.
-    /// The status this call would step them to (see Rules.steppedStatus), for the wrap-up picker too.
+    // MARK: Sequence
+
+    /// Which step of the sequence today's call is (0 = Day 1), or nil if they're not due.
+    func todayStep(for lead: Lead) -> Int? {
+        switch settings.cadence.plan(callDates: history.dates(lead.id)) {
+        case .due(let s, _), .calledToday(let s): return s
+        default: return nil
+        }
+    }
+
+    func currentStep(for lead: Lead) -> Step? {
+        todayStep(for: lead).flatMap { settings.cadence.steps.indices.contains($0) ? settings.cadence.steps[$0] : nil }
+    }
+
+    var currentStep: Step? { lead.flatMap(currentStep(for:)) }
+
+    func plan(for lead: Lead) -> Plan { settings.cadence.plan(callDates: history.dates(lead.id)) }
+
+    /// Today's status for them, set only on their first call of the day (redials never step it again).
     func autoStatus(for lead: Lead) -> String? {
         let callsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
-        return Rules.steppedStatus(from: lead.status, callsToday: callsToday, options: statusOptions)
+        guard callsToday <= 1, let step = todayStep(for: lead) else { return nil }
+        return settings.cadence.status(forStep: step, current: lead.status, options: statusOptions)
+    }
+
+    private var linkedInDone: Set<String> = []
+
+    private func today(_ lead: Lead) -> [Attempt] {
+        store.attempts(for: lead.id).filter { Calendar.current.isDateInToday($0.dialedAt) }
+    }
+
+    func textSentToday(_ lead: Lead) -> Bool { today(lead).contains(where: \.textSent) }
+
+    func linkedInSentToday(_ lead: Lead) -> Bool {
+        linkedInDone.contains(History.key(lead.id)) || today(lead).contains(where: \.linkedInSent)
+    }
+
+    /// The rep sent today's LinkedIn request. Recorded on today's call (and in Salesforce).
+    func markLinkedInSent() {
+        guard let lead else { return }
+        linkedInDone.insert(History.key(lead.id))
+        if attempt != nil {
+            attempt?.linkedInSent = true
+        } else if var last = today(lead).last {
+            last.linkedInSent = true
+            last.needsSync = true
+            store.save(last)
+            syncNow()
+        }
     }
 
     /// Pause: stops a countdown now, and stops auto-dial after the current call. Resume restarts it.

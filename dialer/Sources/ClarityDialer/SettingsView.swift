@@ -5,6 +5,7 @@ struct SettingsView: View {
         TabView {
             ConnectionsTab().tabItem { Label("Connections", systemImage: "link") }
             CallingTab().tabItem { Label("Calling", systemImage: "phone") }
+            SequenceTab().tabItem { Label("Sequence", systemImage: "calendar") }
             ScriptTab().tabItem { Label("Script", systemImage: "text.alignleft") }
         }
         .frame(width: 620, height: 520)
@@ -117,29 +118,12 @@ private struct CallingTab: View {
                     Stepper("to \(hour(store.settings.endHour))", value: $store.settings.endHour, in: 1...24)
                     Text("their local time").foregroundStyle(.secondary)
                 }
-                TextField("Cadence (days after first call)", text: cadence)
-                Text("e.g. 0, 2, 5, 9, 14 = five call days. After the last one they stop coming up.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Voicemail & text") {
-                Toggle("Show Drop voicemail (⌘D) — uses your Aircall recorded drop", isOn: $store.settings.voicemailDrop)
-                Toggle("Text their mobile after a voicemail", isOn: $store.settings.textAfterVoicemail)
-                TextEditor(text: $store.settings.textTemplate)
-                    .font(.body).frame(height: 70)
-                    .disabled(!store.settings.textAfterVoicemail)
-                Text("Merge fields: " + Merge.fields.map { "{{\($0)}}" }.joined(separator: " "))
-                    .font(.caption).foregroundStyle(.secondary)
+            Section("Voicemail") {
+                Toggle("Show Drop voicemail (⌘D). Which recording is set per day in Sequence.", isOn: $store.settings.voicemailDrop)
             }
         }
         .formStyle(.grouped)
-    }
-
-    private var cadence: Binding<String> {
-        Binding<String>(
-            get: { store.settings.cadenceDays.map { String($0) }.joined(separator: ", ") },
-            set: { (text: String) in
-                store.settings.cadenceDays = text.split(separator: ",").compactMap { Int(String($0).trimmed) }.sorted()
-            })
     }
 
     private func hour(_ h: Int) -> String { "\(h % 12 == 0 ? 12 : h % 12)\(h < 12 || h == 24 ? "am" : "pm")" }
@@ -176,6 +160,68 @@ private struct ScriptTab: View {
                 }
                 .padding(12)
             }
+        }
+    }
+}
+
+/// The Day 1 / 3 / 5 sequence, one card per day.
+private struct SequenceTab: View {
+    @Environment(Store.self) private var store
+
+    var body: some View {
+        @Bindable var store = store
+        Form {
+            Section {
+                Text("Each person moves through these days. Only people due today are loaded, most overdue first. One step per day, so calling someone twice in a day never moves them twice.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach($store.settings.cadence.steps) { $step in
+                Section {
+                    Stepper("Day \(step.day)", value: $step.day, in: 1...60)
+                    TextField("Set status to", text: $step.status)
+                    optional("Leave voicemail (Aircall drop name)", $step.voicemail, placeholder: "Voicemail 1")
+                    optionalEditor("Text if no answer", $step.text)
+                    optionalEditor("LinkedIn connection request note", $step.linkedInNote)
+                } header: {
+                    HStack {
+                        Text("Day \(step.day)")
+                        Spacer()
+                        Button(role: .destructive) { store.settings.cadence.steps.removeAll { $0.id == step.id } } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless).disabled(store.settings.cadence.steps.count < 2)
+                    }
+                }
+            }
+            Section {
+                HStack {
+                    Button("Add a day") {
+                        let last = store.settings.cadence.steps.last
+                        store.settings.cadence.steps.append(Step(day: (last?.day ?? 0) + 2, status: "\(store.settings.cadence.steps.count + 1)th Contact"))
+                    }
+                    Button("Reset to Day 1 / 3 / 5") { store.settings.cadence = .standard }
+                }
+                Text("Merge fields: " + Merge.fields.map { "{{\($0)}}" }.joined(separator: " "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func optional(_ title: String, _ value: Binding<String?>, placeholder: String) -> some View {
+        HStack {
+            Toggle(title, isOn: Binding(get: { value.wrappedValue != nil }, set: { value.wrappedValue = $0 ? placeholder : nil }))
+            if value.wrappedValue != nil {
+                TextField("", text: Binding(get: { value.wrappedValue ?? "" }, set: { value.wrappedValue = $0 }))
+                    .frame(width: 160)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func optionalEditor(_ title: String, _ value: Binding<String?>) -> some View {
+        Toggle(title, isOn: Binding(get: { value.wrappedValue != nil }, set: { value.wrappedValue = $0 ? "" : nil }))
+        if value.wrappedValue != nil {
+            TextEditor(text: Binding(get: { value.wrappedValue ?? "" }, set: { value.wrappedValue = $0 }))
+                .font(.body).frame(height: 60)
         }
     }
 }

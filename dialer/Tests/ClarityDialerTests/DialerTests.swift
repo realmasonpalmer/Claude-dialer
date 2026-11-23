@@ -44,17 +44,6 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(Rules.skip(lead(), s, hist, now: noonPacific, calendar: cal), .calledToday)
     }
 
-    func testCadence() {
-        let day: TimeInterval = 86_400
-        var hist = History(); hist.add("00Q000000000001", at: noonPacific - day)  // called yesterday
-        XCTAssertEqual(Rules.skip(lead(), s, hist, now: noonPacific, calendar: cal), .notDue(days: 1)) // 2nd call is day 2
-        hist = History(); hist.add("00Q000000000001", at: noonPacific - 2 * day)
-        XCTAssertNil(Rules.skip(lead(), s, hist, now: noonPacific, calendar: cal))
-        hist = History()
-        for d in [20.0, 18, 15, 11, 6] { hist.add("00Q000000000001", at: noonPacific - d * day) }
-        XCTAssertEqual(Rules.skip(lead(), s, hist, now: noonPacific, calendar: cal), .finished)
-    }
-
     func testFinalOutcomeFinishes() {
         var a = Attempt(leadID: "00Q000000000001AAA", leadName: "", listID: "", listName: "", scriptName: "",
                         attemptNumber: 1, isRedial: false, fromNumber: "", dialedAt: noonPacific - 200_000, statusBefore: "")
@@ -69,13 +58,6 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(h.dates("00Q000000000001XYZ").count, 1)
     }
 
-    func testEastToWest() {
-        let ny = lead("1", mobile: "212-555-0100", state: "NY"), ca = lead("2", state: "CA"), tx = lead("3", mobile: "214-555-0100", state: "TX")
-        XCTAssertEqual(Rules.order([ca, ny, tx], s).map(\.id), ["1", "3", "2"])
-        var off = s; off.eastToWest = false
-        XCTAssertEqual(Rules.order([ca, ny, tx], off).map(\.id), ["2", "1", "3"])
-    }
-
     func testRedial() {
         var t = s; t.callTwice = true
         XCTAssertTrue(Rules.shouldRedial(.noAnswer, dialsToday: 1, t))
@@ -84,29 +66,84 @@ final class RulesTests: XCTestCase {
         XCTAssertFalse(Rules.shouldRedial(.noAnswer, dialsToday: 1, s))
     }
 
-    func testFollowUpText() {
-        var t = s; t.textAfterVoicemail = true; t.repName = "Mason"
-        XCTAssertEqual(Rules.followUpText(after: .voicemail, to: lead(), t),
-                       "Hi Dana, it's Mason. Just tried you by phone. Is there a better time to connect?")
-        XCTAssertNil(Rules.followUpText(after: .noAnswer, to: lead(), t))
-        XCTAssertNil(Rules.followUpText(after: .voicemail, to: lead(mobile: nil, phone: "503-555-0100"), t))
-    }
-
     func testSettingsDecodeWithMissingKeys() throws {
         let s = try JSONDecoder().decode(OutboundSettings.self, from: Data(#"{"callTwice": true}"#.utf8))
         XCTAssertTrue(s.callTwice)
-        XCTAssertEqual(s.cadenceDays, [0, 2, 5, 9, 14])
+        XCTAssertEqual(s.cadence, .standard)
     }
 
-    func testStatusLadder() {
+    // MARK: Sequence (Day 1 / 3 / 5)
+
+    let day: TimeInterval = 86_400
+    var seq: Cadence { .standard }
+
+    func testPlanWalksDay1Day3Day5() {
+        XCTAssertEqual(seq.plan(callDates: [], now: noonPacific, calendar: cal), .due(step: 0, overdueDays: 0))
+        XCTAssertEqual(seq.plan(callDates: [noonPacific - day], now: noonPacific, calendar: cal), .notYet(step: 1, inDays: 1))
+        XCTAssertEqual(seq.plan(callDates: [noonPacific - 2 * day], now: noonPacific, calendar: cal), .due(step: 1, overdueDays: 0))
+        XCTAssertEqual(seq.plan(callDates: [noonPacific - 4 * day], now: noonPacific, calendar: cal), .due(step: 1, overdueDays: 2))
+        XCTAssertEqual(seq.plan(callDates: [noonPacific - 4 * day, noonPacific - 2 * day], now: noonPacific, calendar: cal), .due(step: 2, overdueDays: 0))
+        XCTAssertEqual(seq.plan(callDates: [noonPacific - 5 * day, noonPacific - 3 * day, noonPacific - day], now: noonPacific, calendar: cal), .done)
+        XCTAssertEqual(seq.plan(callDates: [noonPacific - 3600], now: noonPacific, calendar: cal), .calledToday(step: 0))
+    }
+
+    func testTwoCallsSameDayCountAsOneStep() {
+        let calls = [noonPacific - 2 * day, noonPacific - 2 * day + 600]  // called twice on Day 1
+        XCTAssertEqual(seq.plan(callDates: calls, now: noonPacific, calendar: cal), .due(step: 1, overdueDays: 0))
+    }
+
+    func testLateStepPushesTheNextOne() {
+        // Day 3 call happened 2 days late: Day 5 is still 2 days after it, not overdue.
+        let calls = [noonPacific - 5 * day, noonPacific - day]
+        XCTAssertEqual(seq.plan(callDates: calls, now: noonPacific, calendar: cal), .notYet(step: 2, inDays: 1))
+    }
+
+    func testNotLoadedUntilDue() {
+        var hist = History(); hist.add("00Q000000000001", at: noonPacific - day)
+        XCTAssertEqual(Rules.skip(lead(), s, hist, now: noonPacific, calendar: cal), .notDue(days: 1))
+        hist = History()
+        for d in [5.0, 3, 1] { hist.add("00Q000000000001", at: noonPacific - d * day) }
+        XCTAssertEqual(Rules.skip(lead(), s, hist, now: noonPacific, calendar: cal), .finished)
+    }
+
+    func testOverdueFirstThenFollowUpsThenNew() {
+        let new = lead("N"), due = lead("D"), late = lead("L")
+        var hist = History()
+        hist.add("D", at: noonPacific - 2 * day)   // Day 3 due today
+        hist.add("L", at: noonPacific - 5 * day)   // Day 3, 3 days overdue
+        XCTAssertEqual(Rules.order([new, due, late], s, hist, now: noonPacific, calendar: cal).map(\.id), ["L", "D", "N"])
+    }
+
+    func testEastToWestWithinTheSameTier() {
+        let ny = lead("1", mobile: "212-555-0100", state: "NY"), ca = lead("2", state: "CA"), tx = lead("3", mobile: "214-555-0100", state: "TX")
+        XCTAssertEqual(Rules.order([ca, ny, tx], s, History(), now: noonPacific, calendar: cal).map(\.id), ["1", "3", "2"])
+        var off = s; off.eastToWest = false
+        XCTAssertEqual(Rules.order([ca, ny, tx], off, History(), now: noonPacific, calendar: cal).map(\.id), ["2", "1", "3"])
+    }
+
+    func testStatusForEachStep() {
         let opts = ["New", "1st Contact", "2nd Contact", "3rd Contact", "Qualified"]
-        XCTAssertEqual(Rules.steppedStatus(from: "New", callsToday: 1, options: opts), "1st Contact")
-        XCTAssertEqual(Rules.steppedStatus(from: "1st contact", callsToday: 1, options: opts), "2nd Contact")
-        XCTAssertEqual(Rules.steppedStatus(from: "2nd Contact", callsToday: 1, options: opts), "3rd Contact")
-        XCTAssertNil(Rules.steppedStatus(from: "3rd Contact", callsToday: 1, options: opts), "stops at 3rd")
-        XCTAssertNil(Rules.steppedStatus(from: "New", callsToday: 2, options: opts), "never twice in a day")
-        XCTAssertNil(Rules.steppedStatus(from: "Qualified", callsToday: 1, options: opts), "off the ladder: leave it")
-        XCTAssertNil(Rules.steppedStatus(from: "New", callsToday: 1, options: ["New", "Contacted"]), "org lacks the value")
+        XCTAssertEqual(seq.status(forStep: 0, current: "New", options: opts), "1st Contact")
+        XCTAssertEqual(seq.status(forStep: 0, current: "", options: opts), "1st Contact")
+        XCTAssertEqual(seq.status(forStep: 1, current: "1st contact", options: opts), "2nd Contact")
+        XCTAssertEqual(seq.status(forStep: 2, current: "2nd Contact", options: opts), "3rd Contact")
+        XCTAssertNil(seq.status(forStep: 1, current: "2nd Contact", options: opts), "never backwards")
+        XCTAssertNil(seq.status(forStep: 0, current: "Qualified", options: opts), "off the ladder: leave it")
+        XCTAssertNil(seq.status(forStep: 0, current: "New", options: ["New", "Contacted"]), "org lacks the value")
+    }
+
+    func testTextsAndVoicemailsPerDay() {
+        let steps = seq.steps
+        XCTAssertEqual(steps.map(\.day), [1, 3, 5])
+        XCTAssertEqual(steps.map(\.voicemail), ["Voicemail 1", "Voicemail 2", nil])
+        XCTAssertNotNil(steps[0].linkedInNote)
+        XCTAssertNil(steps[2].text, "Day 5: call only")
+        var t = s; t.repName = "Mason"
+        XCTAssertNotNil(Rules.text(for: steps[1], after: .noAnswer, to: lead(), rep: "Mason"))
+        XCTAssertNil(Rules.text(for: steps[1], after: .connected, to: lead(), rep: "Mason"), "no text after a real conversation")
+        XCTAssertNil(Rules.text(for: steps[2], after: .noAnswer, to: lead(), rep: "Mason"))
+        XCTAssertNil(Rules.text(for: steps[0], after: .voicemail, to: lead(mobile: nil, phone: "503-555-0100"), rep: "Mason"))
+        _ = t
     }
 
     func testZone() {
@@ -185,7 +222,8 @@ final class FakePhone: Phone {
     }
     func sendText(_ body: String, to: String, from number: Int) async throws { texts.append(body) }
     func hangUp() async -> Bool { true }
-    func dropVoicemail() async -> Bool { dropWorks }
+    var droppedNames: [String] = []
+    func dropVoicemail(named: String) async -> Bool { droppedNames.append(named); return dropWorks }
 }
 
 @MainActor
@@ -332,6 +370,37 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(phone.dialed.count, 2)
     }
 
+    func testRedialSendsOneTextAfterTheLastDial() async {
+        store.settings.callTwice = true
+        session.call()
+        await wait { session.index == 1 }
+        await wait { !phone.texts.isEmpty }
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(phone.dialed.count, 2)
+        XCTAssertEqual(phone.texts.count, 1)
+    }
+
+    func testDay5HasNoVoicemail() async {
+        // Called on Day 1 and Day 3 already.
+        let id = "00Q000000000001"
+        for d in [4.0, 2] {
+            var a = Attempt(leadID: id, leadName: "", listID: "", listName: "", scriptName: "", attemptNumber: 1,
+                            isRedial: false, fromNumber: "", dialedAt: Date() - d * 86_400, statusBefore: "")
+            a.outcome = .noAnswer
+            store.save(a)
+        }
+        await session.load(Salesforce.ListView(id: "LV", label: "List", object: .lead))
+        XCTAssertEqual(session.lead?.id, id)
+        XCTAssertEqual(session.currentStep?.day, 5)
+        XCTAssertNil(session.currentStep?.voicemail)
+        phone.answers = [true]
+        session.call()
+        await wait { session.state == .dialing || session.state == .live }
+        session.dropVoicemail()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(phone.droppedNames.isEmpty)
+    }
+
     func testCallTwiceRedialsOnce() async {
         store.settings.callTwice = true
         session.call()
@@ -342,7 +411,6 @@ final class SessionTests: XCTestCase {
     }
 
     func testVoicemailDropLogsVoicemailAndTexts() async {
-        store.settings.textAfterVoicemail = true
         phone.answers = [true]
         session.pollInterval = .milliseconds(80)
         session.call()
@@ -354,6 +422,8 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(phone.texts.count, 1)
         await wait { store.attempts.first?.textSent == true }
         XCTAssertTrue(store.attempts.first?.textSent == true)
+        XCTAssertEqual(phone.droppedNames, ["Voicemail 1"], "Day 1 drops Voicemail 1")
+        XCTAssertTrue(phone.texts.first?.contains("Claude or other AI tools") == true, "Day 1 sends Text 1")
     }
 
     func testAutoDialCountsDownThenCalls() async {

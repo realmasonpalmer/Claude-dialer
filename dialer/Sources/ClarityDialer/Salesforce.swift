@@ -158,11 +158,21 @@ enum Salesforce {
             ? "Id, Name, FirstName, Company, Title, Phone, MobilePhone, City, State, DoNotCall"
             : "Id, Name, FirstName, Account.Name, Title, Phone, MobilePhone, MailingCity, MailingState, DoNotCall"
         var byID: [String: Lead] = [:]
+        // LinkedIn is a custom field; orgs without it just don't get profile links.
+        var linkedInField: String? = view.object == .lead ? "Linkedin__c" : "LinkedIn__c"
         for start in stride(from: 0, to: ids.count, by: 200) {
             let batch = safeIDs(ids[start..<min(start + 200, ids.count)])
             guard !batch.isEmpty else { continue }
-            let extra = statusField.map { ", \($0)" } ?? ""
-            for r in try await query("SELECT \(fields)\(extra) FROM \(view.object.rawValue) WHERE Id IN (\(batch))") {
+            let base = fields + (statusField.map { ", \($0)" } ?? "")
+            func soql(_ li: String?) -> String {
+                "SELECT \(base)\(li.map { ", \($0)" } ?? "") FROM \(view.object.rawValue) WHERE Id IN (\(batch))"
+            }
+            let rows: [[String: Any]]
+            do { rows = try await query(soql(linkedInField)) } catch where linkedInField != nil {
+                linkedInField = nil
+                rows = try await query(soql(nil))
+            }
+            for r in rows {
                 guard let id = r["Id"] as? String else { continue }
                 let company = (r["Company"] as? String) ?? ((r["Account"] as? [String: Any])?["Name"] as? String) ?? ""
                 byID[History.key(id)] = Lead(
@@ -176,7 +186,8 @@ enum Salesforce {
                     city: (r["City"] as? String) ?? (r["MailingCity"] as? String),
                     state: (r["State"] as? String) ?? (r["MailingState"] as? String),
                     status: statusField.flatMap { r[$0] as? String } ?? "",
-                    doNotCall: (r["DoNotCall"] as? Bool) ?? false)
+                    doNotCall: (r["DoNotCall"] as? Bool) ?? false,
+                    linkedIn: linkedInField.flatMap { r[$0] as? String })
             }
         }
         return ids.compactMap { byID[History.key($0)] }
@@ -262,6 +273,8 @@ enum Salesforce {
         var description = a.note
         if a.voicemailDropped { description += (description.isEmpty ? "" : "\n") + "Voicemail dropped." }
         if a.textSent { description += (description.isEmpty ? "" : "\n") + "Follow-up text sent." }
+        if a.linkedInSent { description += (description.isEmpty ? "" : "\n") + "LinkedIn connection request sent." }
+        if let step = a.cadenceStep { description = "Sequence step \(step + 1)." + (description.isEmpty ? "" : "\n" + description) }
         let day = ISO8601DateFormatter.string(from: a.dialedAt, timeZone: .current, formatOptions: [.withFullDate])
         let body: [String: Any] = [
             "WhoId": a.leadID,

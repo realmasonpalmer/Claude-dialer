@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The one screen: who, what to say, and one primary action.
@@ -55,6 +56,7 @@ struct DialerView: View {
         default:
             if let lead = session.lead {
                 LeadCard(lead: lead)
+                TodayCard(lead: lead)
                 ScriptCard(lead: lead)
             }
         }
@@ -165,12 +167,83 @@ private struct LeadCard: View {
         }
     }
 
+    /// "Last contacted 2 days ago (Voicemail)"
     private var lastTouch: String {
-        let dates = session.history.dates(lead.id).sorted()
-        guard let last = dates.last else { return "First call" }
-        let outcome = store.attempts(for: lead.id).last(where: \.isLogged)?.outcome?.label
-        return "Call #\(dates.count + (session.attempt == nil ? 1 : 0)) · last \(last.formatted(.relative(presentation: .named)))"
-            + (outcome.map { " · \($0)" } ?? "")
+        let today = Calendar.current.startOfDay(for: Date())
+        let before = session.history.dates(lead.id).filter { $0 < today }.sorted()
+        guard let last = before.last else { return "Never contacted" }
+        let outcome = store.attempts(for: lead.id).last(where: { $0.isLogged && $0.dialedAt < today })?.outcome?.label
+        return "Last contacted \(last.formatted(.relative(presentation: .named)))" + (outcome.map { " (\($0))" } ?? "")
+    }
+}
+
+/// Today's step of the sequence: what to do, and what's done.
+private struct TodayCard: View {
+    @Environment(Store.self) private var store
+    @Environment(Session.self) private var session
+    let lead: Lead
+
+    var body: some View {
+        let steps = store.settings.cadence.steps
+        if let i = session.todayStep(for: lead), steps.indices.contains(i) {
+            let step = steps[i]
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("DAY \(step.day) · STEP \(i + 1) OF \(steps.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        if case .due(_, let late) = session.plan(for: lead), late > 0 {
+                            Text("\(late) day\(late == 1 ? "" : "s") overdue").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                        }
+                        Spacer()
+                    }
+                    item("phone", "Call", done: session.attempt != nil || session.history.dates(lead.id).contains { Calendar.current.isDateInToday($0) })
+                    item("arrow.up.right", "Status → \(step.status)", done: lead.status.caseInsensitiveCompare(step.status) == .orderedSame)
+                    if let vm = step.voicemail { item("recordingtape", "If no answer: drop \(vm) (⌘D)", done: session.attempt?.voicemailDropped == true) }
+                    else { item("recordingtape", "No voicemail today", done: false, muted: true) }
+                    if step.text != nil {
+                        item("message", lead.mobile.nonBlank == nil ? "Text: no mobile number" : "If no answer: text goes out automatically",
+                             done: session.textSentToday(lead), muted: lead.mobile.nonBlank == nil)
+                    }
+                    if let note = step.linkedInNote { linkedIn(note) }
+                }
+            }
+        }
+    }
+
+    private func item(_ icon: String, _ text: String, done: Bool, muted: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: done ? "checkmark.circle.fill" : icon)
+                .foregroundStyle(done ? Color.green : Color.secondary).frame(width: 18)
+            Text(text).foregroundStyle(muted ? .tertiary : .primary).strikethrough(done, color: .secondary)
+        }
+    }
+
+    private func linkedIn(_ note: String) -> some View {
+        let sent = session.linkedInSentToday(lead)
+        return HStack(spacing: 8) {
+            Image(systemName: sent ? "checkmark.circle.fill" : "person.badge.plus")
+                .foregroundStyle(sent ? Color.green : Color.secondary).frame(width: 18)
+            Text("LinkedIn request").strikethrough(sent, color: .secondary)
+            Spacer()
+            Button(sent ? "Open again" : "Copy note & open LinkedIn") {
+                let body = Merge.fill(note, lead: lead, rep: store.settings.repName)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(body, forType: .string)
+                NSWorkspace.shared.open(profileURL)
+                session.markLinkedInSent()
+            }
+            .help("Copies the note, opens their profile. Click Connect, then Add a note, then paste (⌘V).")
+        }
+    }
+
+    private var profileURL: URL {
+        if let raw = lead.linkedIn?.trimmed, raw.lowercased().contains("linkedin.com") {
+            let s = raw.hasPrefix("http") ? raw : "https://" + raw
+            if let u = URL(string: s) { return u }
+        }
+        var c = URLComponents(string: "https://www.linkedin.com/search/results/people/")!
+        c.queryItems = [URLQueryItem(name: "keywords", value: "\(lead.name) \(lead.company)")]
+        return c.url!
     }
 }
 
@@ -238,9 +311,9 @@ private struct ActionBar: View {
             case .dialing, .live:
                 CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
                 Spacer()
-                if store.settings.voicemailDrop {
+                if store.settings.voicemailDrop, let vm = session.currentStep?.voicemail {
                     Button { session.dropVoicemail() } label: {
-                        Label(session.attempt?.voicemailDropped == true ? "Voicemail dropped" : "Drop voicemail", systemImage: "recordingtape")
+                        Label(session.attempt?.voicemailDropped == true ? "\(vm) dropped" : "Drop \(vm)", systemImage: "recordingtape")
                     }
                     .keyboardShortcut("d", modifiers: .command)
                     .disabled(session.attempt?.voicemailDropped == true)
