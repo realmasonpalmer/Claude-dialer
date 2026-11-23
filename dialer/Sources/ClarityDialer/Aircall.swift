@@ -105,6 +105,8 @@ final class AircallPhone: NSObject, WKUIDelegate {
         config.websiteDataStore = .default() // stays signed in
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        config.userContentController.addUserScript(
+            WKUserScript(source: Self.minimalScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 360, height: 640), configuration: config)
         // Aircall supports Chrome; look like it so the page loads.
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -114,6 +116,46 @@ final class AircallPhone: NSObject, WKUIDelegate {
     }
 
     func reload() { webView.reload() }
+
+    /// Removes Aircall's left sidebar (Conversations, Calls, Campaigns...): only the phone shows.
+    /// Finds it by what's in it (its labels) rather than by class names, which
+    /// change, and hides it. Re-applied whenever Aircall redraws.
+    private static let minimalScript = """
+        (function () {
+          window.__clarityMinimal = true;
+          var labels = ['Conversations', 'Power Dialer', 'Campaigns', 'Performance', 'Contacts', 'Messages'];
+          var hidden = [];
+          function isNav(el) {
+            var t = el.innerText || '';
+            var hits = labels.filter(function (l) { return t.indexOf(l) >= 0; }).length;
+            var r = el.getBoundingClientRect();
+            return hits >= 3 && r.width > 0 && r.width < 260 && r.height > window.innerHeight * 0.5 && r.left < 20;
+          }
+          function apply() {
+            // Already hidden and still on the page: nothing to do (no flicker).
+            if (window.__clarityMinimal && hidden.length && document.contains(hidden[0])) return;
+            hidden.forEach(function (el) { el.style.removeProperty('display'); });
+            hidden = [];
+            if (!window.__clarityMinimal) return;
+            // The smallest element that holds the nav labels and runs down the left edge.
+            var best = null;
+            var cands = document.querySelectorAll('nav, aside, [role=navigation], header, div');
+            for (var i = 0; i < cands.length; i++) {
+              var el = cands[i];
+              if (!isNav(el)) continue;
+              if (!best || best.contains(el)) best = el;
+            }
+            if (best) { best.style.setProperty('display', 'none', 'important'); hidden.push(best); }
+          }
+          window.__clarityApply = apply;
+          var queued = false;
+          new MutationObserver(function () {
+            if (queued) return; queued = true;
+            setTimeout(function () { queued = false; apply(); }, 300);
+          }).observe(document.documentElement, { childList: true, subtree: true });
+          apply();
+        })();
+        """
 
     /// Clicks Aircall's red Hang up button. True if it found one.
     func hangUp() async -> Bool { await click(#"/hang[ _-]?up|end[ _-]?call|end the call/"#, avoid: "/^$/") }

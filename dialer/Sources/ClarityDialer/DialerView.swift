@@ -4,6 +4,9 @@ import SwiftUI
 /// The one screen: who, what to say, and one primary action.
 struct DialerView: View {
     @Environment(Store.self) private var store
+    /// The rep opened the phone (to sign in, record a voicemail drop...). Otherwise it shows only during calls.
+    @AppStorage("phonePinned") private var phonePinned = true
+    private var phoneShown: Bool { phonePinned || session.state == .dialing || session.state == .live }
     @Environment(Updater.self) private var updater
     @Environment(Session.self) private var session
     @Environment(\.openWindow) private var openWindow
@@ -11,7 +14,7 @@ struct DialerView: View {
     @State private var listError: String?
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             VStack(spacing: 0) {
                 TopBar(lists: lists, listError: listError, reloadLists: loadLists)
                 Divider()
@@ -44,9 +47,9 @@ struct DialerView: View {
                     .background(.bar)
             }
             .frame(minWidth: 600)
-            AircallPhoneView()
-                .frame(minWidth: 340, idealWidth: 360, maxWidth: 420)
+            PhonePanel(open: phoneShown, pinned: $phonePinned)
         }
+        .animation(.snappy(duration: 0.25), value: phoneShown)
         .task { await loadLists() }
     }
 
@@ -80,6 +83,7 @@ struct DialerView: View {
 
 private struct TopBar: View {
     @Environment(Store.self) private var store
+    @AppStorage("phonePinned") var phonePinned = true
     @Environment(Updater.self) private var updater
     @Environment(Session.self) private var session
     @Environment(\.openWindow) private var openWindow
@@ -125,6 +129,10 @@ extension TopBar {
     @ViewBuilder
     func trailing(labels: Bool, stats: TodayStrip.Style) -> some View {
         HStack(spacing: 10) {
+            Button { phonePinned.toggle() } label: {
+                if labels { Label(phonePinned ? "Hide phone" : "Show phone", systemImage: "phone") } else { Image(systemName: "phone") }
+            }
+            .help("The Aircall phone opens by itself during calls. Show it to sign in or between calls.")
             if store.settings.autoDial, session.list != nil {
                 Button { session.togglePause() } label: {
                     if labels {
@@ -572,6 +580,40 @@ private struct CallClock: View {
                 Text(live ? "Live" : "Ringing").font(.headline)
                 Text(String(format: "%d:%02d", secs / 60, secs % 60)).monospacedDigit().foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+/// The Aircall phone. Folded away between calls; slides open while dialing and on a call,
+/// or whenever the rep pins it open. Always loaded (folded = zero width), so calls never drop.
+private struct PhonePanel: View {
+    let open: Bool
+    @Binding var pinned: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if open { Divider() }
+            VStack(spacing: 0) {
+                if open {
+                    HStack(spacing: 10) {
+                        Image(systemName: "phone.fill").foregroundStyle(Look.accent)
+                        Text("Aircall").font(.callout.weight(.semibold))
+                        Spacer()
+                        Button { pinned.toggle() } label: {
+                            Image(systemName: pinned ? "pin.fill" : "pin")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(pinned ? "Unpin: the phone shows only during calls" : "Keep the phone open between calls")
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(.bar)
+                    Divider()
+                }
+                AircallPhoneView()
+            }
+            .frame(width: open ? 360 : 0)
+            .clipped()
+            .opacity(open ? 1 : 0)
         }
     }
 }
