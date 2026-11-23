@@ -36,6 +36,9 @@ struct DialerView: View {
                 ActionBar()
                     .padding(.horizontal, 20).padding(.vertical, 14)
                     .background(.bar)
+                Divider()
+                OutboundPanel()
+                    .background(.bar)
             }
             .frame(minWidth: 600)
             AircallPhoneView()
