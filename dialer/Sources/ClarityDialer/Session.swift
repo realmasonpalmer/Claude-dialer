@@ -154,6 +154,7 @@ final class Session {
         message = nil
         store.save(a)
         history.add(lead.id, at: a.dialedAt)
+        if !isRedial { connectOnLinkedIn(lead) }
         go(.dialing)
         task = Task { [weak self] in
             guard let self else { return }
@@ -391,13 +392,56 @@ final class Session {
         linkedInDone.contains(History.key(lead.id)) || today(lead).contains(where: \.linkedInSent)
     }
 
+    /// What the LinkedIn bot is doing, for the screen.
+    private(set) var linkedInStatus: String?
+
+    /// Day 1: sends the connection request with the sequence's note, in the rep's own Chrome,
+    /// while the call rings (like Clarity Live Coach). Skips quietly when it can't.
+    func connectOnLinkedIn(_ lead: Lead) {
+        guard LinkedInBot.isOn, let note = currentStep(for: lead)?.linkedInNote?.nonBlankString,
+              !linkedInSentToday(lead) else { return }
+        guard let url = Self.profileURL(lead.linkedIn) else {
+            linkedInStatus = "LinkedIn: no profile link in Salesforce. Use the LinkedIn button."
+            return
+        }
+        if let why = LinkedInBot.whyNot { linkedInStatus = "LinkedIn bot \(why)."; return }
+        let text = LinkedInBot.note(Merge.fill(note, lead: lead, rep: settings.repName))
+        LinkedInBot.personKey = History.key(lead.id)
+        Task {
+            let result = await LinkedInBot.connect(profile: url, note: text, company: lead.company, name: lead.name) { [weak self] s in
+                self?.linkedInStatus = s
+            }
+            switch result {
+            case .sent: linkedInStatus = "LinkedIn: request sent to \(lead.name)."; markLinkedInSent(leadID: lead.id)
+            case .pending: linkedInStatus = "LinkedIn: already requested."; markLinkedInSent(leadID: lead.id)
+            case .alreadyConnected: linkedInStatus = "LinkedIn: already connected."; markLinkedInSent(leadID: lead.id)
+            case .skipped(let why): linkedInStatus = "LinkedIn: \(why)."
+            case .blocked(let why): linkedInStatus = "LinkedIn paused for 2 hours: \(why)."
+            }
+        }
+    }
+
+    static func profileURL(_ raw: String?) -> URL? {
+        guard var s = raw?.trimmed, s.lowercased().contains("linkedin.com/in/") else { return nil }
+        if s.lowercased().hasPrefix("http://") { s = "https://" + s.dropFirst(7) }
+        if !s.lowercased().hasPrefix("https://") { s = "https://" + s }
+        return URL(string: s)
+    }
+
     /// The rep sent today's LinkedIn request. Recorded on today's call (and in Salesforce).
     func markLinkedInSent() {
         guard let lead else { return }
-        linkedInDone.insert(History.key(lead.id))
-        if attempt != nil {
+        markLinkedInSent(leadID: lead.id)
+    }
+
+    func markLinkedInSent(leadID: String) {
+        linkedInDone.insert(History.key(leadID))
+        if let a = attempt, History.key(a.leadID) == History.key(leadID) {
             attempt?.linkedInSent = true
-        } else if var last = today(lead).last {
+            return
+        }
+        guard let lead = queue.first(where: { History.key($0.id) == History.key(leadID) }) else { return }
+        if var last = today(lead).last {
             last.linkedInSent = true
             last.needsSync = true
             store.save(last)

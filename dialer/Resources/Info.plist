@@ -22,6 +22,8 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Clarity Dialer opens LinkedIn in your Chrome to send the Day 1 connection request.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>The Aircall phone inside Clarity Dialer needs your microphone for calls.</string>
 </dict>

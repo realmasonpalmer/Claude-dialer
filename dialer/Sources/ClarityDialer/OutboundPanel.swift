@@ -6,6 +6,7 @@ struct OutboundPanel: View {
     @Environment(Store.self) private var store
     @Environment(Session.self) private var session
     @AppStorage("outboundOpen") private var open = true
+    @AppStorage("linkedInBotOn") private var linkedInOn = true
     @State private var numbers: [Aircall.Number] = []
 
     var body: some View {
@@ -108,6 +109,7 @@ struct OutboundPanel: View {
         @Bindable var store = store
         return box("Follow-Up", icon: "paperplane") {
             check("Voicemail Drop", $store.settings.voicemailDrop, "Shows Drop voicemail (⌘D) on Day 1 and Day 3, with that day's recording.")
+            check("Auto LinkedIn Connect", $linkedInOn, "On Day 1, sends the connection request with your note in Chrome while the call rings. Max 20 a day, 100 a week; pauses itself on any LinkedIn warning.")
             Label("Texts and LinkedIn follow the Day 1 / 3 / 5 sequence", systemImage: "calendar")
                 .font(.callout).foregroundStyle(.secondary)
             SettingsLink { Text("Edit sequence…") }

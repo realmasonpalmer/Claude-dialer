@@ -24,6 +24,9 @@ struct DialerView: View {
                             Label("Auto-dial paused. Press ⌘P or Resume to keep going.", systemImage: "pause.circle")
                                 .foregroundStyle(.secondary).font(.callout)
                         }
+                        if let m = session.linkedInStatus {
+                            Label(m, systemImage: "person.badge.plus").foregroundStyle(.secondary).font(.callout)
+                        }
                         if let m = session.message {
                             Label(m, systemImage: "exclamationmark.circle")
                                 .foregroundStyle(.orange).font(.callout)
