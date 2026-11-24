@@ -186,6 +186,7 @@ final class MetricsTests: XCTestCase {
         a.outcome = o
         a.answeredAt = noonPacific + t + 10
         a.endedAt = noonPacific + t + 10 + talk
+        a.repSpoke = true   // a real conversation: the rep talked
         return a
     }
 
