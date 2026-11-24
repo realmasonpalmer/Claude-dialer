@@ -15,9 +15,11 @@ struct Summary: Equatable, Sendable {
     var talkSeconds = 0
     var activeSeconds = 0
 
+    /// Pickups (the lead themself answered, per the transcript) per dial.
     var connectRate: Double { ratio(connects, dials) }
     var conversationRate: Double { ratio(conversations, dials) }
-    var meetingRate: Double { ratio(meetings, dials) }
+    /// Meetings on a calendar per pickup.
+    var meetingRate: Double { ratio(meetings, connects) }
     /// Meetings per conversation: how well the script converts once someone is listening.
     var conversationToMeeting: Double { ratio(meetings, conversations) }
     var leadConnectRate: Double { ratio(connects, uniqueLeads) }
@@ -84,12 +86,13 @@ enum Metrics {
         s.uniqueLeads = Set(logged.map { History.key($0.leadID) }).count
         for a in logged {
             guard let o = a.outcome else { continue }
-            if o.isConnect { s.connects += 1 }
+            if a.isPickup { s.connects += 1 }
+            if a.isMeeting { s.meetings += 1 }
             if a.isConversation { s.conversations += 1 }
             switch o {
             case .voicemail: s.voicemails += 1
             case .noAnswer: s.noAnswers += 1
-            case .meeting: s.meetings += 1
+            case .meeting: break
             case .notInterested: s.notInterested += 1
             case .badNumber: s.badNumbers += 1
             case .connected: break

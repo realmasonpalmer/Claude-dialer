@@ -111,7 +111,7 @@ final class Store {
 
 /// API keys and sign-in tokens, in the macOS Keychain (one item, so macOS asks at most once).
 enum Keychain {
-    enum Key: String { case aircallID, aircallToken, sfClientID, sfAccess, sfRefresh, sfInstance }
+    enum Key: String { case aircallID, aircallToken, sfClientID, sfAccess, sfRefresh, sfInstance, anthropic }
 
     private static let service = "io.clarityconsulting.dialer"
     private static let account = "keys"

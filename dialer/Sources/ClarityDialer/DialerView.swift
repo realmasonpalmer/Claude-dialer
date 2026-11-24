@@ -157,13 +157,12 @@ struct TodayStrip: View {
         HStack(spacing: style == .full ? 14 : 10) {
             if style == .full {
                 stat("\(s.dials)", "dials")
-                stat("\(s.connects)", "connects · \(s.connectRate.percent)")
-                stat("\(s.meetings)", "meetings")
-                stat(s.talkSeconds.duration, "talk")
+                stat("\(s.connects)", "pickups · \(s.connectRate.percent)")
+                stat("\(s.meetings)", "meetings · \(s.meetingRate.percent)")
             } else {
                 stat("\(s.dials)", "dials")
-                stat("\(s.connects)", "conn")
-                stat("\(s.meetings)", "mtg")
+                stat("\(s.connects)", "pickups")
+                stat("\(s.meetings)", "mtgs")
             }
         }
         .font(.callout)

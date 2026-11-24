@@ -177,13 +177,52 @@ struct Attempt: Codable, Identifiable, Hashable, Sendable {
     var needsSync = false
     var statusSynced = false
 
-    /// Seconds a real person was on the line (0 unless the outcome is a connect).
+    // What the call transcript says (filled in by CallReview a few minutes after the call).
+    var reviewedAt: Date?
+    /// The lead themself was on the line (not a front desk, assistant, or someone else).
+    var reachedLead: Bool?
+    var meetingAgreed: Bool?
+    var meetingTime: String?
+    /// A calendar event for them exists in Salesforce after the call.
+    var meetingOnCalendar: Bool?
+    var reviewSummary: String?
+
+    /// A real pickup: the transcript says the lead answered; before review, an answered call.
+    var isPickup: Bool { reachedLead ?? (outcome?.isConnect == true) }
+    /// Only meetings that are actually on a calendar count.
+    var isMeeting: Bool { meetingOnCalendar == true }
+
+    /// Seconds a real person was on the line (0 unless it was a pickup).
     var talkSeconds: Int {
-        guard outcome?.isConnect == true, let a = answeredAt, let e = endedAt else { return 0 }
+        guard isPickup, let a = answeredAt, let e = endedAt else { return 0 }
         return max(0, Int(e.timeIntervalSince(a)))
     }
     var isConversation: Bool { talkSeconds >= 30 }
     var isLogged: Bool { outcome != nil }
+}
+
+/// Decodes every saved version of an attempt: fields added later fall back to their defaults,
+/// so older lines in attempts.jsonl still load.
+extension Attempt {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func o<T: Decodable>(_ k: CodingKeys) -> T? { try? c.decodeIfPresent(T.self, forKey: k) }
+        self.init(
+            id: o(.id) ?? UUID(), leadID: try c.decode(String.self, forKey: .leadID),
+            leadName: o(.leadName) ?? "", listID: o(.listID) ?? "", listName: o(.listName) ?? "",
+            scriptID: o(.scriptID), scriptName: o(.scriptName) ?? "",
+            attemptNumber: o(.attemptNumber) ?? 1, isRedial: o(.isRedial) ?? false,
+            fromNumber: o(.fromNumber) ?? "", leadZone: o(.leadZone),
+            dialedAt: try c.decode(Date.self, forKey: .dialedAt),
+            answeredAt: o(.answeredAt), endedAt: o(.endedAt), outcome: o(.outcome),
+            cadenceStep: o(.cadenceStep), voicemailDropped: o(.voicemailDropped) ?? false,
+            textSent: o(.textSent) ?? false, linkedInSent: o(.linkedInSent) ?? false,
+            statusBefore: o(.statusBefore) ?? "", statusAfter: o(.statusAfter), note: o(.note) ?? "",
+            aircallCallID: o(.aircallCallID), salesforceTaskID: o(.salesforceTaskID),
+            needsSync: o(.needsSync) ?? false, statusSynced: o(.statusSynced) ?? false,
+            reviewedAt: o(.reviewedAt), reachedLead: o(.reachedLead), meetingAgreed: o(.meetingAgreed),
+            meetingTime: o(.meetingTime), meetingOnCalendar: o(.meetingOnCalendar), reviewSummary: o(.reviewSummary))
+    }
 }
 
 extension Optional where Wrapped == String {

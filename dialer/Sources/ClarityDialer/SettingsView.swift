@@ -21,6 +21,8 @@ private struct ConnectionsTab: View {
     @State private var numbers: [Aircall.Number] = []
     @State private var users: [Aircall.User] = []
     @State private var acStatus = ""
+    @State private var anthropicKey = Keychain.read(.anthropic) ?? ""
+    @State private var claudeStatus = CallReview.hasKey ? "Saved" : "Off"
 
     var body: some View {
         @Bindable var store = store
@@ -80,6 +82,16 @@ private struct ConnectionsTab: View {
                 }
             } header: { Text("Aircall") } footer: {
                 Text("Aircall > Integrations > API Keys. Sign in to the Aircall phone on the right of the dialer once; calls ring there.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                SecureField("Anthropic API key", text: $anthropicKey)
+                HStack {
+                    Button("Save") { Keychain.save(anthropicKey.trimmed.isEmpty ? nil : anthropicKey.trimmed, for: .anthropic); claudeStatus = anthropicKey.trimmed.isEmpty ? "Off" : "Saved" }
+                    Text(claudeStatus).font(.caption).foregroundStyle(.secondary)
+                }
+            } header: { Text("Call review (Claude)") } footer: {
+                Text("Reads each answered call's Aircall transcript to count real pickups (the lead, not a front desk) and meetings. A meeting counts once it's on a calendar in Salesforce.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

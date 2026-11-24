@@ -169,7 +169,7 @@ final class MetricsTests: XCTestCase {
             attempt(.noAnswer, at: 0),
             attempt(.voicemail, at: 60, talk: 40),           // voicemail talk doesn't count
             attempt(.connected, at: 120, talk: 20, lead: "B"),
-            attempt(.meeting, at: 240, talk: 300, lead: "C"),
+            { var m = attempt(.meeting, at: 240, talk: 300, lead: "C"); m.meetingOnCalendar = true; return m }(),
         ])
         XCTAssertEqual(s.dials, 4)
         XCTAssertEqual(s.uniqueLeads, 3)
@@ -179,6 +179,26 @@ final class MetricsTests: XCTestCase {
         XCTAssertEqual(s.talkSeconds, 320)
         XCTAssertEqual(s.connectRate, 0.5)
         XCTAssertEqual(s.dialsPerMeeting, 4)
+    }
+
+    func testFrontDeskIsNotAPickupAndMeetingsNeedACalendar() {
+        var desk = attempt(.connected, at: 0, talk: 60); desk.reachedLead = false
+        var lead = attempt(.connected, at: 60, talk: 90, lead: "B"); lead.reachedLead = true; lead.meetingAgreed = true
+        let s = Metrics.summary([desk, lead])
+        XCTAssertEqual(s.connects, 1, "front desk doesn't count")
+        XCTAssertEqual(s.meetings, 0, "agreed but not on a calendar yet")
+        lead.meetingOnCalendar = true
+        let s2 = Metrics.summary([desk, lead])
+        XCTAssertEqual(s2.meetings, 1)
+        XCTAssertEqual(s2.meetingRate, 1.0, "meetings per pickup")
+    }
+
+    func testOldAttemptLinesStillLoad() throws {
+        let line = #"{"id":"6A1B6C9E-4F0B-4C55-9E77-2E2A7A1C1D11","leadID":"00Q1","leadName":"A","listID":"L","listName":"L","scriptName":"S","attemptNumber":1,"isRedial":false,"fromNumber":"","dialedAt":"2026-11-20T18:00:00Z","statusBefore":"New","outcome":"noAnswer"}"#
+        let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601
+        let a = try d.decode(Attempt.self, from: Data(line.utf8))
+        XCTAssertEqual(a.outcome, .noAnswer)
+        XCTAssertFalse(a.needsSync)
     }
 
     func testUnloggedAttemptsDontCount() {
@@ -193,7 +213,8 @@ final class MetricsTests: XCTestCase {
     }
 
     func testBreakdown() {
-        let rows = Metrics.rows([attempt(.noAnswer, at: 0), attempt(.meeting, at: 60, redial: true)], by: .redial)
+        var mtg = attempt(.meeting, at: 60, redial: true); mtg.meetingOnCalendar = true
+        let rows = Metrics.rows([attempt(.noAnswer, at: 0), mtg], by: .redial)
         XCTAssertEqual(rows.map(\.label), ["First dial", "Redial"])
         XCTAssertEqual(rows[1].summary.meetings, 1)
     }

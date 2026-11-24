@@ -22,9 +22,9 @@ struct MetricsView: View {
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                     Tile("Dials", "\(s.dials)", "\(s.uniqueLeads) people")
-                    Tile("Connects", "\(s.connects)", "\(s.connectRate.percent) of dials")
+                    Tile("Pickups", "\(s.connects)", "\(s.connectRate.percent) of dials · lead answered")
                     Tile("Conversations", "\(s.conversations)", "30s+ · \(s.conversationRate.percent)")
-                    Tile("Meetings", "\(s.meetings)", s.dialsPerMeeting.map { String(format: "1 per %.0f dials", $0) } ?? "-")
+                    Tile("Meetings", "\(s.meetings)", "\(s.meetingRate.percent) of pickups · on calendar")
                     Tile("Talk time", s.talkSeconds.duration, "avg \(s.avgTalkSeconds.duration)")
                     Tile("Dials / hour", String(format: "%.0f", s.dialsPerHour), "\(s.activeSeconds.duration) dialing")
                     Tile("Voicemails", "\(s.voicemails)", "\(s.textsSent) texts sent")
@@ -73,7 +73,7 @@ private struct Tile: View {
 private struct Funnel: View {
     let s: Summary
     var body: some View {
-        let steps: [(String, Int)] = [("Dials", s.dials), ("Connects", s.connects), ("Conversations", s.conversations), ("Meetings", s.meetings)]
+        let steps: [(String, Int)] = [("Dials", s.dials), ("Pickups", s.connects), ("Conversations", s.conversations), ("Meetings", s.meetings)]
         VStack(alignment: .leading, spacing: 8) {
             Text("FUNNEL").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(steps, id: \.0) { name, n in
@@ -97,7 +97,7 @@ private struct BreakdownTable: View {
         Grid(alignment: .trailing, horizontalSpacing: 18, verticalSpacing: 6) {
             GridRow {
                 Text("").gridColumnAlignment(.leading)
-                ForEach(["Dials", "Connect %", "Convos", "Meetings", "Mtg %", "Talk"], id: \.self) { Text($0) }
+                ForEach(["Dials", "Pickup %", "Convos", "Meetings", "Mtg %", "Talk"], id: \.self) { Text($0) }
             }
             .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             Divider()

@@ -62,6 +62,23 @@ enum Aircall {
         return nil
     }
 
+    /// The call's transcript ("Rep: ..." / "Them: ..." lines), or nil if Aircall hasn't made it yet.
+    static func transcript(callID: Int) async throws -> String? {
+        let json: [String: Any]
+        do { json = try await request("/calls/\(callID)/transcription") } catch let e as AircallError where e.message.contains("404") { return nil }
+        guard let content = (json["transcription"] as? [String: Any])?["content"] as? [String: Any],
+              let utterances = content["utterances"] as? [[String: Any]] else { return nil }
+        var lines: [String] = []
+        var last = ""
+        for u in utterances {
+            let text = ((u["text"] as? String) ?? "").trimmed
+            guard !text.isEmpty else { continue }
+            let who = (u["participant_type"] as? String) == "internal" ? "Rep" : "Them"
+            if who == last, !lines.isEmpty { lines[lines.count - 1] += " " + text } else { lines.append("\(who): \(text)"); last = who }
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
     static func sendText(_ body: String, to phone: String, from number: Int) async throws {
         guard let to = Rules.e164(phone) else { throw AircallError(message: "That phone number doesn't look right.") }
         try await request("/numbers/\(number)/messages/native/send", method: "POST", body: ["to": to, "body": body])
