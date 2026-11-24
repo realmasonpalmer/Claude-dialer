@@ -389,6 +389,32 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
         })();
         """
 
+    /// Is Aircall's red Hang up button on the phone's screen (a call is up)? nil = couldn't tell.
+    func hangUpButtonVisible() async -> Bool? {
+        let js = #"""
+        (function () {
+          function deep(root, out) {
+            root.querySelectorAll('button,[role=button]').forEach(function (b) { out.push(b); });
+            root.querySelectorAll('*').forEach(function (e) { if (e.shadowRoot) deep(e.shadowRoot, out); });
+            return out;
+          }
+          var re = /hang[ _-]?up|end[ _-]?call|end the call/i;
+          var bs = deep(document, []);
+          for (var i = 0; i < bs.length; i++) {
+            var b = bs[i];
+            if (!b.getClientRects().length || b.disabled) continue;
+            var t = (b.textContent || '').trim();
+            var words = [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-test'),
+                         b.getAttribute('data-testid'), t.length < 30 ? t : ''].join(' ');
+            if (re.test(words)) return 'yes';
+          }
+          return 'no';
+        })()
+        """#
+        guard let r = try? await webView.evaluateJavaScript(js) as? String else { return nil }
+        return r == "yes"
+    }
+
     /// Clicks Aircall's red Hang up button. True if it found one.
     func hangUp() async -> Bool { await click(#"/hang[ _-]?up|end[ _-]?call|end the call/"#, avoid: "/^$/") }
 
