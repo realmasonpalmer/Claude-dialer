@@ -32,11 +32,11 @@ struct DialerView: View {
                     .padding(20)
                 }
                 Divider()
-                ActionBar()
-                    .padding(.horizontal, 20).padding(.vertical, 14)
+                OutboundPanel()
                     .background(Brand.navy)
                 Divider()
-                OutboundPanel()
+                ActionBar()
+                    .padding(.horizontal, 20).padding(.vertical, 14)
                     .background(Brand.navy)
             }
             .frame(minWidth: 560)
