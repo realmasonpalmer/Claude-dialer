@@ -112,7 +112,7 @@ enum Aircall {
 /// Aircall's own phone (workspace.aircall.io), inside the app. Calls placed through the API ring
 /// out here. The app only ever clicks Aircall's own Hang up and Voicemail drop buttons.
 @MainActor
-final class AircallPhone: NSObject, WKUIDelegate {
+final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
     static let shared = AircallPhone()
     let webView: WKWebView
     private var popups: [NSWindow] = []
@@ -125,6 +125,8 @@ final class AircallPhone: NSObject, WKUIDelegate {
         config.userContentController.addUserScript(
             WKUserScript(source: Self.builtInMicOnly, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.addUserScript(
+            WKUserScript(source: Self.beepListener, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        config.userContentController.addUserScript(
             WKUserScript(source: Self.minimalScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController.addUserScript(
             WKUserScript(source: Self.navyTheme, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
@@ -133,6 +135,7 @@ final class AircallPhone: NSObject, WKUIDelegate {
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
         super.init()
         webView.uiDelegate = self
+        config.userContentController.add(self, name: "clarity")
         webView.load(URLRequest(url: URL(string: "https://workspace.aircall.io")!))
     }
 
@@ -226,6 +229,77 @@ final class AircallPhone: NSObject, WKUIDelegate {
       else start();
     })();
     """
+
+    /// Called on the main thread when the other side's audio has a voicemail beep in it.
+    var onBeep: ((_ freq: Double, _ seconds: Double) -> Void)?
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let kind = body["kind"] as? String else { return }
+        switch kind {
+        case "beep":
+            let f = (body["freq"] as? Double) ?? 0, d = (body["secs"] as? Double) ?? 0
+            Log.add("beep", "heard a \(Int(f)) Hz tone for \(String(format: "%.2f", d))s on the other side")
+            onBeep?(f, d)
+        case "audio":
+            Log.add("beep", (body["text"] as? String) ?? "")
+        default: break
+        }
+    }
+
+    /// Listens to the other side of the call (not the rep) for the voicemail beep: one steady pure
+    /// tone between 400 and 2,000 Hz lasting 0.15 to 1.5 seconds. Speech never looks like that
+    /// (many pitches, always moving). Runs inside the Aircall phone on the call's own audio, so
+    /// nothing else on the Mac is recorded or rerouted. Reports each beep to the app.
+    private static let beepListener = """
+        (function () {
+          if (window.__clarityBeep) return; window.__clarityBeep = true;
+          function post(m) { try { window.webkit.messageHandlers.clarity.postMessage(m); } catch (e) {} }
+          var Orig = window.RTCPeerConnection;
+          if (!Orig) return;
+          var ctx = null;
+          function listen(stream) {
+            try {
+              if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+              if (ctx.state === 'suspended') ctx.resume();
+              var src = ctx.createMediaStreamSource(stream);
+              var an = ctx.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+              var mute = ctx.createGain(); mute.gain.value = 0;
+              src.connect(an); an.connect(mute); mute.connect(ctx.destination);
+              var bins = new Float32Array(an.frequencyBinCount), hz = ctx.sampleRate / an.fftSize;
+              var lo = Math.floor(300 / hz), hi = Math.ceil(3400 / hz), tLo = Math.floor(400 / hz), tHi = Math.ceil(2000 / hz);
+              var run = 0, runFreq = 0, started = Date.now(), stop = false;
+              post({ kind: 'audio', text: 'listening to the other side for the voicemail beep (' + ctx.sampleRate + ' Hz)' });
+              var timer = setInterval(function () {
+                var tr = stream.getAudioTracks()[0];
+                if (!tr || tr.readyState === 'ended') { clearInterval(timer); return; }
+                an.getFloatFrequencyData(bins);
+                var total = 0, peak = 0, at = 0, i, p;
+                for (i = lo; i <= hi; i++) { p = Math.pow(10, bins[i] / 10); total += p; if (i >= tLo && i <= tHi && p > peak) { peak = p; at = i; } }
+                var near = 0;
+                for (i = Math.max(lo, at - 2); i <= Math.min(hi, at + 2); i++) near += Math.pow(10, bins[i] / 10);
+                var tone = total > 1e-9 && bins[at] > -70 && near / total > 0.8;
+                var f = at * hz;
+                if (tone && (run === 0 || Math.abs(f - runFreq) <= 60)) { if (run === 0) runFreq = f; run++; }
+                else {
+                  var secs = run * 0.02;
+                  if (secs >= 0.15 && secs <= 1.5) post({ kind: 'beep', freq: runFreq, secs: secs });
+                  run = tone ? 1 : 0; runFreq = f;
+                }
+              }, 20);
+            } catch (e) { post({ kind: 'audio', text: 'could not listen for the beep: ' + e }); }
+          }
+          var Hooked = function (a, b) {
+            var pc = new Orig(a, b);
+            pc.addEventListener('track', function (ev) {
+              if (ev.track && ev.track.kind === 'audio') listen(ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]));
+            });
+            return pc;
+          };
+          Hooked.prototype = Orig.prototype;
+          for (var k in Orig) { try { Hooked[k] = Orig[k]; } catch (e) {} }
+          window.RTCPeerConnection = Hooked;
+        })();
+        """
 
     /// One audio path for the whole session. A Bluetooth headset switches into "call mode" (a
     /// different codec and a lower sample rate) the moment any app opens its microphone, and

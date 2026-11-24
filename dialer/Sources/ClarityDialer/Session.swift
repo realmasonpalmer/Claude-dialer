@@ -82,11 +82,18 @@ final class Session {
 
     private var task: Task<Void, Never>?
     private var voicemailDropped = false
+    /// This call reached voicemail and was hung up at the beep to redial (call twice).
+    private var hungUpAtBeep = false
+    /// The beep was heard on this call (it's a voicemail, whatever Aircall says).
+    private var beepHeard = false
 
     init(store: Store, phone: Phone? = nil, crm: CRM? = nil) {
         self.store = store
         self.phone = phone ?? LivePhone()
         self.crm = crm ?? LiveCRM()
+        if phone == nil {
+            AircallPhone.shared.onBeep = { [weak self] _, _ in self?.heardBeep() }
+        }
     }
 
     var lead: Lead? { queue.indices.contains(index) ? queue[index] : nil }
@@ -96,6 +103,7 @@ final class Session {
     private func go(_ s: CallState) {
         task?.cancel()
         task = nil
+        if s != state { Log.add("call", "\(state) -> \(s)" + (lead.map { " (\($0.name))" } ?? "")) }
         state = s
     }
 
@@ -158,6 +166,8 @@ final class Session {
         let a = started
         attempt = a
         voicemailDropped = false
+        hungUpAtBeep = false
+        beepHeard = false
         message = nil
         store.save(a)
         history.add(lead.id, at: a.dialedAt)
@@ -165,8 +175,10 @@ final class Session {
         task = Task { [weak self] in
             guard let self else { return }
             do {
+                Log.add("call", "dialing \(lead.name) \(number)\(isRedial ? " (call twice: 2nd dial)" : "")")
                 try await phone.dial(number, user: user, number: from)
             } catch {
+                Log.add("call", "dial failed: \(error.localizedDescription)")
                 guard !Task.isCancelled else { return }
                 message = error.localizedDescription
                 return go(.ready)
@@ -193,6 +205,9 @@ final class Session {
                 }
                 continue
             }
+            if a.aircallCallID == nil || (c.answeredAt != nil) != (a.answeredAt != nil) || c.isOver {
+                Log.add("aircall", "call \(c.id): status=\(c.status) answered=\(c.answeredAt != nil)")
+            }
             a.aircallCallID = c.id
             a.answeredAt = c.answeredAt
             attempt = a
@@ -211,12 +226,38 @@ final class Session {
     /// Every call logs itself and moves on, so auto-dialing never waits on the rep.
     /// The outcome can be changed afterwards under Last call (`amend`).
     private func callEnded(answered: Bool) {
-        if voicemailDropped { return log(.voicemail) }
+        Log.add("call", "call ended: answered=\(answered) beep=\(beepHeard) dropped=\(voicemailDropped) hungUpAtBeep=\(hungUpAtBeep)")
+        if voicemailDropped || beepHeard { return log(.voicemail) }
         log(answered ? .connected : .noAnswer)
     }
 
+    /// The voicemail beep: follow Outbound Settings (call twice / voicemail drop).
+    func heardBeep() {
+        guard state == .live || state == .dialing, let lead, !beepHeard else {
+            Log.add("beep", "ignored (state \(state), already handled: \(beepHeard))")
+            return
+        }
+        beepHeard = true
+        let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
+        let action = Rules.onBeep(dialsToday: dialsToday, step: currentStep, settings)
+        Log.add("beep", "voicemail for \(lead.name): dial \(dialsToday) today, callTwice=\(settings.callTwice), voicemailDrop=\(settings.voicemailDrop) -> \(action)")
+        switch action {
+        case .hangUpAndRedial:
+            hungUpAtBeep = true
+            hangUp()
+        case .dropVoicemail:
+            dropVoicemail()
+        case .hangUp:
+            hangUp()
+        }
+    }
+
     func hangUp() {
-        Task { if !(await phone.hangUp()) { message = "Couldn't find Aircall's hang-up button. Hang up in the phone." } }
+        Task {
+            let ok = await phone.hangUp()
+            Log.add("call", "hang up clicked: \(ok ? "found Aircall's button" : "button NOT found")")
+            if !ok { message = "Couldn't find Aircall's hang-up button. Hang up in the phone." }
+        }
     }
 
     /// Drops today's recorded voicemail (Voicemail 1 on Day 1, Voicemail 2 on Day 3...).
@@ -228,7 +269,9 @@ final class Session {
             return
         }
         Task {
-            if await phone.dropVoicemail(named: name) {
+            let ok = await phone.dropVoicemail(named: name)
+            Log.add("vm", "drop \(name): \(ok ? "clicked" : "Aircall's drop button NOT found")")
+            if ok {
                 voicemailDropped = true
                 attempt?.voicemailDropped = true
             } else {
@@ -259,7 +302,8 @@ final class Session {
         if let s = a.statusAfter { queue[index].status = s }
 
         let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
-        let redial = Rules.shouldRedial(outcome, dialsToday: dialsToday, settings)
+        let redial = Rules.shouldRedial(outcome, dialsToday: dialsToday, settings, hungUpAtBeep: hungUpAtBeep)
+        Log.add("redial", "\(lead.name): outcome=\(outcome) dialsToday=\(dialsToday) callTwice=\(settings.callTwice) hungUpAtBeep=\(hungUpAtBeep) paused=\(paused) -> \(redial ? "redial" : "no redial")")
         // Today's text goes once, after the last dial of the day (not before a redial).
         let text = redial || textSentToday(lead) ? nil
             : Rules.text(for: currentStep(for: lead), after: outcome, to: lead, rep: settings.repName)
@@ -336,6 +380,7 @@ final class Session {
                         lastSynced = (a.leadName, Date())
                     } catch {
                         message = "Saved on this Mac; will retry Salesforce: \(error.localizedDescription)"
+                        Log.add("salesforce", "log failed for \(a.leadName): \(error.localizedDescription)")
                     }
                 }
             } while syncAgain
@@ -436,7 +481,7 @@ final class Session {
     }
 
     /// What the LinkedIn bot is doing, for the screen.
-    private(set) var linkedInStatus: String?
+    private(set) var linkedInStatus: String? { didSet { if let l = linkedInStatus { Log.add("linkedin", l) } } }
 
     /// Day 1: sends the connection request with the sequence's note, in the rep's own Chrome,
     /// while the call rings (like Clarity Live Coach). Skips quietly when it can't.
@@ -450,8 +495,11 @@ final class Session {
     private var linkedInTried: Set<String> = []
 
     func connectOnLinkedIn(_ lead: Lead) {
-        guard LinkedInBot.isOn, let note = currentStep(for: lead)?.linkedInNote?.nonBlankString,
-              !linkedInSentToday(lead) else { return }
+        guard LinkedInBot.isOn else { return Log.add("linkedin", "\(lead.name): Auto LinkedIn Connect is off") }
+        guard let note = currentStep(for: lead)?.linkedInNote?.nonBlankString else {
+            return Log.add("linkedin", "\(lead.name): no LinkedIn step today (sequence step \(todayStep(for: lead).map { String($0 + 1) } ?? "none"))")
+        }
+        guard !linkedInSentToday(lead) else { return Log.add("linkedin", "\(lead.name): already sent today") }
         if let why = LinkedInBot.whyNot { linkedInStatus = "LinkedIn: not sent to \(lead.name) (bot \(why))."; return }
         let text = LinkedInBot.note(Merge.fill(note, lead: lead, rep: settings.repName))
         Task {

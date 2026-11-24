@@ -139,7 +139,7 @@ enum LinkedInBot {
             if missesInARow >= 2 {
                 pausedUntil = Date().addingTimeInterval(2 * 3600)
                 missesInARow = 0
-                NSLog("%@", "LinkedIn bot: two misses in a row, paused for 2 hours (\(why))")
+                Log.add("linkedin", "LinkedIn bot: two misses in a row, paused for 2 hours (\(why))")
             }
         default: break
         }
@@ -171,7 +171,7 @@ enum LinkedInBot {
         switch state {
         case "NOJS": return .skipped("Chrome blocked the script (View > Developer > Allow JavaScript from Apple Events)")
         case "LOADING":
-            NSLog("%@", "LinkedIn bot page report: \(await step("report"))")
+            Log.add("linkedin", "LinkedIn bot page report: \(await step("report"))")
             return .skipped("couldn't find their name on the page (details in the Activity log)")
         case "NOMATCH": return .skipped("the LinkedIn link in Salesforce is someone else's profile (name doesn't match). Fix their LinkedIn field")
         case "PENDING": return .pending
@@ -202,7 +202,7 @@ enum LinkedInBot {
         }
         // LinkedIn ignored the click, or there's no Connect button: use LinkedIn's own "connect with a note" page.
         if n == "WAIT", let vanity, !vanity.contains("\""), !vanity.contains("\\") {
-            NSLog("%@", "LinkedIn bot: opening LinkedIn's invite page for the note")
+            Log.add("linkedin", "LinkedIn bot: opening LinkedIn's invite page for the note")
             onStatus("LinkedIn: opening the invite page...")
             _ = await apple(onTab(tab, "set URL of t to \"https://www.linkedin.com/preload/custom-invite/?vanityName=\(vanity)\"\n return \"OK\""))
             for _ in 0..<12 {
@@ -217,7 +217,7 @@ enum LinkedInBot {
         case "EMAIL": _ = await step("close"); return .skipped("LinkedIn wants their email to connect")
         case "NONOTE": _ = await step("close"); return .skipped("no free notes left this month (LinkedIn wants Premium)")
         default:
-            NSLog("%@", "LinkedIn bot page report: \(await step("report"))")
+            Log.add("linkedin", "LinkedIn bot page report: \(await step("report"))")
             _ = await step("close"); return .skipped("Add a note didn't open (details in the Activity log)")
         }
 
@@ -282,7 +282,10 @@ enum LinkedInBot {
                 var err: NSDictionary?
                 let r = NSAppleScript(source: source)?.executeAndReturnError(&err).stringValue
                 let code = err?[NSAppleScript.errorNumber] as? Int
-                Task { @MainActor in lastAppleError = code }
+                Task { @MainActor in
+                    lastAppleError = code
+                    if let code { Log.add("linkedin", "AppleScript error \(code) talking to Chrome") }
+                }
                 done.resume(returning: r)
             }
         }

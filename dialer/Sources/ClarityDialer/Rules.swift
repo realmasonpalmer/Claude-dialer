@@ -99,8 +99,20 @@ enum Rules {
     static let maxDialsPerDay = 2
 
     /// Call twice: redial once, right away, when nobody answered.
-    static func shouldRedial(_ outcome: Outcome, dialsToday: Int, _ s: OutboundSettings) -> Bool {
-        s.callTwice && outcome == .noAnswer && dialsToday < maxDialsPerDay
+    /// `hungUpAtBeep`: the first call reached voicemail and was hung up at the beep to call again.
+    static func shouldRedial(_ outcome: Outcome, dialsToday: Int, _ s: OutboundSettings, hungUpAtBeep: Bool = false) -> Bool {
+        s.callTwice && (outcome == .noAnswer || (outcome == .voicemail && hungUpAtBeep)) && dialsToday < maxDialsPerDay
+    }
+
+    /// What to do when the voicemail beep is heard.
+    enum BeepAction: Equatable { case hangUpAndRedial, dropVoicemail(String), hangUp }
+
+    static func onBeep(dialsToday: Int, step: Step?, _ s: OutboundSettings) -> BeepAction {
+        // Call twice: the first call to voicemail is hung up and redialed right away (people often
+        // pick up the second ring); the voicemail is left on the second call.
+        if s.callTwice, dialsToday < maxDialsPerDay { return .hangUpAndRedial }
+        if s.voicemailDrop, let vm = step?.voicemail?.nonBlankString { return .dropVoicemail(vm) }
+        return .hangUp
     }
 
     /// The text for today's step, sent only when they didn't pick up and they have a mobile.

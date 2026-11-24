@@ -6,6 +6,7 @@ struct SettingsView: View {
             ConnectionsTab().tabItem { Label("Connections", systemImage: "link") }
             CallingTab().tabItem { Label("Calling", systemImage: "phone") }
             SequenceTab().tabItem { Label("Sequence", systemImage: "calendar") }
+            DebugLogTab().tabItem { Label("Debug log", systemImage: "ladybug") }
         }
         .frame(width: 620, height: 520)
     }
@@ -191,5 +192,41 @@ private struct SequenceTab: View {
             TextEditor(text: Binding(get: { value.wrappedValue ?? "" }, set: { value.wrappedValue = $0 }))
                 .font(.body).frame(height: 60)
         }
+    }
+}
+
+/// Everything the dialer decided and why (calls, beeps, voicemail drops, redials, LinkedIn,
+/// audio device and sample-rate changes, Salesforce). "Copy for support" adds the settings.
+private struct DebugLogTab: View {
+    @Environment(Store.self) private var store
+    @State private var log = Log.shared
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Newest at the bottom. Paste it to support when something doesn't work.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Show file") { log.reveal() }
+                Button(copied ? "Copied" : "Copy for support") {
+                    log.copyForSupport(settings: store.settings)
+                    copied = true
+                }
+            }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(log.lines.enumerated()), id: \.offset) { i, line in
+                            Text(line).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).id(i)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onAppear { proxy.scrollTo(log.lines.count - 1, anchor: .bottom) }
+                .onChange(of: log.lines.count) { _, n in proxy.scrollTo(n - 1, anchor: .bottom) }
+            }
+        }
+        .padding(12)
     }
 }

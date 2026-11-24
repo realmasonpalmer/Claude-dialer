@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -27,6 +28,12 @@ struct ClarityDialerApp: App {
                 .brandWindow()
                 .task { await session.startSync() }
                 .task { await session.checkLinkedInReady() }
+                .task {
+                    AudioRoute.shared.start()
+                    NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+                        MainActor.assumeIsolated { AudioRoute.shared.stop() }
+                    }
+                }
                 .task { await updater.run() }
                 .task { await scriptSync.run() }
                 .task { await review.run() }
