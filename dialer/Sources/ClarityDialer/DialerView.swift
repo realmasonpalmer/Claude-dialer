@@ -327,7 +327,7 @@ private struct ScriptCard: View {
             }
             .menuStyle(.borderlessButton).fixedSize().foregroundStyle(.secondary)
             if store.script?.needsPublish == true {
-                Label("Not shared yet", systemImage: "icloud.slash").font(.caption).foregroundStyle(.orange)
+                Label("Sharing…", systemImage: "icloud.and.arrow.up").font(.caption).foregroundStyle(.orange)
                     .help(sync.status)
             } else if store.script?.sharedDocID != nil {
                 Label("Shared with team", systemImage: "person.2").font(.caption).foregroundStyle(.tertiary)
@@ -362,10 +362,13 @@ private struct ScriptCard: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { editing = false }.keyboardShortcut(.cancelAction)
-                Button("Save & share") { save() }
+                Button("Share with team") { save(share: true) }
+                    .buttonStyle(BrandQuietButton())
+                    .help("Saves and updates this script for everyone on the team.")
+                Button("Save") { save() }
                     .buttonStyle(BrandPrimaryButton())
                     .keyboardShortcut("s", modifiers: .command)
-                    .help("⌘S. Saves and updates this script for everyone who uses it.")
+                    .help("⌘S. Saves on this Mac only.")
             }
         }
     }
@@ -378,8 +381,8 @@ private struct ScriptCard: View {
         focused = true
     }
 
-    private func save() {
-        if let id = store.script?.id { sync.save(id, name: name, body: draft) }
+    private func save(share: Bool = false) {
+        if let id = store.script?.id { sync.save(id, name: name, body: draft, share: share) }
         editing = false
     }
 }

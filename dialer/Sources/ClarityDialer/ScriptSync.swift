@@ -20,13 +20,16 @@ final class ScriptSync {
     }
 
     /// Saves an edit locally, then publishes it.
-    func save(_ id: UUID, name: String, body: String) {
+    /// Saves an edit on this Mac only. `share`: also publish it to the team.
+    func save(_ id: UUID, name: String, body: String, share: Bool = false) {
         guard let i = store.scripts.firstIndex(where: { $0.id == id }) else { return }
         store.scripts[i].name = name.trimmed.isEmpty ? "Script" : name.trimmed
         store.scripts[i].body = body
         store.scripts[i].updatedAt = Date()
-        store.scripts[i].needsPublish = true
-        Task { await syncNow() }
+        if share {
+            store.scripts[i].needsPublish = true
+            Task { await syncNow() }
+        }
     }
 
     func syncNow() async {
@@ -74,15 +77,6 @@ final class ScriptSync {
             status = "Scripts up to date"
         } catch {
             status = "Couldn't load shared scripts: \(error.localizedDescription)"
-        }
-        // 3. Scripts that were never shared (made before sharing existed): share them now.
-        let unshared = store.scripts.indices.filter {
-            store.scripts[$0].sharedDocID == nil && !store.scripts[$0].needsPublish && !Self.isStarter(store.scripts[$0])
-        }
-        if !unshared.isEmpty {
-            for i in unshared { store.scripts[i].needsPublish = true }
-            running = false
-            await syncNow()
         }
     }
 
