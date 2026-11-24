@@ -24,6 +24,8 @@
     <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>Clarity Dialer opens LinkedIn in your Chrome to send the Day 1 connection request.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Clarity Dialer listens to the first seconds of a call, on this Mac, to tell a call screener from a voicemail so it never hangs up on a screened call.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>The Aircall phone inside Clarity Dialer needs your microphone for calls.</string>
 </dict>

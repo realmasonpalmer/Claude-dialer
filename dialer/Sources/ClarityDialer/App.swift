@@ -30,6 +30,7 @@ struct ClarityDialerApp: App {
                 .task { await session.checkLinkedInReady() }
                 .task {
                     AudioRoute.shared.start()
+                    ScreenerListener.shared.askPermission()
                     NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
                         MainActor.assumeIsolated { AudioRoute.shared.stop() }
                     }

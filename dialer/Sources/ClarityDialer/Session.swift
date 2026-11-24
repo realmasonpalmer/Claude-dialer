@@ -101,6 +101,7 @@ final class Session {
         if phone == nil {
             AircallPhone.shared.onBeep = { [weak self] _, _ in self?.heardBeep() }
             AircallPhone.shared.onRepSpeech = { [weak self] in self?.repSpeaking() }
+            ScreenerListener.shared.onScreener = { [weak self] _ in self?.screenerHeard() }
         }
     }
 
@@ -177,6 +178,7 @@ final class Session {
         hungUpAtBeep = false
         beepHeard = false
         repSpoke = false
+        screened = false
         message = nil
         store.save(a)
         history.add(lead.id, at: a.dialedAt)
@@ -256,13 +258,22 @@ final class Session {
         Log.add("beep", "rep is talking: beeps on this call are ignored (a screener's tone isn't a voicemail)")
     }
 
+    /// A call screener answered: never voicemail; wait for the person ("let it cook").
+    private var screened = false
+    func screenerHeard() {
+        guard state == .live || state == .dialing, !screened else { return }
+        screened = true
+        Log.add("screener", "call screener on the line: not voicemail, waiting for the person")
+        message = "Call screener: say your name and reason; the app will wait for them."
+    }
+
     func heardBeep() {
         guard state == .live || state == .dialing, let lead, !beepHeard else {
             Log.add("beep", "ignored (state \(state), already handled: \(beepHeard))")
             return
         }
-        guard !repSpoke else {
-            Log.add("beep", "ignored: you've already spoken on this call (call screener or live conversation)")
+        guard !repSpoke, !screened else {
+            Log.add("beep", "ignored: \(screened ? "call screener" : "you've already spoken on this call")")
             return
         }
         beepHeard = true

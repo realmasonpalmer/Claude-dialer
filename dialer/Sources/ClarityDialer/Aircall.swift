@@ -244,6 +244,10 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
             onBeep?(f, d)
         case "repSpeech":
             onRepSpeech?()
+        case "callAudio":
+            ScreenerListener.shared.begin()
+        case "pcm":
+            if let b64 = body["b64"] as? String, let data = Data(base64Encoded: b64) { ScreenerListener.shared.feed(data) }
         case "audio":
             Log.add("beep", (body["text"] as? String) ?? "")
         default: break
@@ -273,6 +277,21 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
               var lo = Math.floor(300 / hz), hi = Math.ceil(3400 / hz), tLo = Math.floor(400 / hz), tHi = Math.ceil(2000 / hz);
               var run = 0, runFreq = 0, started = Date.now(), stop = false;
               post({ kind: 'audio', text: 'listening to the other side for the voicemail beep (' + ctx.sampleRate + ' Hz)' });
+              // The first 25 s of the other side, as 16 kHz samples, for recognizing call screeners.
+              post({ kind: 'callAudio' });
+              try {
+                var proc = ctx.createScriptProcessor(4096, 1, 1), t0 = Date.now();
+                src.connect(proc); proc.connect(mute);
+                proc.onaudioprocess = function (e) {
+                  if (Date.now() - t0 > 25000) { proc.disconnect(); return; }
+                  var input = e.inputBuffer.getChannelData(0), ratio = ctx.sampleRate / 16000;
+                  var n = Math.floor(input.length / ratio), out = new Int16Array(n);
+                  for (var j = 0; j < n; j++) { var v = input[Math.floor(j * ratio)]; out[j] = Math.max(-1, Math.min(1, v)) * 32767; }
+                  var bytes = new Uint8Array(out.buffer), bin = '';
+                  for (var k = 0; k < bytes.length; k++) bin += String.fromCharCode(bytes[k]);
+                  post({ kind: 'pcm', b64: btoa(bin) });
+                };
+              } catch (e) {}
               var timer = setInterval(function () {
                 var tr = stream.getAudioTracks()[0];
                 if (!tr || tr.readyState === 'ended') { clearInterval(timer); return; }

@@ -147,6 +147,12 @@ final class RulesTests: XCTestCase {
         _ = t
     }
 
+    func testScreenerPhrases() {
+        XCTAssertTrue(ScreenerListener.isScreener("If you record your name and reason for calling, I'll see if this person is available"))
+        XCTAssertTrue(ScreenerListener.isScreener("Thanks. Please stay on the line."))
+        XCTAssertFalse(ScreenerListener.isScreener("Hi, you've reached John. Leave a message after the tone."))
+    }
+
     func testZone() {
         XCTAssertEqual(CallZone.of(state: "Oregon", phones: []), .pacific)
         XCTAssertEqual(CallZone.of(state: nil, phones: ["(850) 555-0100"]), .central)
