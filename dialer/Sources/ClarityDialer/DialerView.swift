@@ -31,12 +31,6 @@ struct DialerView: View {
                     }
                     .padding(20)
                 }
-                if session.lastLogged != nil {
-                    Divider()
-                    LastCallBar()
-                        .padding(.horizontal, 20).padding(.vertical, 8)
-                        .background(Brand.navy)
-                }
                 Divider()
                 ActionBar()
                     .padding(.horizontal, 20).padding(.vertical, 14)
@@ -493,34 +487,3 @@ private struct TightLabel: LabelStyle {
     }
 }
 
-/// The last call, logged automatically. Change its outcome or add a note without stopping.
-private struct LastCallBar: View {
-    @Environment(Session.self) private var session
-    @State private var note = ""
-
-    var body: some View {
-        if let a = session.lastLogged {
-            HStack(spacing: 10) {
-                Text("Last call").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(a.leadName).font(.callout).lineLimit(1)
-                Menu {
-                    ForEach(Outcome.allCases) { o in
-                        Button(o.label) { session.amend(outcome: o) }
-                    }
-                } label: {
-                    Text(a.outcome?.label ?? "-").font(.callout.weight(.medium))
-                }
-                .menuStyle(.borderlessButton).fixedSize()
-                .help("Change the outcome (updates Salesforce)")
-                TextField("Add a note", text: $note)
-                    .textFieldStyle(.roundedBorder).font(.callout)
-                    .onSubmit { session.amend(note: note) }
-                if a.statusAfter != nil {
-                    Label(a.statusAfter!, systemImage: "arrow.up.right").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            .onChange(of: session.lastLoggedID) { _, _ in note = "" }
-            .onAppear { note = a.note }
-        }
-    }
-}
