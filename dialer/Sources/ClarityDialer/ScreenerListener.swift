@@ -24,29 +24,29 @@ final class ScreenerListener {
     private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
 
     /// Phrases screeners say and voicemail greetings don't.
-    static let phrases = [
+    nonisolated static let phrases = [
         "record your name", "reason for calling", "see if this person is available", "see if they're available",
         "stay on the line", "please hold while", "screening", "google assistant", "the person you're calling is using",
         "say your name", "state your name", "who's calling", "what are you calling about", "call screening",
     ]
 
     /// Voicemail greetings (said before the beep; screeners don't say these).
-    static let voicemailPhrases = [
+    nonisolated static let voicemailPhrases = [
         "leave a message", "leave your message", "after the tone", "after the beep", "not available",
         "unavailable", "voicemail", "voice mail", "mailbox", "record your message", "at the tone",
     ]
 
-    static func isVoicemailGreeting(_ text: String) -> Bool {
+    nonisolated static func isVoicemailGreeting(_ text: String) -> Bool {
         let t = text.lowercased()
         return !isScreener(t) && voicemailPhrases.contains { t.contains($0) }
     }
 
-    static func isScreener(_ text: String) -> Bool {
+    nonisolated static func isScreener(_ text: String) -> Bool {
         let t = text.lowercased()
         return phrases.contains { t.contains($0) }
     }
 
-    static var authorized: Bool { SFSpeechRecognizer.authorizationStatus() == .authorized }
+    nonisolated static var authorized: Bool { SFSpeechRecognizer.authorizationStatus() == .authorized }
 
     func askPermission() {
         SFSpeechRecognizer.requestAuthorization { status in
