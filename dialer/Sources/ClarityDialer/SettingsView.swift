@@ -91,7 +91,7 @@ private struct ConnectionsTab: View {
                     Text(claudeStatus).font(.caption).foregroundStyle(.secondary)
                 }
             } header: { Text("Call review (Claude)") } footer: {
-                Text("Reads each answered call's Aircall transcript to count real pickups (the lead, not a front desk) and meetings. A meeting counts once it's on a calendar in Salesforce.")
+                Text("Reads each answered call's Aircall transcript to count real pickups (the lead, not a front desk) and meetings (a clear yes to a specific time). Needs Aircall call transcripts.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

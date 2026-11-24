@@ -183,14 +183,14 @@ struct Attempt: Codable, Identifiable, Hashable, Sendable {
     var reachedLead: Bool?
     var meetingAgreed: Bool?
     var meetingTime: String?
-    /// A calendar event for them exists in Salesforce after the call.
-    var meetingOnCalendar: Bool?
+    var meetingOnCalendar: Bool?    // unused (kept so saved lines still decode)
     var reviewSummary: String?
 
     /// A real pickup: the transcript says the lead answered; before review, an answered call.
     var isPickup: Bool { reachedLead ?? (outcome?.isConnect == true) }
-    /// Only meetings that are actually on a calendar count.
-    var isMeeting: Bool { meetingOnCalendar == true }
+    /// A meeting: the transcript shows the lead clearly agreed to a specific time, or the rep
+    /// marked the call Meeting booked.
+    var isMeeting: Bool { meetingAgreed == true || outcome == .meeting }
 
     /// Seconds a real person was on the line (0 unless it was a pickup).
     var talkSeconds: Int {

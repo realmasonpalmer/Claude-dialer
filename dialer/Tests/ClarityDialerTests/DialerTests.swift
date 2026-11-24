@@ -169,7 +169,7 @@ final class MetricsTests: XCTestCase {
             attempt(.noAnswer, at: 0),
             attempt(.voicemail, at: 60, talk: 40),           // voicemail talk doesn't count
             attempt(.connected, at: 120, talk: 20, lead: "B"),
-            { var m = attempt(.meeting, at: 240, talk: 300, lead: "C"); m.meetingOnCalendar = true; return m }(),
+            attempt(.meeting, at: 240, talk: 300, lead: "C"),
         ])
         XCTAssertEqual(s.dials, 4)
         XCTAssertEqual(s.uniqueLeads, 3)
@@ -181,16 +181,15 @@ final class MetricsTests: XCTestCase {
         XCTAssertEqual(s.dialsPerMeeting, 4)
     }
 
-    func testFrontDeskIsNotAPickupAndMeetingsNeedACalendar() {
+    func testFrontDeskIsNotAPickupAndMeetingsComeFromTheTranscript() {
         var desk = attempt(.connected, at: 0, talk: 60); desk.reachedLead = false
-        var lead = attempt(.connected, at: 60, talk: 90, lead: "B"); lead.reachedLead = true; lead.meetingAgreed = true
+        var lead = attempt(.connected, at: 60, talk: 90, lead: "B"); lead.reachedLead = true
+        XCTAssertEqual(Metrics.summary([desk, lead]).connects, 1, "front desk doesn't count")
+        XCTAssertEqual(Metrics.summary([desk, lead]).meetings, 0)
+        lead.meetingAgreed = true
         let s = Metrics.summary([desk, lead])
-        XCTAssertEqual(s.connects, 1, "front desk doesn't count")
-        XCTAssertEqual(s.meetings, 0, "agreed but not on a calendar yet")
-        lead.meetingOnCalendar = true
-        let s2 = Metrics.summary([desk, lead])
-        XCTAssertEqual(s2.meetings, 1)
-        XCTAssertEqual(s2.meetingRate, 1.0, "meetings per pickup")
+        XCTAssertEqual(s.meetings, 1)
+        XCTAssertEqual(s.meetingRate, 1.0, "meetings per pickup")
     }
 
     func testOldAttemptLinesStillLoad() throws {
@@ -213,7 +212,7 @@ final class MetricsTests: XCTestCase {
     }
 
     func testBreakdown() {
-        var mtg = attempt(.meeting, at: 60, redial: true); mtg.meetingOnCalendar = true
+        let mtg = attempt(.meeting, at: 60, redial: true)
         let rows = Metrics.rows([attempt(.noAnswer, at: 0), mtg], by: .redial)
         XCTAssertEqual(rows.map(\.label), ["First dial", "Redial"])
         XCTAssertEqual(rows[1].summary.meetings, 1)

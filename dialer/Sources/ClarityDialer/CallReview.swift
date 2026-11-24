@@ -3,7 +3,7 @@ import Observation
 
 /// Reads each picked-up call's Aircall transcript with Claude to decide two things the phone
 /// can't: did the lead themself answer (not a front desk or someone else), and was a meeting
-/// agreed. A meeting only counts once a calendar event for that person exists in Salesforce.
+/// agreed to a specific time (then the call is marked Meeting booked in Salesforce).
 /// Runs in the background every minute; nothing waits on it.
 @MainActor
 final class CallReview {
@@ -31,8 +31,6 @@ final class CallReview {
                   now.timeIntervalSince(ended) < 3 * 86_400 else { continue }
             if a.reviewedAt == nil, a.answeredAt != nil, a.aircallCallID != nil, Self.hasKey {
                 await review(a, ended: ended)
-            } else if a.meetingAgreed == true || a.outcome == .meeting, a.meetingOnCalendar != true, Salesforce.isConnected {
-                await checkCalendar(a.id)
             }
         }
     }
@@ -52,19 +50,11 @@ final class CallReview {
             $0.meetingAgreed = verdict.meetingAgreed
             $0.meetingTime = verdict.meetingTime.isEmpty ? nil : verdict.meetingTime
             $0.reviewSummary = verdict.summary
+            if verdict.meetingAgreed, verdict.reachedLead {
+                $0.outcome = .meeting
+                $0.needsSync = true // the call's Salesforce Task now says Meeting booked
+            }
             if !verdict.reachedLead, $0.outcome == .connected { $0.note = ($0.note.isEmpty ? "" : $0.note + "\n") + "Not the lead: " + verdict.summary }
-        }
-        if verdict.meetingAgreed { await checkCalendar(a.id) }
-    }
-
-    private func checkCalendar(_ id: UUID) async {
-        guard let a = store.attempts.first(where: { $0.id == id }),
-              let found = try? await Salesforce.hasCalendarEvent(for: a.leadID, since: a.dialedAt) else { return }
-        guard found else { update(id) { $0.meetingOnCalendar = false }; return }
-        update(id) {
-            $0.meetingOnCalendar = true
-            $0.outcome = .meeting
-            $0.needsSync = true // the call's Salesforce Task now says Meeting booked
         }
     }
 

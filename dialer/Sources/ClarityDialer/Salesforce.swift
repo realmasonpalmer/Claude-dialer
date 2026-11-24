@@ -377,17 +377,6 @@ enum Salesforce {
         return f.date(from: fixed) ?? ISO8601DateFormatter().date(from: fixed)
     }
 
-    /// Is there a calendar event for this person created since `since`? (Meetings booked and invites
-    /// sent from Salesforce, or from a calendar synced to it, show up as Events on the lead/contact.)
-    static func hasCalendarEvent(for id: String, since: Date) async throws -> Bool {
-        guard id.allSatisfy({ $0.isLetter || $0.isNumber }) else { return false }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        f.timeZone = TimeZone(identifier: "UTC")
-        let when = f.string(from: since.addingTimeInterval(-600))
-        return !(try await query("SELECT Id FROM Event WHERE WhoId = '\(id)' AND CreatedDate >= \(when) LIMIT 1")).isEmpty
-    }
-
     static func recordURL(_ id: String) -> URL? {
         Keychain.read(.sfInstance).flatMap { URL(string: "\($0)/\(id)") }
     }

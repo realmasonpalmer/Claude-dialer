@@ -24,7 +24,7 @@ struct MetricsView: View {
                     Tile("Dials", "\(s.dials)", "\(s.uniqueLeads) people")
                     Tile("Pickups", "\(s.connects)", "\(s.connectRate.percent) of dials · lead answered")
                     Tile("Conversations", "\(s.conversations)", "30s+ · \(s.conversationRate.percent)")
-                    Tile("Meetings", "\(s.meetings)", "\(s.meetingRate.percent) of pickups · on calendar")
+                    Tile("Meetings", "\(s.meetings)", "\(s.meetingRate.percent) of pickups")
                     Tile("Talk time", s.talkSeconds.duration, "avg \(s.avgTalkSeconds.duration)")
                     Tile("Dials / hour", String(format: "%.0f", s.dialsPerHour), "\(s.activeSeconds.duration) dialing")
                     Tile("Voicemails", "\(s.voicemails)", "\(s.textsSent) texts sent")
