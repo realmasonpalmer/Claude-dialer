@@ -267,6 +267,8 @@ final class Session {
         Task { await sync(a, lead: lead, text: text, from: textFrom) }
 
         if redial {
+            // Paused: hold the second call for when the rep resumes, on this same person.
+            if paused { pendingRedial = true; return go(.ready) }
             go(.dialing)
             task = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(2))
@@ -376,11 +378,13 @@ final class Session {
     // MARK: Moving
 
     func skip() {
+        pendingRedial = false
         guard [.ready, .finished].contains(state) || isCountdown else { return }
         advance(autoDial: false)
     }
 
     func back() {
+        pendingRedial = false
         guard index > 0, [.ready, .finished].contains(state) || isCountdown else { return }
         index -= 1
         go(.ready)
@@ -492,11 +496,27 @@ final class Session {
     }
 
     /// Pause: stops a countdown now, and stops auto-dial after the current call. Resume restarts it.
+    /// A call-twice redial that's waiting because the rep paused. Resuming makes it first.
+    private(set) var pendingRedial = false
+
+    /// Pause is a real pause: nothing is skipped or dropped. A countdown stops on the same person;
+    /// a call in progress finishes; a call-twice redial that was due waits and goes first on resume.
     func togglePause() {
         paused.toggle()
         if paused {
             if isCountdown { go(.ready) }
+            // Paused in the short gap before the second call: keep it for later.
+            if state == .dialing, attempt == nil { pendingRedial = true; go(.ready) }
         } else if state == .ready, settings.autoDial {
+            resume()
+        }
+    }
+
+    private func resume() {
+        if pendingRedial {
+            pendingRedial = false
+            call(isRedial: true)
+        } else {
             countdown(settings.countdown)
         }
     }
@@ -506,6 +526,10 @@ final class Session {
     /// Start auto-dialing: calls this person now, then each next one after the countdown.
     func startAutoDialing() {
         paused = false
+        if pendingRedial, state == .ready {
+            pendingRedial = false
+            return call(isRedial: true)
+        }
         if state == .ready || isCountdown { call() }
     }
 

@@ -426,7 +426,7 @@ private struct ActionBar: View {
                     .help("⌘P. The current call finishes, then it stays on the next person.")
             } else if session.state == .ready {
                 if store.settings.autoDial {
-                    primary("Start auto-dialing", "play.fill") { session.startAutoDialing() }
+                    primary(session.pendingRedial ? "Resume: call again" : "Start auto-dialing", "play.fill") { session.startAutoDialing() }
                         .keyboardShortcut("p", modifiers: .command)
                         .help("Calls this person now, then each next one after a \(store.settings.countdown)s countdown. ⌘P pauses.")
                 } else {

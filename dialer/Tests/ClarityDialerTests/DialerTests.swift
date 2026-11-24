@@ -438,6 +438,26 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(phone.dialed.count, 2, "third dial refused")
     }
 
+    func testPauseHoldsTheSecondCallUntilResume() async {
+        store.settings.autoDial = true
+        store.settings.callTwice = true
+        store.settings.countdown = 1
+        session.pollInterval = .milliseconds(200)
+        session.startAutoDialing()
+        await wait { [self] in session.state == .dialing && !phone.dialed.isEmpty }
+        session.stopAutoDialing()                       // pause during the first call
+        await wait { [self] in session.pendingRedial }
+        try? await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(phone.dialed.count, 1, "paused: second call waits")
+        XCTAssertEqual(session.index, 0, "still on the same person")
+        XCTAssertEqual(session.state, .ready)
+        session.startAutoDialing()                      // resume
+        await wait { [self] in phone.dialed.count == 2 }
+        XCTAssertEqual(phone.dialed.count, 2)
+        XCTAssertEqual(store.attempts.last?.isRedial, true, "the held second call, same person")
+        XCTAssertEqual(History.key(store.attempts.last!.leadID), "00Q000000000001")
+    }
+
     func testCallTwiceRedialsOnce() async {
         store.settings.callTwice = true
         session.call()
