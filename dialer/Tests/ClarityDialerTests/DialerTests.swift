@@ -427,6 +427,17 @@ final class SessionTests: XCTestCase {
         XCTAssertTrue(phone.droppedNames.isEmpty)
     }
 
+    func testNeverMoreThanTwoDialsADay() async {
+        store.settings.callTwice = true
+        session.call()
+        await wait { [self] in session.index == 1 }
+        XCTAssertEqual(phone.dialed.count, 2)
+        session.back()
+        session.call()
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(phone.dialed.count, 2, "third dial refused")
+    }
+
     func testCallTwiceRedialsOnce() async {
         store.settings.callTwice = true
         session.call()

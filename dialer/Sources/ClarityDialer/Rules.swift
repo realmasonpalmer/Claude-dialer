@@ -95,9 +95,12 @@ enum Rules {
         }.map(\.element)
     }
 
+    /// Never more than this many dials to one person in a day, however they got back on screen.
+    static let maxDialsPerDay = 2
+
     /// Call twice: redial once, right away, when nobody answered.
     static func shouldRedial(_ outcome: Outcome, dialsToday: Int, _ s: OutboundSettings) -> Bool {
-        s.callTwice && outcome == .noAnswer && dialsToday < max(2, s.maxAttemptsPerDay)
+        s.callTwice && outcome == .noAnswer && dialsToday < maxDialsPerDay
     }
 
     /// The text for today's step, sent only when they didn't pick up and they have a mobile.

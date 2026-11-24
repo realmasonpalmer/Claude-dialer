@@ -119,7 +119,6 @@ private struct CallingTab: View {
                 Stepper("Countdown: \(store.settings.countdown)s", value: $store.settings.countdown, in: 0...15)
                     .disabled(!store.settings.autoDial)
                 Toggle("Call twice (redial once if no answer)", isOn: $store.settings.callTwice)
-                Stepper("Max dials per person per day: \(store.settings.maxAttemptsPerDay)", value: $store.settings.maxAttemptsPerDay, in: 1...5)
             }
             Section("Who gets called") {
                 Toggle("Mobile numbers only", isOn: $store.settings.mobileOnly)

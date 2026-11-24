@@ -137,6 +137,11 @@ final class Session {
     func call(isRedial: Bool = false) {
         guard let lead, [.ready, .wrapUp].contains(state) || isCountdown || isRedial else { return }
         guard let number = lead.dialNumber else { return advance() }
+        let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
+        guard dialsToday < Rules.maxDialsPerDay else {
+            message = "\(lead.name) was already called \(dialsToday) times today. Moving on."
+            return advance()
+        }
         guard let user = settings.aircallUserID, let from = settings.fromNumberID else {
             message = "Pick your Aircall user and number in Settings."
             return go(.ready)
