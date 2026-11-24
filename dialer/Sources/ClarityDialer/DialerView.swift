@@ -8,12 +8,13 @@ struct DialerView: View {
     @Environment(Session.self) private var session
     @Environment(\.openWindow) private var openWindow
     @State private var lists: [Salesforce.ListView] = []
+    @State private var breathing: BreathingTechnique?
     @State private var listError: String?
 
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                TopBar(lists: lists, listError: listError, reloadLists: loadLists)
+                TopBar(lists: lists, listError: listError, reloadLists: loadLists, breathing: $breathing)
                 Divider()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -44,6 +45,14 @@ struct DialerView: View {
             AircallPane(width: 360)
         }
         .task { await loadLists() }
+        .overlay {
+            if let t = breathing {
+                BreathingView(technique: t) { breathing = nil }
+                    .id(t)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: breathing)
     }
 
     @ViewBuilder private var content: some View {
@@ -82,6 +91,7 @@ private struct TopBar: View {
     let lists: [Salesforce.ListView]
     let listError: String?
     let reloadLists: () async -> Void
+    @Binding var breathing: BreathingTechnique?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -103,6 +113,13 @@ private struct TopBar: View {
                     .buttonStyle(.borderless).help("Reload list")
             }
             if let listError { Text(listError).font(.caption).foregroundStyle(.orange).lineLimit(1) }
+            Menu {
+                ForEach(BreathingTechnique.allCases) { t in Button(t.menuLabel) { breathing = t } }
+            } label: {
+                Image(systemName: "wind")
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+            .help("Breathing exercise: 4-7-8 or box breathing")
             Spacer(minLength: 8)
             // Narrow window: drop words before anything wraps. Every variant is one line.
             ViewThatFits(in: .horizontal) {
