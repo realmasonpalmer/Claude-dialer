@@ -446,14 +446,18 @@ final class Session {
     func connectOnLinkedIn(_ lead: Lead) {
         guard LinkedInBot.isOn, let note = currentStep(for: lead)?.linkedInNote?.nonBlankString,
               !linkedInSentToday(lead) else { return }
-        guard let url = Self.profileURL(lead.linkedIn) else {
-            linkedInStatus = "LinkedIn: no profile link in Salesforce. Use the LinkedIn button."
-            return
-        }
-        if let why = LinkedInBot.whyNot { linkedInStatus = "LinkedIn bot \(why)."; return }
+        if let why = LinkedInBot.whyNot { linkedInStatus = "LinkedIn: not sent to \(lead.name) (bot \(why))."; return }
         let text = LinkedInBot.note(Merge.fill(note, lead: lead, rep: settings.repName))
-        LinkedInBot.personKey = History.key(lead.id)
         Task {
+            // The list load can miss the field; ask Salesforce for it directly before giving up.
+            var raw = lead.linkedIn
+            if Self.profileURL(raw) == nil { raw = await Salesforce.linkedIn(of: lead) }
+            guard let url = Self.profileURL(raw) else {
+                linkedInStatus = "LinkedIn: not sent to \(lead.name): no LinkedIn profile link on their Salesforce record."
+                return
+            }
+            linkedInStatus = "LinkedIn: opening \(lead.name)'s profile in Chrome…"
+            LinkedInBot.personKey = History.key(lead.id)
             let result = await LinkedInBot.connect(profile: url, note: text, company: lead.company, name: lead.name) { [weak self] s in
                 self?.linkedInStatus = s
             }

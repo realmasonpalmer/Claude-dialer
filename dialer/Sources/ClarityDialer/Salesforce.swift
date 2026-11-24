@@ -377,6 +377,14 @@ enum Salesforce {
         return f.date(from: fixed) ?? ISO8601DateFormatter().date(from: fixed)
     }
 
+    /// The person's LinkedIn link, read on its own (Lead: Linkedin__c, Contact: LinkedIn__c).
+    static func linkedIn(of lead: Lead) async -> String? {
+        guard isConnected, lead.id.allSatisfy({ $0.isLetter || $0.isNumber }) else { return nil }
+        let field = lead.object == .lead ? "Linkedin__c" : "LinkedIn__c"
+        let row = try? await query("SELECT \(field) FROM \(lead.object.rawValue) WHERE Id = '\(lead.id)'").first
+        return (row?[field] as? String).flatMap { $0.trimmed.isEmpty ? nil : $0 }
+    }
+
     static func recordURL(_ id: String) -> URL? {
         Keychain.read(.sfInstance).flatMap { URL(string: "\($0)/\(id)") }
     }
