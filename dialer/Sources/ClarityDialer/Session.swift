@@ -97,7 +97,7 @@ final class Session {
         self.crm = crm ?? LiveCRM()
         isLive = phone == nil
         if phone == nil {
-            AircallPhone.shared.onBeep = { [weak self] _, _ in self?.heardBeep() }
+            AircallPhone.shared.onBeep = { [weak self] f, secs in self?.heardBeep(freq: f, seconds: secs) }
             AircallPhone.shared.onRepSpeech = { [weak self] in self?.repSpeaking() }
             ScreenerListener.shared.onText = { [weak self] text in self?.otherSideSaid(text) }
         }
@@ -367,10 +367,35 @@ final class Session {
         }
     }
 
-    /// A pure tone on the other side. Never acted on by itself: it only times a voicemail drop.
-    func heardBeep() {
-        guard onCall else { return }
-        beepAt = Date()
+    /// A pure tone on the other side. A single tone never does anything by itself (it only times a
+    /// voicemail drop). The busy/disconnected signal (about 0.5 s on, 0.5 s off, repeating) means a
+    /// bad number.
+    func heardBeep(freq: Double = 0, seconds: Double = 0.5) {
+        let now = Date()
+        if onCall { beepAt = now }
+        recentTones.append(now)
+        recentTones.removeAll { now.timeIntervalSince($0) > 5 }
+        if (0.35...0.7).contains(seconds), Rules.isBusySignal(recentTones) { busySignal() }
+    }
+
+    private var recentTones: [Date] = []
+
+    private func busySignal() {
+        recentTones = []
+        if onCall, attempt != nil {
+            guard !badNumber else { return }
+            badNumber = true
+            Log.add("call", "busy/disconnected signal (repeating tone) -> bad number, hanging up")
+            return hangUp()
+        }
+        // The tone came after the call ended (e.g. while call twice was about to redial): the call
+        // that just ended was the bad number. Cancel the redial and take them off the list.
+        if let last = lastLogged, Date().timeIntervalSince(last.endedAt ?? last.dialedAt) < 15, last.outcome != .badNumber {
+            Log.add("call", "busy/disconnected signal after \(last.leadName)'s call -> bad number, no redial")
+            pendingRedial = false
+            amend(outcome: .badNumber)
+            if state == .dialing, attempt == nil { advance() }
+        }
     }
 
     func hangUp() {

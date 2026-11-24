@@ -147,6 +147,15 @@ final class RulesTests: XCTestCase {
         _ = t
     }
 
+    func testBusySignalPattern() {
+        let t0 = Date()
+        let busy = (0..<4).map { t0.addingTimeInterval(Double($0)) }          // every 1 s
+        let ringback = (0..<4).map { t0.addingTimeInterval(Double($0) * 6) } // every 6 s
+        XCTAssertTrue(Rules.isBusySignal(busy))
+        XCTAssertFalse(Rules.isBusySignal(ringback))
+        XCTAssertFalse(Rules.isBusySignal(Array(busy.prefix(3))))
+    }
+
     func testLiveCoachWordRules() {
         XCTAssertTrue(Voicemail.detects("Please leave a message after the tone", earlyInCall: false))
         XCTAssertTrue(Voicemail.detects("You've reached Jane", earlyInCall: true))

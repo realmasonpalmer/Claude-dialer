@@ -95,6 +95,14 @@ enum Rules {
         }.map(\.element)
     }
 
+    /// The busy / disconnected signal: 4+ tones about a second apart (0.5 s on, 0.5 s off).
+    /// Ringback is 2 s on, 4 s off, so it never matches.
+    static func isBusySignal(_ toneTimes: [Date]) -> Bool {
+        guard toneTimes.count >= 4 else { return false }
+        let last = Array(toneTimes.suffix(4))
+        return zip(last, last.dropFirst()).allSatisfy { (0.75...1.3).contains($1.timeIntervalSince($0)) }
+    }
+
     /// Never more than this many dials to one person in a day, however they got back on screen.
     static let maxDialsPerDay = 2
 
