@@ -67,7 +67,7 @@ final class CallReview {
 
     // MARK: Claude
 
-    struct Verdict: Decodable {
+    struct Verdict: Decodable, Sendable {
         let reachedLead: Bool
         let meetingAgreed: Bool
         /// "certain" only when nothing about the booking is in doubt.
@@ -81,7 +81,7 @@ final class CallReview {
     /// A meeting counts only when every check passes: the lead themself answered, Claude is
     /// certain, a specific day and time were set, and the lead's agreeing words really are in the
     /// transcript (checked here, so a made-up quote can't count).
-    static func isCertainMeeting(_ v: Verdict, transcript: String) -> Bool {
+    nonisolated static func isCertainMeeting(_ v: Verdict, transcript: String) -> Bool {
         func norm(_ s: String) -> String {
             s.lowercased().filter { $0.isLetter || $0.isNumber || $0 == " " }
                 .split(separator: " ").joined(separator: " ")
