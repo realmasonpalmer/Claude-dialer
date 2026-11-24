@@ -413,21 +413,32 @@ private struct ActionBar: View {
     @Environment(Store.self) private var store
     @Environment(Session.self) private var session
 
+    /// Auto-dialing is on and running (not stopped by the rep).
+    private var running: Bool { store.settings.autoDial && !session.paused && session.state != .ready }
+
     var body: some View {
         HStack(spacing: 10) {
-            switch session.state {
-            case .ready:
+            // One main button, always in the same place: Start / Pause auto-dialing (or Call).
+            if running {
+                primary("Pause auto-dialing", "pause.fill") { session.stopAutoDialing() }
+                    .keyboardShortcut("p", modifiers: .command)
+                    .help("⌘P. The current call finishes, then it stays on the next person.")
+            } else if session.state == .ready {
                 if store.settings.autoDial {
                     primary("Start auto-dialing", "play.fill") { session.startAutoDialing() }
-                        .help("Calls this person now, then each next one after a \(store.settings.countdown)s countdown. ⌘P stops.")
+                        .keyboardShortcut("p", modifiers: .command)
+                        .help("Calls this person now, then each next one after a \(store.settings.countdown)s countdown. ⌘P pauses.")
                 } else {
                     primary("Call", "phone.fill") { session.call() }
                 }
+            }
+            switch session.state {
+            case .ready:
                 Button("Next") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
                 Button("Back") { session.back() }.keyboardShortcut(.leftArrow, modifiers: .command).disabled(session.index == 0).buttonStyle(BrandQuietButton())
             case .countdown(let n):
                 Text("Calling in \(n)…").font(.headline).monospacedDigit()
-                primary("Call now", "phone.fill") { session.call() }
+                Button("Call now") { session.call() }.buttonStyle(BrandQuietButton())
                 Button("Next") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
             case .dialing, .live:
                 CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
@@ -445,12 +456,6 @@ private struct ActionBar: View {
             default:
                 EmptyView()
             }
-            if store.settings.autoDial, !session.paused, session.state != .ready {
-                Button { session.stopAutoDialing() } label: { Label("Stop auto-dialing", systemImage: "stop.fill") }
-                    .buttonStyle(BrandQuietButton())
-                    .keyboardShortcut("p", modifiers: .command)
-                    .help("⌘P. The current call finishes, then it stays on the next person.")
-            }
             if !isCall { Spacer() }
         }
     }
@@ -458,7 +463,7 @@ private struct ActionBar: View {
     private var isCall: Bool { session.state == .dialing || session.state == .live }
 
     private func primary(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { Label(title, systemImage: icon).frame(minWidth: 110) }
+        Button(action: action) { Label(title, systemImage: icon).frame(minWidth: 180) }
             .buttonStyle(BrandPrimaryButton()).controlSize(.large)
             .keyboardShortcut(.defaultAction)
     }
