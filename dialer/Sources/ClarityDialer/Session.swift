@@ -295,6 +295,9 @@ final class Session {
 
     // MARK: Salesforce sync
 
+    /// The last call Salesforce accepted, for the on-screen confirmation.
+    private(set) var lastLogged: (name: String, at: Date)?
+
     private var syncing = false
     private var syncAgain = false
 
@@ -312,6 +315,11 @@ final class Session {
                     guard var a = store.attempts.first(where: { $0.id == id }) else { continue }
                     do {
                         a.salesforceTaskID = try await crm.logCall(a)
+                        // Remember the Task right away, so a failed status update can't make a second Task.
+                        if var keep = store.attempts.first(where: { $0.id == id }), keep.salesforceTaskID == nil {
+                            keep.salesforceTaskID = a.salesforceTaskID
+                            store.save(keep)
+                        }
                         if let s = a.statusAfter, !a.statusSynced {
                             try await crm.setStatus(leadID: a.leadID, to: s)
                             a.statusSynced = true
@@ -323,6 +331,7 @@ final class Session {
                         saved.statusSynced = a.statusSynced
                         saved.needsSync = latest.map { $0.outcome != a.outcome || $0.note != a.note || $0.textSent != a.textSent || $0.endedAt != a.endedAt || $0.statusAfter != a.statusAfter || $0.voicemailDropped != a.voicemailDropped || $0.linkedInSent != a.linkedInSent } ?? false
                         store.save(saved)
+                        lastLogged = (a.leadName, Date())
                     } catch {
                         message = "Saved on this Mac; will retry Salesforce: \(error.localizedDescription)"
                     }

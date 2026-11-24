@@ -131,6 +131,7 @@ extension TopBar {
                 .buttonStyle(BrandPrimaryButton())
                 .help("A new build is ready. Installs it and reopens the app (1–3 minutes).")
             }
+            SalesforceStatus()
             if stats != .hidden {
                 TodayStrip(style: stats).onTapGesture { openWindow(id: "metrics") }.help("Today. Click for Metrics (⇧⌘M)")
             }
@@ -493,3 +494,23 @@ private struct TightLabel: LabelStyle {
     }
 }
 
+
+/// Whether calls are reaching Salesforce: a green check with the last one logged, or how many
+/// are waiting (saved on this Mac, retried every minute).
+private struct SalesforceStatus: View {
+    @Environment(Store.self) private var store
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        let waiting = store.unsynced.count
+        if waiting > 0 {
+            Label("\(waiting) waiting for Salesforce", systemImage: "exclamationmark.icloud")
+                .font(.caption).foregroundStyle(.orange)
+                .help(session.message ?? "Saved on this Mac; retried every minute.")
+        } else if let last = session.lastLogged {
+            Label("Logged", systemImage: "checkmark.icloud")
+                .font(.caption).foregroundStyle(.green)
+                .help("Last call logged in Salesforce: \(last.name) at \(last.at.formatted(date: .omitted, time: .shortened))")
+        }
+    }
+}
