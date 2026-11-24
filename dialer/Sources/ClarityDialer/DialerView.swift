@@ -507,7 +507,7 @@ private struct SalesforceStatus: View {
             Label("\(waiting) waiting for Salesforce", systemImage: "exclamationmark.icloud")
                 .font(.caption).foregroundStyle(.orange)
                 .help(session.message ?? "Saved on this Mac; retried every minute.")
-        } else if let last = session.lastLogged {
+        } else if let last = session.lastSynced {
             Label("Logged", systemImage: "checkmark.icloud")
                 .font(.caption).foregroundStyle(.green)
                 .help("Last call logged in Salesforce: \(last.name) at \(last.at.formatted(date: .omitted, time: .shortened))")

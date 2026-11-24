@@ -296,7 +296,7 @@ final class Session {
     // MARK: Salesforce sync
 
     /// The last call Salesforce accepted, for the on-screen confirmation.
-    private(set) var lastLogged: (name: String, at: Date)?
+    private(set) var lastSynced: (name: String, at: Date)?
 
     private var syncing = false
     private var syncAgain = false
@@ -331,7 +331,7 @@ final class Session {
                         saved.statusSynced = a.statusSynced
                         saved.needsSync = latest.map { $0.outcome != a.outcome || $0.note != a.note || $0.textSent != a.textSent || $0.endedAt != a.endedAt || $0.statusAfter != a.statusAfter || $0.voicemailDropped != a.voicemailDropped || $0.linkedInSent != a.linkedInSent } ?? false
                         store.save(saved)
-                        lastLogged = (a.leadName, Date())
+                        lastSynced = (a.leadName, Date())
                     } catch {
                         message = "Saved on this Mac; will retry Salesforce: \(error.localizedDescription)"
                     }
