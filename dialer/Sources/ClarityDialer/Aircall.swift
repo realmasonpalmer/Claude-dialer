@@ -361,6 +361,9 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
           if (!md || !md.getUserMedia || window.__clarityMic) return;
           window.__clarityMic = true;
           var gum = md.getUserMedia.bind(md), KEY = 'clarityBuiltInMicId', builtIn = null, finding = null;
+          // Every mic request, without exception: no echo cancellation / noise suppression / auto gain.
+          // Voice processing ties input and output together and puts Bluetooth output into 16 kHz call mode.
+          var PLAIN = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
           try { builtIn = localStorage.getItem(KEY); } catch (e) {}
           var OWN = /built-?in|macbook|imac|mac mini|mac studio|mac pro/i;
           var HEADSET = /bluetooth|airpods|headset|headphone|beats|bose|jabra|plantronics|poly|usb/i;
@@ -375,7 +378,7 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
               var id = pick(list);
               if (id) return id;
               // Device names stay hidden until the page has used the mic once: ask once, let go at once.
-              return gum({ audio: true }).then(function (s) { s.getTracks().forEach(function (t) { t.stop(); }); return md.enumerateDevices(); }).then(pick);
+              return gum({ audio: PLAIN }).then(function (s) { s.getTracks().forEach(function (t) { t.stop(); }); return md.enumerateDevices(); }).then(pick);
             }).then(function (id) {
               builtIn = id; finding = null;
               try { if (id) localStorage.setItem(KEY, id); } catch (e) {}
@@ -401,13 +404,26 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
                 log('call mic: ' + (t ? t.label : '?') + ', echo cancellation off' + (id ? '' : ' (built-in mic not found)'));
                 return s;
               }).catch(function () {
-                // The saved mic is gone: forget it and use the normal request.
+                // The saved mic is gone: forget it, and ask for any mic, still without voice processing.
                 try { localStorage.removeItem(KEY); } catch (e) {}
                 builtIn = null;
-                return gum(c);
+                var again = {}, a2 = {}, k2;
+                for (k2 in out) again[k2] = out[k2];
+                for (k2 in aud) if (k2 !== 'deviceId') a2[k2] = aud[k2];
+                again.audio = a2;
+                log('built-in mic not available: using the default mic, echo cancellation still off');
+                return gum(again);
               });
             });
           };
+          // Aircall can't turn voice processing back on mid-call either.
+          try {
+            var ac = MediaStreamTrack.prototype.applyConstraints;
+            MediaStreamTrack.prototype.applyConstraints = function (c) {
+              if (this.kind === 'audio' && c) { c = Object.assign({}, c, PLAIN); }
+              return ac.call(this, c);
+            };
+          } catch (e) {}
           if (md.addEventListener) md.addEventListener('devicechange', function () {
             md.enumerateDevices().then(function (list) {
               if (builtIn && !list.some(function (d) { return d.deviceId === builtIn; })) { builtIn = null; try { localStorage.removeItem(KEY); } catch (e) {} }
