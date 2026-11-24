@@ -441,22 +441,23 @@ private struct ActionBar: View {
                 Button("Call now") { session.call() }.buttonStyle(BrandQuietButton())
                 Button("Next") { session.skip() }.keyboardShortcut(.rightArrow, modifiers: .command).buttonStyle(BrandQuietButton())
             case .dialing, .live:
-                CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
-                Spacer()
+                // Same left-to-right spot as Next / Back, so nothing jumps when a call starts.
+                Button(role: .destructive) { session.hangUp() } label: { Label("Hang up", systemImage: "phone.down.fill") }
+                    .keyboardShortcut(".", modifiers: .command)
+                    .buttonStyle(BrandPrimaryButton(color: Brand.stop))
                 if store.settings.voicemailDrop, let vm = session.currentStep?.voicemail {
                     Button { session.dropVoicemail() } label: {
                         Label(session.attempt?.voicemailDropped == true ? "\(vm) dropped" : "Drop \(vm)", systemImage: "recordingtape")
                     }
+                    .buttonStyle(BrandQuietButton())
                     .keyboardShortcut("d", modifiers: .command)
                     .disabled(session.attempt?.voicemailDropped == true)
                 }
-                Button(role: .destructive) { session.hangUp() } label: { Label("Hang up", systemImage: "phone.down.fill") }
-                    .keyboardShortcut(".", modifiers: .command)
-                    .buttonStyle(BrandPrimaryButton(color: Brand.stop)).controlSize(.large)
+                CallClock(since: session.attempt?.answeredAt ?? session.attempt?.dialedAt, live: session.state == .live)
             default:
                 EmptyView()
             }
-            if !isCall { Spacer() }
+            Spacer()
         }
     }
 
