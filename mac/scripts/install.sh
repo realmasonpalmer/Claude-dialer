@@ -1,42 +1,10 @@
 #!/usr/bin/env bash
-# One command to build Clarity Live Coach, put it in Applications and open it.
-# Run it from the mac folder:  bash scripts/install.sh
+# Clarity Live Coach has been replaced by Clarity Dialer (dialer/ in this repo).
+# Live Coach's own Update button runs this script, so updating Live Coach installs Clarity Dialer,
+# closes Live Coach, moves it to the Trash, and opens Clarity Dialer (which imports its logins).
 set -euo pipefail
-cd "$(dirname "$0")/.."
-
-# Build outside the project folder: macOS can block build files in Downloads or Documents.
-WORK="$HOME/Library/Caches/ClarityLiveCoach-build"
-echo "Building. This takes 1 to 3 minutes..."
-swift build -c release --scratch-path "$WORK"
-
-APP="$WORK/Clarity Live Coach.app"
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$WORK/release/ClarityLiveCoach" "$APP/Contents/MacOS/ClarityLiveCoach"
-cp Resources/Info.plist "$APP/Contents/Info.plist"
-cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-# Sign with this Mac's own certificate, so macOS remembers permissions across updates.
-# Made once by setup-signing.sh; if that can't run, fall back to a temporary signature.
-CERT="Clarity Live Coach Signing"
-if [ -z "${SIGN_IDENTITY:-}" ]; then
-    bash scripts/setup-signing.sh || echo "Couldn't set up the signing certificate. Using a temporary signature."
-    if security find-certificate -c "$CERT" >/dev/null 2>&1; then SIGN_IDENTITY="$CERT"; fi
-fi
-if ! codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"; then
-    echo "Signing with the certificate failed. Using a temporary signature."
-    codesign --force --sign - "$APP"
-fi
-
-# Replace the copy in Applications (quit the old one first).
-osascript -e 'quit app "Clarity Live Coach"' >/dev/null 2>&1 || true
-sleep 1
-rm -rf "/Applications/Clarity Live Coach.app"
-cp -R "$APP" /Applications/
-touch "/Applications/Clarity Live Coach.app" # so the Dock and Finder pick up the icon
-# macOS caches app icons: re-register the app so Finder shows the new icon, and refresh the Dock.
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "/Applications/Clarity Live Coach.app" >/dev/null 2>&1 || true
-killall Dock >/dev/null 2>&1 || true
-open "/Applications/Clarity Live Coach.app"
-echo ""
-echo "Done. Clarity Live Coach is in your Applications folder and is opening now."
+cd "$(dirname "$0")/../../dialer"
+bash scripts/install.sh
+# Tell Clarity Dialer's updater which version this is, so it doesn't offer the same one again.
+SHA="$(curl -fsSL "https://github.com/realmasonpalmer/Claude-dialer/commits/claude/main-update.atom" | grep -oE 'Commit/[0-9a-f]{40}' | head -1 | cut -d/ -f2 || true)"
+if [ -n "$SHA" ]; then defaults write io.clarityconsulting.dialer installedSHA "$SHA"; fi

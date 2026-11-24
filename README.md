@@ -1,3 +1,19 @@
+# Clarity Dialer
+
+**Clarity Live Coach has been replaced by Clarity Dialer** (`dialer/`): a power dialer with a script,
+Salesforce sync, the Aircall phone, a Day 1 / 3 / 5 sequence and call metrics.
+
+Install or update on a Mac:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/realmasonpalmer/Claude-dialer/claude/main-update/dialer/scripts/get.sh)"
+```
+
+Clicking Update in Clarity Live Coach also installs Clarity Dialer, moves Live Coach to the Trash,
+and carries over its saved logins. The old app's source stays in `mac/` for reference.
+
+---
+
 # Clarity Live Coach
 
 A **Mac app** that sits next to Aircall and Salesforce and coaches a cold caller live.
