@@ -452,8 +452,14 @@ final class Session {
             // The list load can miss the field; ask Salesforce for it directly before giving up.
             var raw = lead.linkedIn
             if Self.profileURL(raw) == nil { raw = await Salesforce.linkedIn(of: lead) }
-            guard let url = Self.profileURL(raw) else {
-                linkedInStatus = "LinkedIn: not sent to \(lead.name): no LinkedIn profile link on their Salesforce record."
+            var url = Self.profileURL(raw)
+            if url == nil {
+                // No link in Salesforce: find them on LinkedIn (the profile's name is checked before sending).
+                linkedInStatus = "LinkedIn: searching for \(lead.name) in Chrome…"
+                url = await LinkedInBot.findProfile(name: lead.name, company: lead.company)
+            }
+            guard let url else {
+                linkedInStatus = "LinkedIn: not sent to \(lead.name): " + (LinkedInBot.chromeProblem ?? "couldn't find their profile on LinkedIn") + "."
                 return
             }
             linkedInStatus = "LinkedIn: opening \(lead.name)'s profile in Chrome…"

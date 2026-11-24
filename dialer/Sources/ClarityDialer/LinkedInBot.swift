@@ -117,7 +117,7 @@ enum LinkedInBot {
         // first dial goes straight to voicemail or the number is bad.
         if !testRun { await pause(2, 10) }
         guard let opened = await openTab(profile), !opened.isEmpty, opened != "ERR" else {
-            return .skipped("Chrome didn't open the tab")
+            return .skipped(chromeProblem ?? "Chrome didn't open the tab")
         }
         let parts = opened.split(separator: "|").map(String.init)
         let tab = parts[0]
@@ -272,13 +272,47 @@ enum LinkedInBot {
 
     private static let queue = DispatchQueue(label: "clarity.linkedin-bot")
 
+    /// The last AppleScript error number (-1743: macOS hasn't allowed this app to control Chrome;
+    /// -600: Chrome isn't running and couldn't be opened).
+    static var lastAppleError: Int?
+
     private static func apple(_ source: String) async -> String? {
         await withCheckedContinuation { done in
             queue.async {
-                let r = NSAppleScript(source: source)?.executeAndReturnError(nil).stringValue
+                var err: NSDictionary?
+                let r = NSAppleScript(source: source)?.executeAndReturnError(&err).stringValue
+                let code = err?[NSAppleScript.errorNumber] as? Int
+                Task { @MainActor in lastAppleError = code }
                 done.resume(returning: r)
             }
         }
+    }
+
+    /// Why Chrome couldn't be used, in plain words, or nil.
+    static var chromeProblem: String? {
+        switch lastAppleError {
+        case -1743?: return "macOS hasn't allowed Clarity Dialer to control Chrome. Turn it on in System Settings > Privacy & Security > Automation > Clarity Dialer > Google Chrome"
+        case -600?, -10810?: return "Chrome isn't open (or isn't installed)"
+        case let n?: return "Chrome didn't respond (error \(n))"
+        case nil: return nil
+        }
+    }
+
+    /// No LinkedIn link in Salesforce: search LinkedIn for them in Chrome and take the first person
+    /// result. The profile is then checked against their name before anything is sent.
+    static func findProfile(name: String, company: String) async -> URL? {
+        var c = URLComponents(string: "https://www.linkedin.com/search/results/people/")!
+        c.queryItems = [URLQueryItem(name: "keywords", value: "\(name) \(company)".trimmingCharacters(in: .whitespaces))]
+        guard let search = c.url, let opened = await openTab(search), opened != "ERR",
+              let tab = opened.split(separator: "|").first.map(String.init) else { return nil }
+        let js = #"(function(){var a=[].slice.call(document.querySelectorAll('a[href*="/in/"]')).map(function(x){return x.href.split('?')[0];}).filter(function(h){return /linkedin\.com\/in\/[^\/]+\/?$/.test(h);});return a.length?a[0]:'NONE';})()"#
+        let b64 = Data(js.utf8).base64EncodedString()
+        for _ in 0..<12 {
+            try? await Task.sleep(for: .seconds(1))
+            let r = await apple(onTab(tab, "return execute t javascript \"eval(atob('\(b64)'))\""))
+            if let r, r.hasPrefix("https://"), let url = URL(string: r) { return url }
+        }
+        return nil
     }
 
     /// A new tab in the front Chrome window, without taking the rep away from their tab.
