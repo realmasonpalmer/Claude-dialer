@@ -383,16 +383,24 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
             }, function () { finding = null; return null; });
             return finding;
           }
+          function log(t) { try { window.webkit.messageHandlers.clarity.postMessage({ kind: 'audio', text: t }); } catch (e) {} }
           md.getUserMedia = function (c) {
             if (!c || !c.audio) return gum(c);
             return find().then(function (id) {
-              if (!id) return gum(c);
               var out = {}, aud = {}, k;
               for (k in c) out[k] = c[k];
               if (typeof c.audio === 'object') for (k in c.audio) aud[k] = c.audio[k];
-              aud.deviceId = { exact: id };
+              // No voice processing: echo cancellation runs input and output through one voice unit,
+              // and with Bluetooth output that forces the headphones into 16 kHz call mode even
+              // though their mic isn't used. Headphones don't echo, so it isn't needed.
+              aud.echoCancellation = false; aud.noiseSuppression = false; aud.autoGainControl = false;
+              if (id) aud.deviceId = { exact: id };
               out.audio = aud;
-              return gum(out).catch(function () {
+              return gum(out).then(function (s) {
+                var t = s.getAudioTracks()[0];
+                log('call mic: ' + (t ? t.label : '?') + ', echo cancellation off' + (id ? '' : ' (built-in mic not found)'));
+                return s;
+              }).catch(function () {
                 // The saved mic is gone: forget it and use the normal request.
                 try { localStorage.removeItem(KEY); } catch (e) {}
                 builtIn = null;
