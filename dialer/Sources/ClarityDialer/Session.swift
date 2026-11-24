@@ -343,6 +343,12 @@ final class Session {
     }
 
     /// At launch: finishes calls the app was closed during, then keeps retrying every minute.
+    /// At launch, with Auto LinkedIn Connect on: get macOS's Chrome permission asked up front.
+    func checkLinkedInReady() async {
+        guard LinkedInBot.isOn else { return }
+        if let problem = await LinkedInBot.checkChrome() { linkedInStatus = "LinkedIn: " + problem + "." }
+    }
+
     func startSync() async {
         for var a in store.attempts where a.endedAt == nil && a.salesforceTaskID == nil
             && Date().timeIntervalSince(a.dialedAt) > 600 {

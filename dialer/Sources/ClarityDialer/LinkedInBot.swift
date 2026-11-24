@@ -288,6 +288,14 @@ enum LinkedInBot {
         }
     }
 
+    /// Asks Chrome for its name: harmless, but it makes macOS show the "allow Clarity Dialer to
+    /// control Chrome" prompt now (at launch), instead of in the middle of a call. Returns the
+    /// problem in plain words, or nil when Chrome can be controlled.
+    static func checkChrome() async -> String? {
+        _ = await apple("tell application \"Google Chrome\" to return name")
+        return chromeProblem
+    }
+
     /// Why Chrome couldn't be used, in plain words, or nil.
     static var chromeProblem: String? {
         switch lastAppleError {

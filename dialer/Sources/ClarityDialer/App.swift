@@ -26,6 +26,7 @@ struct ClarityDialerApp: App {
                 .frame(minWidth: 980, minHeight: 640)
                 .brandWindow()
                 .task { await session.startSync() }
+                .task { await session.checkLinkedInReady() }
                 .task { await updater.run() }
                 .task { await scriptSync.run() }
                 .task { await review.run() }

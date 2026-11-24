@@ -14,7 +14,19 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$WORK/release/ClarityDialer" "$APP/Contents/MacOS/ClarityDialer"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-codesign --force --sign - "$APP"
+# Sign with a certificate that stays the same on this Mac, so macOS remembers permissions
+# (control Chrome, microphone, Keychain) across updates. Reuses Live Coach's if it's here.
+CERT=""
+for NAME in "Clarity Dialer Signing" "Clarity Live Coach Signing"; do
+    if security find-certificate -c "$NAME" >/dev/null 2>&1; then CERT="$NAME"; break; fi
+done
+if [ -z "$CERT" ]; then
+    bash scripts/setup-signing.sh "Clarity Dialer Signing" && CERT="Clarity Dialer Signing" || true
+fi
+if [ -z "$CERT" ] || ! codesign --force --sign "$CERT" "$APP"; then
+    echo "Couldn't sign with the certificate; using a temporary signature (permissions may be asked again)."
+    codesign --force --sign - "$APP"
+fi
 
 osascript -e 'quit app "Clarity Dialer"' >/dev/null 2>&1 || true
 sleep 1
