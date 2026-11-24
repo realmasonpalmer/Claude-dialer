@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -500,20 +501,26 @@ final class Session {
             return Log.add("linkedin", "\(lead.name): no LinkedIn step today (sequence step \(todayStep(for: lead).map { String($0 + 1) } ?? "none"))")
         }
         guard !linkedInSentToday(lead) else { return Log.add("linkedin", "\(lead.name): already sent today") }
-        if let why = LinkedInBot.whyNot { linkedInStatus = "LinkedIn: not sent to \(lead.name) (bot \(why))."; return }
         let text = LinkedInBot.note(Merge.fill(note, lead: lead, rep: settings.repName))
         Task {
-            // The list load can miss the field; ask Salesforce for it directly before giving up.
+            // The list load can miss the field; ask Salesforce for it directly.
             var raw = lead.linkedIn
             if Self.profileURL(raw) == nil { raw = await Salesforce.linkedIn(of: lead) }
-            var url = Self.profileURL(raw)
+            let profile = Self.profileURL(raw)
+
+            // The automatic sender can't run (permission, limits, weekend...): just open them in Chrome
+            // with the note on the clipboard, like before. No permission needed for that.
+            if let why = LinkedInBot.whyNot ?? (await LinkedInBot.checkChrome()) {
+                openForHand(lead, profile: profile, note: text, because: why)
+                return
+            }
+            var url = profile
             if url == nil {
-                // No link in Salesforce: find them on LinkedIn (the profile's name is checked before sending).
                 linkedInStatus = "LinkedIn: searching for \(lead.name) in Chrome…"
                 url = await LinkedInBot.findProfile(name: lead.name, company: lead.company)
             }
             guard let url else {
-                linkedInStatus = "LinkedIn: not sent to \(lead.name): " + (LinkedInBot.chromeProblem ?? "couldn't find their profile on LinkedIn") + "."
+                openForHand(lead, profile: nil, note: text, because: LinkedInBot.chromeProblem ?? "couldn't find their profile automatically")
                 return
             }
             linkedInStatus = "LinkedIn: opening \(lead.name)'s profile in Chrome…"
@@ -525,10 +532,33 @@ final class Session {
             case .sent: linkedInStatus = "LinkedIn: request sent to \(lead.name)."; markLinkedInSent(leadID: lead.id)
             case .pending: linkedInStatus = "LinkedIn: already requested."; markLinkedInSent(leadID: lead.id)
             case .alreadyConnected: linkedInStatus = "LinkedIn: already connected."; markLinkedInSent(leadID: lead.id)
-            case .skipped(let why): linkedInStatus = "LinkedIn: \(why)."
+            case .skipped(let why): openForHand(lead, profile: url, note: text, because: why)
             case .blocked(let why): linkedInStatus = "LinkedIn paused for 2 hours: \(why)."
             }
         }
+    }
+
+    /// Opens their LinkedIn (profile, or a search for them) in Chrome with the note copied, for the
+    /// rep to click Connect > Add a note > paste. Used whenever the automatic sender can't finish.
+    private func openForHand(_ lead: Lead, profile: URL?, note: String, because why: String) {
+        var target = profile
+        if target == nil {
+            var c = URLComponents(string: "https://www.linkedin.com/search/results/people/")!
+            c.queryItems = [URLQueryItem(name: "keywords", value: "\(lead.name) \(lead.company)")]
+            target = c.url
+        }
+        guard let target else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(note, forType: .string)
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        if let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") {
+            NSWorkspace.shared.open([target], withApplicationAt: chrome, configuration: config)
+        } else {
+            NSWorkspace.shared.open(target)
+        }
+        linkedInStatus = "LinkedIn: opened \(lead.name) in Chrome, note copied. Click Connect > Add a note > ⌘V > Send. (Auto-send didn't run: \(why).)"
+        markLinkedInSent(leadID: lead.id)
     }
 
     static func profileURL(_ raw: String?) -> URL? {
