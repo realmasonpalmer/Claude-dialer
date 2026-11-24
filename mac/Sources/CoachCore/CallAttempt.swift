@@ -129,6 +129,13 @@ public struct CallAttempt: Codable, Sendable, Equatable {
         "is not in", "he's out", "she's out", "they're out", "take a message", "front desk", "reception",
         "thank you for calling", "thanks for calling", "how may i direct", "how can i direct", "can i tell him", "can i tell her",
     ]
+    /// A canned opening line. Recordings (auto-attendants, company greetings) say these too.
+    static let greetingPhrases = ["thank you for calling", "thanks for calling"]
+    /// Words a live person adds to a greeting because they are waiting for an answer.
+    static let interactivePhrases = [
+        "how may i", "how can i", "can i help", "may i help", "who's calling", "who is calling", "may i ask", "can i ask",
+        "what is this regarding", "what's this regarding", "what is this about", "what's this about",
+    ]
     static let transferPhrases = [
         "transfer you", "put you through", "connect you", "one moment", "hold please", "please hold",
         "let me get", "let me grab", "let me see if",
@@ -172,6 +179,13 @@ public struct CallAttempt: Codable, Sendable, Equatable {
             if a.badNumber { return (.invalidNumber, "bad number rule", []) }
             let echoOnly = a.heard.contains { $0.tag == .speech }
             return (.noAnswer, echoOnly ? "only the rep's own voice came back" : "no one spoke", [])
+        }
+        // Only "Thank you for calling X" (nothing that waits for an answer, no reply after it): a recording,
+        // not a person. A receptionist who asks "how can I help?" or answers the rep still counts below.
+        if human.allSatisfy({ has($0.text, greetingPhrases) && !has($0.text, interactivePhrases) }) {
+            if a.phoneTree { return (.phoneTree, "phone menu, no person after it", []) }
+            if a.screenerSeen { return (.screenerOnly, "screener only, no person after it", []) }
+            return (.noAnswer, "only a recorded greeting (\"thank you for calling\"), no reply", [])
         }
         if human.contains(where: { has($0.text, wrongNumberPhrases) }) { return (.humanGatekeeper, "wrong number", human) }
         let lastTransfer = human.lastIndex { has($0.text, transferPhrases) }

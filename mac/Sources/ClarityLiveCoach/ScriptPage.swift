@@ -26,6 +26,14 @@ final class ScriptPage: ObservableObject {
         cache = (UserDefaults.standard.dictionary(forKey: Self.storeKey) as? [String: String]) ?? [:]
     }
 
+    /// A blank line the rep made with Enter. The page is stored one line per row and plain blank rows
+    /// mean "new section", so a deliberate blank row is kept as this invisible mark and shows as space.
+    static let blank = "\u{200B}"
+
+    static func isBlank(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{200B}"))).isEmpty
+    }
+
     private static func key(_ script: String) -> String {
         SHA256.hash(data: Data(script.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -49,8 +57,11 @@ final class ScriptPage: ObservableObject {
         let current = cache[oldKey].map(Self.split) ?? Self.quickRead(script)
         var updated = script
         var unplaced: [String] = []
-        for (i, line) in newLines.enumerated() {
-            let old = i < oldLines.count ? oldLines[i] : nil
+        // Blank rows are only spacing on the card: the script itself is changed by the spoken lines.
+        let oldSpoken = oldLines.filter { !Self.isBlank($0) }
+        let newSpoken = newLines.filter { !Self.isBlank($0) }
+        for (i, line) in newSpoken.enumerated() {
+            let old = i < oldSpoken.count ? oldSpoken[i] : nil
             guard line != old else { continue }
             if let old, !old.isEmpty, updated.contains(old) { updated = updated.replacingOccurrences(of: old, with: line) }
             else { unplaced.append(line) }
@@ -151,6 +162,9 @@ final class ScriptPage: ObservableObject {
         var title = ""
         var lines: [String] = []
         func close() {
+            // Spacing between lines stays; spacing at the very start or end of a section doesn't count.
+            while let last = lines.last, isBlank(last) { lines.removeLast() }
+            while let first = lines.first, isBlank(first) { lines.removeFirst() }
             if !title.isEmpty, !lines.isEmpty { out.append(Section(id: out.count, title: title, lines: lines)) }
             lines = []
         }

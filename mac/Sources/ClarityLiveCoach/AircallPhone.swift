@@ -116,21 +116,89 @@ final class AircallPhone: NSObject, ObservableObject, WKUIDelegate, WKNavigation
       var md = navigator.mediaDevices;
       if (md && md.getUserMedia) {
         var gum = md.getUserMedia.bind(md);
-        // One audio mode for the whole session: hold a mic stream open from the start, so a Bluetooth
-        // headset stays in call mode instead of switching (and changing sound speed) on every call.
-        if (!window.__clarityKeep) {
-          window.__clarityKeep = true;
-          setTimeout(function () {
-            gum({ audio: true }).then(function (s) { window.__clarityKeepStream = s; post({ side: 'info', pcm: 'headset held in call mode for the session' }); })
-              .catch(function (e) { window.__clarityKeep = false; post({ side: 'info', pcm: 'could not hold the mic open: ' + e }); });
-          }, 1500);
-        }
+        // The headset's own microphone is never opened. A Bluetooth headset switches to call mode (a different
+        // sound speed) whenever any app uses its mic, and that switch is what makes voices jump octaves up and
+        // down. So every mic request goes to the Mac's built-in microphone, and the headset stays in one mode
+        // (music quality) for the whole session. Only a Mac with no built-in mic falls back to holding the
+        // headset in call mode, checked every few seconds.
+        var KEY = 'clarityBuiltInMicId', builtIn = null, triedFind = false, finding = null;
+        try { builtIn = window.localStorage.getItem(KEY); } catch (e) {}
+        var OWN = /built-?in|macbook|imac|mac mini|mac studio|mac pro/i;
+        var HEADSET = /bluetooth|airpods|headset|headphone|beats|bose|jabra|plantronics|poly|usb/i;
+        var stopTracks = function (s) { s.getTracks().forEach(function (t) { t.stop(); }); };
+        var pick = function (list) {
+          var mine = list.filter(function (d) { return d.kind === 'audioinput' && d.label && OWN.test(d.label) && !HEADSET.test(d.label); })[0];
+          return mine ? mine.deviceId : null;
+        };
+        var discover = function () {
+          if (finding) return finding;
+          triedFind = true;
+          finding = md.enumerateDevices().then(function (list) {
+            var id = pick(list);
+            if (id) return id;
+            // Device names stay hidden until the page has had the mic once: ask once, let go at once.
+            return gum({ audio: true }).then(function (s) { stopTracks(s); return md.enumerateDevices(); }).then(pick);
+          }).then(function (id) {
+            builtIn = id; finding = null;
+            try { if (id) window.localStorage.setItem(KEY, id); } catch (e) {}
+            post({ side: 'info', pcm: id ? "mic pinned to the Mac's own microphone: the headset stays in one mode" : 'no built-in microphone found: using the headset mic' });
+            if (!id) startHold();
+            return id;
+          }).catch(function (e) {
+            finding = null;
+            post({ side: 'info', pcm: 'could not look for the built-in mic: ' + e });
+            return null;
+          });
+          return finding;
+        };
+        var pinned = function (c) {
+          if (!builtIn || !c || !c.audio) return c;
+          var out = {}, aud = {}, k;
+          for (k in c) out[k] = c[k];
+          if (typeof c.audio === 'object') for (k in c.audio) aud[k] = c.audio[k];
+          aud.deviceId = { exact: builtIn };
+          out.audio = aud;
+          return out;
+        };
+        // Fallback only (no built-in mic): keep the headset in call mode, and take that back if it is lost.
+        var holdStarted = false;
+        var startHold = function () {
+          if (holdStarted) return; holdStarted = true;
+          var holding = false, holdFailures = 0;
+          var hold = function () {
+            if (holding || holdFailures >= 5) return;
+            var kept = window.__clarityKeepStream;
+            if (kept && live(kept)) return;
+            holding = true;
+            gum({ audio: true }).then(function (s) { holding = false; holdFailures = 0; window.__clarityKeepStream = s; })
+              .catch(function (e) { holding = false; holdFailures++; post({ side: 'info', pcm: 'could not hold the mic open: ' + e }); });
+          };
+          hold(); setInterval(hold, 4000);
+        };
         md.getUserMedia = function (c) {
-          return gum(c).then(function (stream) {
+          var first = (c && c.audio && !builtIn && !triedFind) ? discover() : Promise.resolve(builtIn);
+          return first.then(function () {
+            var pc = pinned(c);
+            return gum(pc).catch(function (e) {
+              if (pc === c) throw e;
+              // The saved built-in mic id no longer works: forget it and ask the normal way.
+              try { window.localStorage.removeItem(KEY); } catch (x) {}
+              builtIn = null; triedFind = false;
+              return gum(c);
+            });
+          }).then(function (stream) {
             if (stream.getAudioTracks().length) pump(stream, 'local');
             return stream;
           });
         };
+        // A headset connecting or leaving changes the device list: check the built-in mic is still there.
+        if (md.addEventListener) md.addEventListener('devicechange', function () {
+          md.enumerateDevices().then(function (list) {
+            if (builtIn && !list.some(function (d) { return d.deviceId === builtIn; })) { builtIn = null; triedFind = false; discover(); }
+          }).catch(function () {});
+        });
+        // Find the built-in mic before the first call, not during it.
+        setTimeout(function () { if (!builtIn && !triedFind) discover(); }, 1500);
       }
     })();
     """
