@@ -192,6 +192,21 @@ final class MetricsTests: XCTestCase {
         XCTAssertEqual(s.meetingRate, 1.0, "meetings per pickup")
     }
 
+    func testMeetingNeedsCertaintyATimeAndTheLeadsRealWords() {
+        let transcript = "Rep: Does Thursday at 2pm work?\nThem: Yes, Thursday at 2 works, send the invite.\nRep: Great."
+        func v(_ agreed: Bool = true, _ certainty: String = "certain", time: String = "Thursday 2pm",
+               quote: String = "Yes, Thursday at 2 works", lead: Bool = true) -> CallReview.Verdict {
+            CallReview.Verdict(reachedLead: lead, meetingAgreed: agreed, meetingCertainty: certainty,
+                               meetingTime: time, leadConfirmationQuote: quote, summary: "")
+        }
+        XCTAssertTrue(CallReview.isCertainMeeting(v(), transcript: transcript))
+        XCTAssertFalse(CallReview.isCertainMeeting(v(certainty: "likely"), transcript: transcript))
+        XCTAssertFalse(CallReview.isCertainMeeting(v(time: ""), transcript: transcript))
+        XCTAssertFalse(CallReview.isCertainMeeting(v(quote: "Sure, Friday is great"), transcript: transcript), "quote not in transcript")
+        XCTAssertFalse(CallReview.isCertainMeeting(v(quote: "Does Thursday at 2pm work"), transcript: transcript), "rep's words, not the lead's")
+        XCTAssertFalse(CallReview.isCertainMeeting(v(lead: false), transcript: transcript), "front desk")
+    }
+
     func testOldAttemptLinesStillLoad() throws {
         let line = #"{"id":"6A1B6C9E-4F0B-4C55-9E77-2E2A7A1C1D11","leadID":"00Q1","leadName":"A","listID":"L","listName":"L","scriptName":"S","attemptNumber":1,"isRedial":false,"fromNumber":"","dialedAt":"2026-11-20T18:00:00Z","statusBefore":"New","outcome":"noAnswer"}"#
         let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601

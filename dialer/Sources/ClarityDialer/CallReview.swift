@@ -44,13 +44,14 @@ final class CallReview {
             return
         }
         guard let verdict = try? await Self.classify(transcript: text, leadName: a.leadName) else { return }
+        let booked = Self.isCertainMeeting(verdict, transcript: text)
         update(a.id) {
             $0.reviewedAt = Date()
             $0.reachedLead = verdict.reachedLead
-            $0.meetingAgreed = verdict.meetingAgreed
+            $0.meetingAgreed = booked
             $0.meetingTime = verdict.meetingTime.isEmpty ? nil : verdict.meetingTime
             $0.reviewSummary = verdict.summary
-            if verdict.meetingAgreed, verdict.reachedLead {
+            if booked {
                 $0.outcome = .meeting
                 $0.needsSync = true // the call's Salesforce Task now says Meeting booked
             }
@@ -69,8 +70,27 @@ final class CallReview {
     struct Verdict: Decodable {
         let reachedLead: Bool
         let meetingAgreed: Bool
+        /// "certain" only when nothing about the booking is in doubt.
+        let meetingCertainty: String
         let meetingTime: String
+        /// The lead's own words agreeing, copied exactly from the transcript.
+        let leadConfirmationQuote: String
         let summary: String
+    }
+
+    /// A meeting counts only when every check passes: the lead themself answered, Claude is
+    /// certain, a specific day and time were set, and the lead's agreeing words really are in the
+    /// transcript (checked here, so a made-up quote can't count).
+    static func isCertainMeeting(_ v: Verdict, transcript: String) -> Bool {
+        func norm(_ s: String) -> String {
+            s.lowercased().filter { $0.isLetter || $0.isNumber || $0 == " " }
+                .split(separator: " ").joined(separator: " ")
+        }
+        let quote = norm(v.leadConfirmationQuote)
+        let themLines = transcript.split(separator: "\n").filter { $0.hasPrefix("Them:") }.map { norm(String($0)) }
+        return v.reachedLead && v.meetingAgreed && v.meetingCertainty == "certain"
+            && !v.meetingTime.trimmed.isEmpty
+            && quote.count >= 2 && themLines.contains { $0.contains(quote) }
     }
 
     private static let system = """
@@ -79,9 +99,15 @@ final class CallReview {
     - reachedLead: true only if the person the rep was calling (the named lead) was on the line and spoke as themself. \
     False for a front desk, receptionist, assistant, operator, voicemail greeting, phone menu, wrong number, or anyone \
     who says they are someone else or whose name clearly does not match the lead. If unsure, false.
-    - meetingAgreed: true only if the lead clearly agreed to a specific next meeting or call (a day or time, or accepting \
-    a calendar invite). "Send me some info", "call me later" or "maybe" is false.
-    - meetingTime: the agreed day/time in their words, or "" if none.
+    - meetingAgreed: true only if a meeting was actually booked on this call: the lead explicitly agreed to a specific day \
+    AND time, and both sides confirmed it (e.g. the rep repeats the time or says they'll send the invite and the lead \
+    says yes). "Send me some info", "call me later", "maybe", "let me check my calendar", "next week sometime", \
+    or a time only the rep proposed with no clear yes from the lead are all false.
+    - meetingCertainty: "certain" only if there is no doubt at all that a meeting was booked; "likely" if it probably \
+    was but anything is vague (no exact time, unclear yes, cut-off audio, transcription gaps); "no" otherwise. \
+    When in doubt, never say "certain".
+    - meetingTime: the agreed day and time in their words, or "" if none.
+    - leadConfirmationQuote: the lead's own words agreeing to the meeting, copied exactly from a "Them:" line, or "".
     - summary: one short sentence on what happened.
     """
 
@@ -92,17 +118,19 @@ final class CallReview {
             "properties": [
                 "reachedLead": ["type": "boolean"],
                 "meetingAgreed": ["type": "boolean"],
+                "meetingCertainty": ["type": "string", "enum": ["certain", "likely", "no"]],
                 "meetingTime": ["type": "string"],
+                "leadConfirmationQuote": ["type": "string"],
                 "summary": ["type": "string"],
             ],
-            "required": ["reachedLead", "meetingAgreed", "meetingTime", "summary"],
+            "required": ["reachedLead", "meetingAgreed", "meetingCertainty", "meetingTime", "leadConfirmationQuote", "summary"],
             "additionalProperties": false,
         ]
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
             "max_tokens": 4000,
             "fallbacks": "default",
-            "output_config": ["effort": "low", "format": ["type": "json_schema", "schema": schema]],
+            "output_config": ["effort": "high", "format": ["type": "json_schema", "schema": schema]],
             "system": system,
             "messages": [["role": "user", "content": "Lead being called: \(leadName)\n\n<transcript>\n\(transcript)\n</transcript>"]],
         ]
