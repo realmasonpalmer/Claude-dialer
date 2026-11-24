@@ -127,9 +127,8 @@ final class CallReview {
             "additionalProperties": false,
         ]
         let body: [String: Any] = [
-            "model": "claude-opus-5-5",
+            "model": "claude-haiku-5-5",
             "max_tokens": 4000,
-            "fallbacks": "default",
             "output_config": ["effort": "high", "format": ["type": "json_schema", "schema": schema]],
             "system": system,
             "messages": [["role": "user", "content": "Lead being called: \(leadName)\n\n<transcript>\n\(transcript)\n</transcript>"]],
@@ -140,7 +139,6 @@ final class CallReview {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(key, forHTTPHeaderField: "x-api-key")
         req.setValue("2026-10-21", forHTTPHeaderField: "anthropic-version")
-        req.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: req)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
