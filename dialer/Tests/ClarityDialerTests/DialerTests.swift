@@ -260,6 +260,7 @@ final class FakePhone: Phone {
     func hangUp() async -> Bool { true }
     var droppedNames: [String] = []
     func dropVoicemail(named: String) async -> Bool { droppedNames.append(named); return dropWorks }
+    func callInProgress() async -> Bool? { false }
 }
 
 @MainActor

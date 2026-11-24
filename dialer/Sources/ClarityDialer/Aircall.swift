@@ -232,6 +232,8 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
 
     /// Called on the main thread when the other side's audio has a voicemail beep in it.
     var onBeep: ((_ freq: Double, _ seconds: Double) -> Void)?
+    /// Called when the rep's own mic has had about a second of speech on this call.
+    var onRepSpeech: (() -> Void)?
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let kind = body["kind"] as? String else { return }
@@ -240,6 +242,8 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
             let f = (body["freq"] as? Double) ?? 0, d = (body["secs"] as? Double) ?? 0
             Log.add("beep", "heard a \(Int(f)) Hz tone for \(String(format: "%.2f", d))s on the other side")
             onBeep?(f, d)
+        case "repSpeech":
+            onRepSpeech?()
         case "audio":
             Log.add("beep", (body["text"] as? String) ?? "")
         default: break
@@ -288,8 +292,33 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
               }, 20);
             } catch (e) { post({ kind: 'audio', text: 'could not listen for the beep: ' + e }); }
           }
+          // The rep's side: about a second of voice on the mic means they're talking to someone.
+          function watchRep(stream) {
+            try {
+              if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+              var src = ctx.createMediaStreamSource(stream);
+              var an = ctx.createAnalyser(); an.fftSize = 1024;
+              var mute = ctx.createGain(); mute.gain.value = 0;
+              src.connect(an); an.connect(mute); mute.connect(ctx.destination);
+              var buf = new Float32Array(an.fftSize), loud = 0, told = false;
+              var t = setInterval(function () {
+                var tr = stream.getAudioTracks()[0];
+                if (!tr || tr.readyState === 'ended') { clearInterval(t); return; }
+                an.getFloatTimeDomainData(buf);
+                var sum = 0; for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+                var rms = Math.sqrt(sum / buf.length);
+                if (rms > 0.02) loud++; else if (loud > 0) loud -= 0.25;
+                if (loud >= 20 && !told) { told = true; post({ kind: 'repSpeech' }); }
+              }, 50);
+            } catch (e) {}
+          }
           var Hooked = function (a, b) {
             var pc = new Orig(a, b);
+            var add = pc.addTrack;
+            pc.addTrack = function (track) {
+              try { if (track && track.kind === 'audio') watchRep(new MediaStream([track])); } catch (e) {}
+              return add.apply(pc, arguments);
+            };
             pc.addEventListener('track', function (ev) {
               if (ev.track && ev.track.kind === 'audio') listen(ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]));
             });

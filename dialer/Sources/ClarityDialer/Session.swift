@@ -9,6 +9,8 @@ import Observation
     func sendText(_ body: String, to: String, from number: Int) async throws
     func hangUp() async -> Bool
     func dropVoicemail(named: String) async -> Bool
+    /// The phone's own screen shows a call in progress (nil = can't tell).
+    func callInProgress() async -> Bool?
 }
 
 /// The CRM side. Live: Salesforce's REST API. Tests: a fake.
@@ -28,6 +30,7 @@ struct LivePhone: Phone {
     func sendText(_ body: String, to: String, from number: Int) async throws { try await Aircall.sendText(body, to: to, from: number) }
     func hangUp() async -> Bool { await AircallPhone.shared.hangUp() }
     func dropVoicemail(named: String) async -> Bool { await AircallPhone.shared.dropVoicemail(named: named) }
+    func callInProgress() async -> Bool? { await AircallPhone.shared.hangUpButtonVisible() }
 }
 
 struct LiveCRM: CRM {
@@ -94,6 +97,7 @@ final class Session {
         self.crm = crm ?? LiveCRM()
         if phone == nil {
             AircallPhone.shared.onBeep = { [weak self] _, _ in self?.heardBeep() }
+            AircallPhone.shared.onRepSpeech = { [weak self] in self?.repSpeaking() }
         }
     }
 
@@ -169,6 +173,7 @@ final class Session {
         voicemailDropped = false
         hungUpAtBeep = false
         beepHeard = false
+        repSpoke = false
         message = nil
         store.save(a)
         history.add(lead.id, at: a.dialedAt)
@@ -199,6 +204,13 @@ final class Session {
             guard !Task.isCancelled, var a = attempt else { return }
             guard let c else {
                 if Date().timeIntervalSince(since) > dialTimeout {
+                    // Never give up on a call that's still up (on hold with a screener, a long ring):
+                    // only when Aircall's own phone shows no call either.
+                    if await phone.callInProgress() == true {
+                        if Int(Date().timeIntervalSince(since)) % 30 < 2 { Log.add("call", "Aircall's server hasn't listed the call yet, but the phone shows it's still up: waiting") }
+                        continue
+                    }
+                    Log.add("call", "no call reported by Aircall after \(Int(dialTimeout))s and none on the phone: logging no answer")
                     message = "Aircall didn't report this call; logged as no answer. Change it under Last call if needed."
                     a.endedAt = Date()
                     attempt = a
@@ -233,9 +245,21 @@ final class Session {
     }
 
     /// The voicemail beep: follow Outbound Settings (call twice / voicemail drop).
+    /// The rep has spoken on this call (to a person or a call screener): beeps no longer mean voicemail.
+    private var repSpoke = false
+    func repSpeaking() {
+        guard state == .live || state == .dialing, !repSpoke else { return }
+        repSpoke = true
+        Log.add("beep", "rep is talking: beeps on this call are ignored (a screener's tone isn't a voicemail)")
+    }
+
     func heardBeep() {
         guard state == .live || state == .dialing, let lead, !beepHeard else {
             Log.add("beep", "ignored (state \(state), already handled: \(beepHeard))")
+            return
+        }
+        guard !repSpoke else {
+            Log.add("beep", "ignored: you've already spoken on this call (call screener or live conversation)")
             return
         }
         beepHeard = true
