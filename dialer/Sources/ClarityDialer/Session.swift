@@ -188,7 +188,17 @@ final class Session {
             guard let self else { return }
             do {
                 Log.add("call", "dialing \(lead.name) \(number)\(isRedial ? " (call twice: 2nd dial)" : "")")
-                try await phone.dial(number, user: user, number: from)
+                // Right after a call, Aircall can still have the line busy for a few seconds (wrap-up):
+                // keep trying for ~20 s instead of giving up on the second call.
+                var tries = 0
+                while true {
+                    do { try await phone.dial(number, user: user, number: from); break } catch {
+                        tries += 1
+                        guard tries < 8, error.localizedDescription.contains("Available"), !Task.isCancelled else { throw error }
+                        Log.add("call", "Aircall line still busy from the last call, retrying in 2.5s (try \(tries))")
+                        try? await Task.sleep(for: .milliseconds(2500))
+                    }
+                }
             } catch {
                 Log.add("call", "dial failed: \(error.localizedDescription)")
                 guard !Task.isCancelled else { return }
@@ -285,8 +295,13 @@ final class Session {
             Log.add("beep", "ignored: \(screened ? "call screener" : "you've already spoken on this call")")
             return
         }
+        // A tone alone proves nothing (call screeners play one too). Only act when the voicemail
+        // greeting itself was recognized ("leave a message", "after the tone", "not available"...).
+        guard attempt?.voicemailHeard == true else {
+            Log.add("beep", "ignored: no voicemail greeting words recognized on this call, so it may be a screener or a person (speech recognition \(ScreenerListener.authorized ? "on" : "NOT allowed"))")
+            return
+        }
         beepHeard = true
-        attempt?.voicemailHeard = true
         let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
         let action = Rules.onBeep(dialsToday: dialsToday, step: currentStep, settings)
         Log.add("beep", "voicemail for \(lead.name): dial \(dialsToday) today, callTwice=\(settings.callTwice), voicemailDrop=\(settings.voicemailDrop) -> \(action)")

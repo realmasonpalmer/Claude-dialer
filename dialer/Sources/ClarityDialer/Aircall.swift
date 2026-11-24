@@ -305,7 +305,7 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
                 if (tone && (run === 0 || Math.abs(f - runFreq) <= 60)) { if (run === 0) runFreq = f; run++; }
                 else {
                   var secs = run * 0.02;
-                  if (secs >= 0.15 && secs <= 1.5) post({ kind: 'beep', freq: runFreq, secs: secs });
+                  if (secs >= 0.25 && secs <= 1.5) post({ kind: 'beep', freq: runFreq, secs: secs });
                   run = tone ? 1 : 0; runFreq = f;
                 }
               }, 20);

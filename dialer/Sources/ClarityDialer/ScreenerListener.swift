@@ -46,6 +46,8 @@ final class ScreenerListener {
         return phrases.contains { t.contains($0) }
     }
 
+    static var authorized: Bool { SFSpeechRecognizer.authorizationStatus() == .authorized }
+
     func askPermission() {
         SFSpeechRecognizer.requestAuthorization { status in
             Task { @MainActor in Log.add("screener", "speech recognition permission: \(status.rawValue == 3 ? "allowed" : "not allowed (\(status.rawValue))")") }
