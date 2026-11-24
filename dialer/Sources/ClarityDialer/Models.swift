@@ -186,8 +186,22 @@ struct Attempt: Codable, Identifiable, Hashable, Sendable {
     var meetingOnCalendar: Bool?    // unused (kept so saved lines still decode)
     var reviewSummary: String?
 
-    /// A real pickup: the transcript says the lead answered; before review, an answered call.
-    var isPickup: Bool { reachedLead ?? (outcome?.isConnect == true) }
+    // What the app itself noticed during the call.
+    /// The rep talked on the call (their mic).
+    var repSpoke: Bool?
+    /// A voicemail beep or greeting ("leave a message", "after the tone") was heard.
+    var voicemailHeard: Bool?
+    /// A call screener answered.
+    var screenerHeard: Bool?
+
+    /// A real pickup. If Claude reviewed the transcript, its verdict decides. Otherwise only a
+    /// call where the rep actually talked, no voicemail was heard, and the line was open 15 s+.
+    var isPickup: Bool {
+        if let reachedLead { return reachedLead }
+        guard outcome?.isConnect == true, repSpoke == true, voicemailHeard != true,
+              let a = answeredAt, let e = endedAt else { return false }
+        return e.timeIntervalSince(a) >= 15
+    }
     /// A meeting: the transcript shows the lead clearly agreed to a specific time, or the rep
     /// marked the call Meeting booked.
     var isMeeting: Bool { meetingAgreed == true || outcome == .meeting }
@@ -221,7 +235,8 @@ extension Attempt {
             aircallCallID: o(.aircallCallID), salesforceTaskID: o(.salesforceTaskID),
             needsSync: o(.needsSync) ?? false, statusSynced: o(.statusSynced) ?? false,
             reviewedAt: o(.reviewedAt), reachedLead: o(.reachedLead), meetingAgreed: o(.meetingAgreed),
-            meetingTime: o(.meetingTime), meetingOnCalendar: o(.meetingOnCalendar), reviewSummary: o(.reviewSummary))
+            meetingTime: o(.meetingTime), meetingOnCalendar: o(.meetingOnCalendar), reviewSummary: o(.reviewSummary),
+            repSpoke: o(.repSpoke), voicemailHeard: o(.voicemailHeard), screenerHeard: o(.screenerHeard))
     }
 }
 

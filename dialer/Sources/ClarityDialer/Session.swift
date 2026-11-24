@@ -102,6 +102,7 @@ final class Session {
             AircallPhone.shared.onBeep = { [weak self] _, _ in self?.heardBeep() }
             AircallPhone.shared.onRepSpeech = { [weak self] in self?.repSpeaking() }
             ScreenerListener.shared.onScreener = { [weak self] _ in self?.screenerHeard() }
+            ScreenerListener.shared.onVoicemailGreeting = { [weak self] _ in self?.voicemailGreetingHeard() }
         }
     }
 
@@ -245,7 +246,7 @@ final class Session {
     /// The outcome can be changed afterwards under Last call (`amend`).
     private func callEnded(answered: Bool) {
         Log.add("call", "call ended: answered=\(answered) beep=\(beepHeard) dropped=\(voicemailDropped) hungUpAtBeep=\(hungUpAtBeep)")
-        if voicemailDropped || beepHeard { return log(.voicemail) }
+        if voicemailDropped || beepHeard || (attempt?.voicemailHeard == true && repSpoke == false) { return log(.voicemail) }
         log(answered ? .connected : .noAnswer)
     }
 
@@ -255,6 +256,7 @@ final class Session {
     func repSpeaking() {
         guard state == .live || state == .dialing, !repSpoke else { return }
         repSpoke = true
+        attempt?.repSpoke = true
         Log.add("beep", "rep is talking: beeps on this call are ignored (a screener's tone isn't a voicemail)")
     }
 
@@ -263,8 +265,15 @@ final class Session {
     func screenerHeard() {
         guard state == .live || state == .dialing, !screened else { return }
         screened = true
+        attempt?.screenerHeard = true
         Log.add("screener", "call screener on the line: not voicemail, waiting for the person")
         message = "Call screener: say your name and reason; the app will wait for them."
+    }
+
+    /// Voicemail greeting words: it's a voicemail (the beep handling still decides what to do).
+    func voicemailGreetingHeard() {
+        guard state == .live || state == .dialing, !screened else { return }
+        attempt?.voicemailHeard = true
     }
 
     func heardBeep() {
@@ -277,6 +286,7 @@ final class Session {
             return
         }
         beepHeard = true
+        attempt?.voicemailHeard = true
         let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
         let action = Rules.onBeep(dialsToday: dialsToday, step: currentStep, settings)
         Log.add("beep", "voicemail for \(lead.name): dial \(dialsToday) today, callTwice=\(settings.callTwice), voicemailDrop=\(settings.voicemailDrop) -> \(action)")
@@ -334,8 +344,10 @@ final class Session {
         }
         a.linkedInSent = a.linkedInSent || linkedInSentToday(lead)
         a.needsSync = true
+        a.repSpoke = a.repSpoke ?? repSpoke
         attempt = nil
         store.save(a)
+        Log.add("pickup", "\(lead.name): outcome=\(outcome) answered=\(a.answeredAt != nil) youSpoke=\(a.repSpoke ?? false) voicemailHeard=\(a.voicemailHeard ?? false) screener=\(a.screenerHeard ?? false) open=\(a.answeredAt.flatMap { s in a.endedAt.map { Int($0.timeIntervalSince(s)) } } ?? 0)s -> \(a.isPickup ? "PICKUP" : "not a pickup")")
         lastLoggedID = a.id
         if outcome.isFinal { history.finish(lead.id) }
         if let s = a.statusAfter { queue[index].status = s }

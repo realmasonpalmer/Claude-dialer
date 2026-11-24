@@ -13,6 +13,8 @@ import Speech
 final class ScreenerListener {
     static let shared = ScreenerListener()
     var onScreener: ((_ heard: String) -> Void)?
+    var onVoicemailGreeting: ((_ heard: String) -> Void)?
+    private var firedVoicemail = false
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -27,6 +29,17 @@ final class ScreenerListener {
         "stay on the line", "please hold while", "screening", "google assistant", "the person you're calling is using",
         "say your name", "state your name", "who's calling", "what are you calling about", "call screening",
     ]
+
+    /// Voicemail greetings (said before the beep; screeners don't say these).
+    static let voicemailPhrases = [
+        "leave a message", "leave your message", "after the tone", "after the beep", "not available",
+        "unavailable", "voicemail", "voice mail", "mailbox", "record your message", "at the tone",
+    ]
+
+    static func isVoicemailGreeting(_ text: String) -> Bool {
+        let t = text.lowercased()
+        return !isScreener(t) && voicemailPhrases.contains { t.contains($0) }
+    }
 
     static func isScreener(_ text: String) -> Bool {
         let t = text.lowercased()
@@ -49,6 +62,7 @@ final class ScreenerListener {
         request = req
         started = Date()
         fired = false
+        firedVoicemail = false
         task = recognizer.recognitionTask(with: req) { result, _ in
             guard let text = result?.bestTranscription.formattedString else { return }
             Task { @MainActor in ScreenerListener.shared.heard(text) }
@@ -79,6 +93,11 @@ final class ScreenerListener {
     }
 
     private func heard(_ text: String) {
+        if !firedVoicemail, !fired, Self.isVoicemailGreeting(text) {
+            firedVoicemail = true
+            Log.add("screener", "voicemail greeting: \"\(text.suffix(120))\"")
+            onVoicemailGreeting?(text)
+        }
         guard !fired, Self.isScreener(text) else { return }
         fired = true
         Log.add("screener", "call screener: \"\(text.suffix(120))\"")
