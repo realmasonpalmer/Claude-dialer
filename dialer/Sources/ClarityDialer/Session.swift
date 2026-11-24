@@ -90,8 +90,6 @@ final class Session {
     private let isLive: Bool
     /// This call reached voicemail and was hung up at the beep to redial (call twice).
     private var hungUpAtBeep = false
-    /// The beep was heard on this call (it's a voicemail, whatever Aircall says).
-    private var beepHeard = false
 
     init(store: Store, phone: Phone? = nil, crm: CRM? = nil) {
         self.store = store
@@ -101,8 +99,7 @@ final class Session {
         if phone == nil {
             AircallPhone.shared.onBeep = { [weak self] _, _ in self?.heardBeep() }
             AircallPhone.shared.onRepSpeech = { [weak self] in self?.repSpeaking() }
-            ScreenerListener.shared.onScreener = { [weak self] _ in self?.screenerHeard() }
-            ScreenerListener.shared.onVoicemailGreeting = { [weak self] _ in self?.voicemailGreetingHeard() }
+            ScreenerListener.shared.onText = { [weak self] text in self?.otherSideSaid(text) }
         }
     }
 
@@ -177,9 +174,18 @@ final class Session {
         attempt = a
         voicemailDropped = false
         hungUpAtBeep = false
-        beepHeard = false
         repSpoke = false
         screened = false
+        phoneTree = false
+        badNumber = false
+        vmAt = nil
+        vmTask?.cancel(); vmTask = nil
+        heardText = ""
+        heardAt = .distantPast
+        beepAt = nil
+        if isLive, !ScreenerListener.authorized {
+            Log.add("call", "speech recognition is NOT allowed: the app can't tell voicemail from a person, so it won't hang up or drop by itself (System Settings > Privacy & Security > Speech Recognition)")
+        }
         message = nil
         store.save(a)
         history.add(lead.id, at: a.dialedAt)
@@ -255,65 +261,116 @@ final class Session {
     /// Every call logs itself and moves on, so auto-dialing never waits on the rep.
     /// The outcome can be changed afterwards under Last call (`amend`).
     private func callEnded(answered: Bool) {
-        Log.add("call", "call ended: answered=\(answered) beep=\(beepHeard) dropped=\(voicemailDropped) hungUpAtBeep=\(hungUpAtBeep)")
-        if voicemailDropped || beepHeard || (attempt?.voicemailHeard == true && repSpoke == false) { return log(.voicemail) }
+        vmTask?.cancel(); vmTask = nil
+        ScreenerListener.shared.end()
+        Log.add("call", "call ended: answered=\(answered) heard=\"\(heardText.suffix(80))\" voicemail=\(vmAt != nil) dropped=\(voicemailDropped) screener=\(screened) phoneMenu=\(phoneTree) badNumber=\(badNumber) youSpoke=\(repSpoke)")
+        if badNumber { return log(.badNumber) }
+        if voicemailDropped || vmAt != nil { return log(.voicemail) }
+        if phoneTree { return log(.noAnswer) }
         log(answered ? .connected : .noAnswer)
     }
 
-    /// The voicemail beep: follow Outbound Settings (call twice / voicemail drop).
-    /// The rep has spoken on this call (to a person or a call screener): beeps no longer mean voicemail.
+    // MARK: What answered (Live Coach's rules: words decide, the beep only times the drop)
+
     private var repSpoke = false
+    private var screened = false
+    private var phoneTree = false
+    private var badNumber = false
+    /// When voicemail words were heard.
+    private var vmAt: Date?
+    private var vmTask: Task<Void, Never>?
+    /// Everything the other side has said so far, and when it last changed.
+    private var heardText = ""
+    private var heardAt = Date.distantPast
+    private var beepAt: Date?
+
+    private var onCall: Bool { state == .live || state == .dialing }
+
+    /// The rep is talking (to a person, a gatekeeper or a screener).
     func repSpeaking() {
-        guard state == .live || state == .dialing, !repSpoke else { return }
+        guard onCall, !repSpoke else { return }
         repSpoke = true
         attempt?.repSpoke = true
-        Log.add("beep", "rep is talking: beeps on this call are ignored (a screener's tone isn't a voicemail)")
+        Log.add("call", "you're talking: from here only words no person says count as voicemail")
     }
 
-    /// A call screener answered: never voicemail; wait for the person ("let it cook").
-    private var screened = false
-    func screenerHeard() {
-        guard state == .live || state == .dialing, !screened else { return }
-        screened = true
-        attempt?.screenerHeard = true
-        Log.add("screener", "call screener on the line: not voicemail, waiting for the person")
-        message = "Call screener: say your name and reason; the app will wait for them."
+    /// New words from the other side. The one place that decides what answered.
+    func otherSideSaid(_ text: String) {
+        guard onCall else { return }
+        heardText = text
+        heardAt = Date()
+        guard !screened, vmAt == nil, !badNumber, !phoneTree else { return }
+        let early = !repSpoke && Date().timeIntervalSince(attempt?.answeredAt ?? attempt?.dialedAt ?? Date()) < 25
+        if BadNumber.detects(text) {
+            badNumber = true
+            Log.add("call", "bad number: \"\(text.suffix(80))\" -> hanging up")
+            return hangUp()
+        }
+        if Screener.detects(text) {
+            screened = true
+            attempt?.screenerHeard = true
+            Log.add("call", "call screener: \"\(text.suffix(80))\" -> waiting for the person")
+            message = "Call screener: say your name and reason. The app waits for them."
+            return
+        }
+        if !repSpoke, PhoneTree.detects(text) {
+            phoneTree = true
+            Log.add("call", "phone menu: \"\(text.suffix(80))\" -> hanging up, next person")
+            return hangUp()
+        }
+        // Once you've spoken it's a person: only words no person says still mean voicemail.
+        let isVoicemail = repSpoke ? Voicemail.certain(text) : (Voicemail.detects(text, earlyInCall: early) || Voicemail.longGreeting(text, earlyInCall: early))
+        if isVoicemail { voicemailHeard(text) }
     }
 
-    /// Voicemail greeting words: it's a voicemail (the beep handling still decides what to do).
-    func voicemailGreetingHeard() {
-        guard state == .live || state == .dialing, !screened else { return }
+    private func voicemailHeard(_ text: String) {
+        guard let lead else { return }
+        vmAt = Date()
         attempt?.voicemailHeard = true
-    }
-
-    func heardBeep() {
-        guard state == .live || state == .dialing, let lead, !beepHeard else {
-            Log.add("beep", "ignored (state \(state), already handled: \(beepHeard))")
-            return
-        }
-        guard !repSpoke, !screened else {
-            Log.add("beep", "ignored: \(screened ? "call screener" : "you've already spoken on this call")")
-            return
-        }
-        // A tone alone proves nothing (call screeners play one too). Only act when the voicemail
-        // greeting itself was recognized ("leave a message", "after the tone", "not available"...).
-        guard attempt?.voicemailHeard == true else {
-            Log.add("beep", "ignored: no voicemail greeting words recognized on this call, so it may be a screener or a person (speech recognition \(ScreenerListener.authorized ? "on" : "NOT allowed"))")
-            return
-        }
-        beepHeard = true
         let dialsToday = history.dates(lead.id).filter { Calendar.current.isDateInToday($0) }.count
         let action = Rules.onBeep(dialsToday: dialsToday, step: currentStep, settings)
-        Log.add("beep", "voicemail for \(lead.name): dial \(dialsToday) today, callTwice=\(settings.callTwice), voicemailDrop=\(settings.voicemailDrop) -> \(action)")
+        Log.add("call", "voicemail: \"\(text.suffix(80))\" (dial \(dialsToday) today, callTwice=\(settings.callTwice), drop=\(settings.voicemailDrop)) -> \(action)")
         switch action {
         case .hangUpAndRedial:
             hungUpAtBeep = true
-            hangUp()
-        case .dropVoicemail:
-            dropVoicemail()
+            hangUp()               // call twice: no need to wait for the beep
         case .hangUp:
             hangUp()
+        case .dropVoicemail:
+            waitThenDrop()
         }
+    }
+
+    /// Drop at the right moment, best first: 0.35 s after a beep that followed the greeting (and no
+    /// more talking after it); else once the greeting's words stopped (2 s after "...after the tone",
+    /// 4 s otherwise). Never before 3 s after the voicemail was recognized, never after 30 s.
+    private func waitThenDrop() {
+        guard let start = vmAt else { return }
+        vmTask?.cancel()
+        vmTask = Task { [weak self] in
+            var how = "30 s passed"
+            while let self, self.onCall, !Task.isCancelled {
+                let now = Date(), since = now.timeIntervalSince(start)
+                if since >= 30 { break }
+                if let b = self.beepAt, b > start.addingTimeInterval(-2), now.timeIntervalSince(b) >= 0.35,
+                   self.heardAt <= b.addingTimeInterval(0.5), since >= 1 {
+                    how = "beep"; break
+                }
+                let quiet = now.timeIntervalSince(self.heardAt)
+                let endWords = Voicemail.recordingPrompt(self.heardText)
+                if since >= 3, (endWords && quiet >= 2) || quiet >= 4 { how = endWords ? "greeting ended (\"after the tone\")" : "greeting went quiet"; break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard let self, self.onCall, !Task.isCancelled else { return }
+            Log.add("vm", "dropping now: \(how)")
+            self.dropVoicemail()
+        }
+    }
+
+    /// A pure tone on the other side. Never acted on by itself: it only times a voicemail drop.
+    func heardBeep() {
+        guard onCall else { return }
+        beepAt = Date()
     }
 
     func hangUp() {

@@ -147,6 +147,16 @@ final class RulesTests: XCTestCase {
         _ = t
     }
 
+    func testLiveCoachWordRules() {
+        XCTAssertTrue(Voicemail.detects("Please leave a message after the tone", earlyInCall: false))
+        XCTAssertTrue(Voicemail.detects("You've reached Jane", earlyInCall: true))
+        XCTAssertFalse(Voicemail.detects("You've reached Jane", earlyInCall: false), "a gatekeeper could say that once you've spoken")
+        XCTAssertTrue(BadNumber.detects("The number you have dialed is not in service"))
+        XCTAssertTrue(PhoneTree.detects("For sales press 1, for billing press 2"))
+        XCTAssertFalse(PhoneTree.detects("Hello, this is Jane"))
+        XCTAssertTrue(Screener.detects("If you record your name and reason for calling, I'll see if this person is available"))
+    }
+
     func testScreenerPhrases() {
         XCTAssertTrue(ScreenerListener.isScreener("If you record your name and reason for calling, I'll see if this person is available"))
         XCTAssertTrue(ScreenerListener.isScreener("Thanks. Please stay on the line."))
@@ -263,7 +273,8 @@ final class FakePhone: Phone {
                             answeredAt: answered ? since.addingTimeInterval(1) : nil, endedAt: since.addingTimeInterval(20))
     }
     func sendText(_ body: String, to: String, from number: Int) async throws { texts.append(body) }
-    func hangUp() async -> Bool { true }
+    var hangUps = 0
+    func hangUp() async -> Bool { hangUps += 1; return true }
     var droppedNames: [String] = []
     func dropVoicemail(named: String) async -> Bool { droppedNames.append(named); return dropWorks }
     func callInProgress() async -> Bool? { false }
@@ -463,6 +474,55 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(phone.dialed.count, 2)
         XCTAssertEqual(store.attempts.last?.isRedial, true, "the held second call, same person")
         XCTAssertEqual(History.key(store.attempts.last!.leadID), "00Q000000000001")
+    }
+
+    func testVoicemailWordsWithCallTwiceHangUpAndRedial() async {
+        store.settings.callTwice = true
+        phone.answers = [true, true]
+        session.pollInterval = .milliseconds(300)
+        session.call()
+        await wait { [self] in session.state == .dialing && !phone.dialed.isEmpty }
+        session.otherSideSaid("Hi, you've reached John. Please leave a message after the tone.")
+        await wait { [self] in phone.hangUps == 1 }
+        XCTAssertEqual(phone.hangUps, 1, "hung up on the voicemail")
+        await wait { [self] in phone.dialed.count == 2 }
+        XCTAssertEqual(phone.dialed.count, 2, "called twice")
+        XCTAssertEqual(store.attempts.first?.outcome, .voicemail)
+    }
+
+    func testScreenerIsNeverHungUpOn() async {
+        store.settings.callTwice = true
+        phone.answers = [true]
+        session.pollInterval = .milliseconds(300)
+        session.call()
+        await wait { [self] in session.state == .dialing && !phone.dialed.isEmpty }
+        session.otherSideSaid("Hi, if you record your name and reason for calling, I'll see if this person is available.")
+        session.heardBeep()
+        session.otherSideSaid("Hi, if you record your name and reason for calling, I'll see if this person is available. Thanks. Please stay on the line.")
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(phone.hangUps, 0, "never hang up on a screener")
+        XCTAssertTrue(phone.droppedNames.isEmpty)
+    }
+
+    func testToneAloneDoesNothing() async {
+        phone.answers = [true]
+        session.pollInterval = .milliseconds(300)
+        session.call()
+        await wait { [self] in session.state == .dialing && !phone.dialed.isEmpty }
+        session.heardBeep()
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(phone.hangUps, 0)
+        XCTAssertTrue(phone.droppedNames.isEmpty)
+    }
+
+    func testPhoneMenuHangsUp() async {
+        phone.answers = [true]
+        session.pollInterval = .milliseconds(300)
+        session.call()
+        await wait { [self] in session.state == .dialing && !phone.dialed.isEmpty }
+        session.otherSideSaid("Thank you for calling Acme. For sales press 1, for billing press 2.")
+        await wait { [self] in phone.hangUps == 1 }
+        XCTAssertEqual(phone.hangUps, 1)
     }
 
     func testCallTwiceRedialsOnce() async {

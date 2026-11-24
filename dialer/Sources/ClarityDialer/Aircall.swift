@@ -283,7 +283,7 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
                 var proc = ctx.createScriptProcessor(4096, 1, 1), t0 = Date.now();
                 src.connect(proc); proc.connect(mute);
                 proc.onaudioprocess = function (e) {
-                  if (Date.now() - t0 > 25000) { proc.disconnect(); return; }
+                  if (Date.now() - t0 > 90000) { proc.disconnect(); return; }
                   var input = e.inputBuffer.getChannelData(0), ratio = ctx.sampleRate / 16000;
                   var n = Math.floor(input.length / ratio), out = new Int16Array(n);
                   for (var j = 0; j < n; j++) { var v = input[Math.floor(j * ratio)]; out[j] = Math.max(-1, Math.min(1, v)) * 32767; }

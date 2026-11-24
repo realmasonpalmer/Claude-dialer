@@ -8,13 +8,12 @@ import Speech
 /// treated as voicemail: the app waits for the person.
 ///
 /// Uses Apple's speech recognizer on this Mac (on-device when available); only the other side of
-/// the call, only the first 25 seconds, nothing stored or sent anywhere.
+/// the call, only the first 90 seconds, nothing stored or sent anywhere.
 @MainActor
 final class ScreenerListener {
     static let shared = ScreenerListener()
-    var onScreener: ((_ heard: String) -> Void)?
-    var onVoicemailGreeting: ((_ heard: String) -> Void)?
-    private var firedVoicemail = false
+    /// Everything the other side has said so far on this call (updates as words come in).
+    var onText: ((_ text: String) -> Void)?
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -23,28 +22,8 @@ final class ScreenerListener {
     private var fired = false
     private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
 
-    /// Phrases screeners say and voicemail greetings don't.
-    nonisolated static let phrases = [
-        "record your name", "reason for calling", "see if this person is available", "see if they're available",
-        "stay on the line", "please hold while", "screening", "google assistant", "the person you're calling is using",
-        "say your name", "state your name", "who's calling", "what are you calling about", "call screening",
-    ]
-
-    /// Voicemail greetings (said before the beep; screeners don't say these).
-    nonisolated static let voicemailPhrases = [
-        "leave a message", "leave your message", "after the tone", "after the beep", "not available",
-        "unavailable", "voicemail", "voice mail", "mailbox", "record your message", "at the tone",
-    ]
-
-    nonisolated static func isVoicemailGreeting(_ text: String) -> Bool {
-        let t = text.lowercased()
-        return !isScreener(t) && voicemailPhrases.contains { t.contains($0) }
-    }
-
-    nonisolated static func isScreener(_ text: String) -> Bool {
-        let t = text.lowercased()
-        return phrases.contains { t.contains($0) }
-    }
+    /// Kept for the tests and the log: the shared word rules live in CallWords.swift.
+    nonisolated static func isScreener(_ text: String) -> Bool { Screener.detects(text) }
 
     nonisolated static var authorized: Bool { SFSpeechRecognizer.authorizationStatus() == .authorized }
 
@@ -64,7 +43,6 @@ final class ScreenerListener {
         request = req
         started = Date()
         fired = false
-        firedVoicemail = false
         task = recognizer.recognitionTask(with: req) { result, _ in
             guard let text = result?.bestTranscription.formattedString else { return }
             Task { @MainActor in ScreenerListener.shared.heard(text) }
@@ -74,7 +52,7 @@ final class ScreenerListener {
     /// 16 kHz mono 16-bit samples of the other side.
     func feed(_ pcm16: Data) {
         guard let request, let started else { return }
-        if Date().timeIntervalSince(started) > 25 { return end() }
+        if Date().timeIntervalSince(started) > 90 { return end() }
         let n = pcm16.count / 2
         guard n > 0, let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(n)) else { return }
         buf.frameLength = AVAudioFrameCount(n)
@@ -95,14 +73,6 @@ final class ScreenerListener {
     }
 
     private func heard(_ text: String) {
-        if !firedVoicemail, !fired, Self.isVoicemailGreeting(text) {
-            firedVoicemail = true
-            Log.add("screener", "voicemail greeting: \"\(text.suffix(120))\"")
-            onVoicemailGreeting?(text)
-        }
-        guard !fired, Self.isScreener(text) else { return }
-        fired = true
-        Log.add("screener", "call screener: \"\(text.suffix(120))\"")
-        onScreener?(text)
+        onText?(text)
     }
 }
