@@ -298,12 +298,12 @@ enum LinkedInBot {
 
     /// Why Chrome couldn't be used, in plain words, or nil.
     static var chromeProblem: String? {
-        switch lastAppleError {
-        case -1743?: return "macOS hasn't allowed Clarity Dialer to control Chrome. Turn it on in System Settings > Privacy & Security > Automation > Clarity Dialer > Google Chrome"
-        case -600?, -10810?: return "Chrome isn't open (or isn't installed)"
-        case let n?: return "Chrome didn't respond (error \(n))"
-        case nil: return nil
+        guard let code = lastAppleError else { return nil }
+        if code == -1743 {
+            return "macOS hasn't allowed Clarity Dialer to control Chrome. Turn it on in System Settings > Privacy & Security > Automation > Clarity Dialer > Google Chrome"
         }
+        if code == -600 || code == -10810 { return "Chrome isn't open (or isn't installed)" }
+        return "Chrome didn't respond (error \(code))"
     }
 
     /// No LinkedIn link in Salesforce: search LinkedIn for them in Chrome and take the first person
