@@ -86,6 +86,8 @@ final class Session {
 
     private var task: Task<Void, Never>?
     private var voicemailDropped = false
+    /// Real phone and Salesforce (false in tests: no Chrome, no LinkedIn).
+    private let isLive: Bool
     /// This call reached voicemail and was hung up at the beep to redial (call twice).
     private var hungUpAtBeep = false
     /// The beep was heard on this call (it's a voicemail, whatever Aircall says).
@@ -95,6 +97,7 @@ final class Session {
         self.store = store
         self.phone = phone ?? LivePhone()
         self.crm = crm ?? LiveCRM()
+        isLive = phone == nil
         if phone == nil {
             AircallPhone.shared.onBeep = { [weak self] _, _ in self?.heardBeep() }
             AircallPhone.shared.onRepSpeech = { [weak self] in self?.repSpeaking() }
@@ -337,7 +340,7 @@ final class Session {
 
         if redial {
             // Paused: hold the second call for when the rep resumes, on this same person.
-            if paused { pendingRedial = true; return go(.ready) }
+            if holdRedial { pendingRedial = true; return go(.ready) }
             go(.dialing)
             task = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(2))
@@ -513,7 +516,7 @@ final class Session {
     /// A person just came on screen: on their LinkedIn day, send the request right away
     /// (once per person per session, so going Back doesn't send twice).
     private func leadShown() {
-        guard let lead, linkedInTried.insert(History.key(lead.id)).inserted else { return }
+        guard isLive, let lead, linkedInTried.insert(History.key(lead.id)).inserted else { return }
         connectOnLinkedIn(lead)
     }
 
@@ -618,11 +621,14 @@ final class Session {
     /// Pause: stops a countdown now, and stops auto-dial after the current call. Resume restarts it.
     /// A call-twice redial that's waiting because the rep paused. Resuming makes it first.
     private(set) var pendingRedial = false
+    /// The rep pressed Pause during a call: a second call that comes due waits for Resume.
+    private var holdRedial = false
 
     /// Pause is a real pause: nothing is skipped or dropped. A countdown stops on the same person;
     /// a call in progress finishes; a call-twice redial that was due waits and goes first on resume.
     func togglePause() {
         paused.toggle()
+        holdRedial = paused && [.dialing, .live].contains(state)
         if paused {
             if isCountdown { go(.ready) }
             // Paused in the short gap before the second call: keep it for later.
@@ -646,6 +652,7 @@ final class Session {
     /// Start auto-dialing: calls this person now, then each next one after the countdown.
     func startAutoDialing() {
         paused = false
+        holdRedial = false
         if pendingRedial, state == .ready {
             pendingRedial = false
             return call(isRedial: true)
