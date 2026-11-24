@@ -194,7 +194,7 @@ final class MetricsTests: XCTestCase {
 
     func testMeetingNeedsCertaintyATimeAndTheLeadsRealWords() {
         let transcript = "Rep: Does Thursday at 2pm work?\nThem: Yes, Thursday at 2 works, send the invite.\nRep: Great."
-        func v(_ agreed: Bool = true, _ certainty: String = "certain", time: String = "Thursday 2pm",
+        func v(agreed: Bool = true, certainty: String = "certain", time: String = "Thursday 2pm",
                quote: String = "Yes, Thursday at 2 works", lead: Bool = true) -> CallReview.Verdict {
             CallReview.Verdict(reachedLead: lead, meetingAgreed: agreed, meetingCertainty: certainty,
                                meetingTime: time, leadConfirmationQuote: quote, summary: "")
