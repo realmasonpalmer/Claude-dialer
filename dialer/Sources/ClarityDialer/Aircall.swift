@@ -416,6 +416,27 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
               });
             });
           };
+          // One audio mode for the whole session. WebKit runs every microphone through Apple's
+          // voice-processing unit, and macOS puts Bluetooth output into call mode (16 kHz) whenever
+          // that unit runs. Opening and closing the mic per call is what made the headphones switch
+          // (and tones drop an octave) at every call. So one mic stream is opened when the app
+          // starts and held until it quits: the headphones switch once at launch, never during calls.
+          var held = null, holding = false, holdFails = 0;
+          function live(s) { return s && s.getAudioTracks().some(function (t) { return t.readyState === 'live'; }); }
+          function hold() {
+            if (holding || holdFails >= 5 || live(held)) return;
+            holding = true;
+            find().then(function (id) {
+              var a = Object.assign({}, PLAIN); if (id) a.deviceId = { exact: id };
+              return gum({ audio: a });
+            }).then(function (s) {
+              holding = false; holdFails = 0; held = s;
+              var t = s.getAudioTracks()[0];
+              log('holding one mic stream for the whole session (' + (t ? t.label : '?') + '): no audio mode switches during calls');
+            }).catch(function (e) { holding = false; holdFails++; log('could not hold the session mic: ' + e); });
+          }
+          setTimeout(hold, 800);
+          setInterval(hold, 4000);
           // Aircall can't turn voice processing back on mid-call either.
           try {
             var ac = MediaStreamTrack.prototype.applyConstraints;

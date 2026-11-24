@@ -222,7 +222,9 @@ final class Session {
         while !Task.isCancelled {
             try? await Task.sleep(for: pollInterval)
             guard !Task.isCancelled, attempt != nil else { return }
-            let c = try? await phone.latestCall(user: user, number: number, since: since)
+            // Aircall's list can still show the call before this one: never take it for this call.
+            let c = (try? await phone.latestCall(user: user, number: number, since: since)).flatMap { $0 }
+                .flatMap { finishedCallIDs.contains($0.id) ? nil : $0 }
             guard !Task.isCancelled, var a = attempt else { return }
             guard let c else {
                 if Date().timeIntervalSince(since) > dialTimeout {
@@ -260,7 +262,11 @@ final class Session {
 
     /// Every call logs itself and moves on, so auto-dialing never waits on the rep.
     /// The outcome can be changed afterwards under Last call (`amend`).
+    /// Aircall calls already finished in this session (so a later dial never reuses one).
+    private var finishedCallIDs: Set<Int> = []
+
     private func callEnded(answered: Bool) {
+        if let id = attempt?.aircallCallID { finishedCallIDs.insert(id) }
         vmTask?.cancel(); vmTask = nil
         ScreenerListener.shared.end()
         Log.add("call", "call ended: answered=\(answered) heard=\"\(heardText.suffix(80))\" voicemail=\(vmAt != nil) dropped=\(voicemailDropped) screener=\(screened) phoneMenu=\(phoneTree) badNumber=\(badNumber) youSpoke=\(repSpoke)")
