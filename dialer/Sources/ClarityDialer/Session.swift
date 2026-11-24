@@ -510,7 +510,9 @@ final class Session {
 
             // The automatic sender can't run (permission, limits, weekend...): just open them in Chrome
             // with the note on the clipboard, like before. No permission needed for that.
-            if let why = LinkedInBot.whyNot ?? (await LinkedInBot.checkChrome()) {
+            var blocker = LinkedInBot.whyNot
+            if blocker == nil { blocker = await LinkedInBot.checkChrome() }
+            if let why = blocker {
                 openForHand(lead, profile: profile, note: text, because: why)
                 return
             }
