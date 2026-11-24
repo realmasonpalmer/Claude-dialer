@@ -20,5 +20,14 @@ osascript -e 'quit app "Clarity Dialer"' >/dev/null 2>&1 || true
 sleep 1
 rm -rf "/Applications/Clarity Dialer.app"
 cp -R "$APP" /Applications/
+# Clarity Dialer replaces Clarity Live Coach: close it and move it to the Trash (recoverable).
+# Its saved logins and Aircall settings are carried over the first time Clarity Dialer opens.
+if [ -d "/Applications/Clarity Live Coach.app" ]; then
+    osascript -e 'quit app "Clarity Live Coach"' >/dev/null 2>&1 || true
+    sleep 1
+    pkill -f "Clarity Live Coach.app/Contents/MacOS" >/dev/null 2>&1 || true
+    osascript -e 'tell application "Finder" to delete POSIX file "/Applications/Clarity Live Coach.app"' >/dev/null 2>&1 \
+        || mv "/Applications/Clarity Live Coach.app" "$HOME/.Trash/" 2>/dev/null || true
+fi
 open "/Applications/Clarity Dialer.app"
 echo "Done. Clarity Dialer is open. Press Command-comma for Settings."

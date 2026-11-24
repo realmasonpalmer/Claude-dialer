@@ -6,7 +6,7 @@ import Observation
 @Observable @MainActor
 final class Updater {
     static let repo = "realmasonpalmer/Claude-dialer"
-    static let branch = "claude/dazzling-bohr-812mfr"
+    static let branch = "claude/main-update"
 
     private(set) var available = false
     private(set) var updating = false

@@ -31,6 +31,8 @@ final class Store {
             settings = c.settings
             scripts = c.scripts
             selectedScriptID = c.selectedScriptID
+        } else {
+            Self.importFromLiveCoach(into: &settings)
         }
         if scripts.isEmpty {
             scripts = [Script(name: "My script", body: """
@@ -41,6 +43,20 @@ final class Store {
         }
         attempts = Self.readAttempts(attemptsURL)
         loading = false
+    }
+
+    /// First launch on a Mac that had Clarity Live Coach: carry over the Aircall user and numbers,
+    /// the Salesforce login host and the rep's name, so there's nothing to set up again.
+    private static func importFromLiveCoach(into s: inout OutboundSettings) {
+        guard let old = UserDefaults(suiteName: "io.clarityconsulting.livecoach") else { return }
+        func int(_ k: String) -> Int? { let v = old.integer(forKey: k); return v == 0 ? nil : v }
+        s.aircallUserID = s.aircallUserID ?? int("aircallUserID")
+        s.fromNumberID = s.fromNumberID ?? int("aircallNumberID")
+        s.textNumberID = s.textNumberID ?? int("aircallTextNumberID")
+        if s.repName.isEmpty, let name = old.string(forKey: "repName") { s.repName = name }
+        if UserDefaults.standard.string(forKey: "sfLoginHost") == nil, let host = old.string(forKey: "sfLoginHost") {
+            UserDefaults.standard.set(host, forKey: "sfLoginHost")
+        }
     }
 
     // MARK: Attempts
@@ -146,7 +162,27 @@ enum Keychain {
                                 kSecMatchLimit as String: kSecMatchLimitOne]
         var item: CFTypeRef?
         let found = SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess
-        let a = found ? ((item as? Data).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]) : [:]
+        var a = found ? ((item as? Data).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]) : [:]
+        if !found {
+            // Moving over from Clarity Live Coach: reuse its saved logins (same key names).
+            // macOS asks once to allow it.
+            let old: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrService as String: "io.clarityconsulting.livecoach",
+                                      kSecAttrAccount as String: "all-keys", kSecReturnData as String: true,
+                                      kSecMatchLimit as String: kSecMatchLimitOne]
+            var oldItem: CFTypeRef?
+            if SecItemCopyMatching(old as CFDictionary, &oldItem) == errSecSuccess,
+               let data = oldItem as? Data, let keys = try? JSONDecoder().decode([String: String].self, from: data) {
+                let wanted: Set<String> = ["aircallID", "aircallToken", "sfClientID", "sfAccess", "sfRefresh", "sfInstance", "anthropic"]
+                a = keys.filter { wanted.contains($0.key) }
+                if let copied = try? JSONEncoder().encode(a) {
+                    var add: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                              kSecAttrAccount as String: account, kSecValueData as String: copied]
+                    add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+                    SecItemAdd(add as CFDictionary, nil)
+                }
+            }
+        }
         cache = a
         return a
     }

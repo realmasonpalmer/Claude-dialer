@@ -123,6 +123,8 @@ final class AircallPhone: NSObject, WKUIDelegate {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.userContentController.addUserScript(
+            WKUserScript(source: Self.builtInMicOnly, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        config.userContentController.addUserScript(
             WKUserScript(source: Self.minimalScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController.addUserScript(
             WKUserScript(source: Self.navyTheme, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
@@ -224,6 +226,65 @@ final class AircallPhone: NSObject, WKUIDelegate {
       else start();
     })();
     """
+
+    /// One audio path for the whole session. A Bluetooth headset switches into "call mode" (a
+    /// different codec and a lower sample rate) the moment any app opens its microphone, and
+    /// back when it's released, which makes voices jump in pitch and quality between calls. So the
+    /// headset's mic is never opened: every mic request from Aircall goes to the Mac's built-in
+    /// microphone, and the headset stays in its normal high-quality mode, one codec and one sample
+    /// rate, for every call. (A Mac with no built-in mic uses the default mic.)
+    private static let builtInMicOnly = """
+        (function () {
+          var md = navigator.mediaDevices;
+          if (!md || !md.getUserMedia || window.__clarityMic) return;
+          window.__clarityMic = true;
+          var gum = md.getUserMedia.bind(md), KEY = 'clarityBuiltInMicId', builtIn = null, finding = null;
+          try { builtIn = localStorage.getItem(KEY); } catch (e) {}
+          var OWN = /built-?in|macbook|imac|mac mini|mac studio|mac pro/i;
+          var HEADSET = /bluetooth|airpods|headset|headphone|beats|bose|jabra|plantronics|poly|usb/i;
+          function pick(list) {
+            var d = list.filter(function (d) { return d.kind === 'audioinput' && d.label && OWN.test(d.label) && !HEADSET.test(d.label); })[0];
+            return d ? d.deviceId : null;
+          }
+          function find() {
+            if (builtIn) return Promise.resolve(builtIn);
+            if (finding) return finding;
+            finding = md.enumerateDevices().then(function (list) {
+              var id = pick(list);
+              if (id) return id;
+              // Device names stay hidden until the page has used the mic once: ask once, let go at once.
+              return gum({ audio: true }).then(function (s) { s.getTracks().forEach(function (t) { t.stop(); }); return md.enumerateDevices(); }).then(pick);
+            }).then(function (id) {
+              builtIn = id; finding = null;
+              try { if (id) localStorage.setItem(KEY, id); } catch (e) {}
+              return id;
+            }, function () { finding = null; return null; });
+            return finding;
+          }
+          md.getUserMedia = function (c) {
+            if (!c || !c.audio) return gum(c);
+            return find().then(function (id) {
+              if (!id) return gum(c);
+              var out = {}, aud = {}, k;
+              for (k in c) out[k] = c[k];
+              if (typeof c.audio === 'object') for (k in c.audio) aud[k] = c.audio[k];
+              aud.deviceId = { exact: id };
+              out.audio = aud;
+              return gum(out).catch(function () {
+                // The saved mic is gone: forget it and use the normal request.
+                try { localStorage.removeItem(KEY); } catch (e) {}
+                builtIn = null;
+                return gum(c);
+              });
+            });
+          };
+          if (md.addEventListener) md.addEventListener('devicechange', function () {
+            md.enumerateDevices().then(function (list) {
+              if (builtIn && !list.some(function (d) { return d.deviceId === builtIn; })) { builtIn = null; try { localStorage.removeItem(KEY); } catch (e) {} }
+            });
+          });
+        })();
+        """
 
     /// Clicks Aircall's red Hang up button. True if it found one.
     func hangUp() async -> Bool { await click(#"/hang[ _-]?up|end[ _-]?call|end the call/"#, avoid: "/^$/") }
