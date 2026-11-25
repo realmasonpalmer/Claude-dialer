@@ -65,6 +65,9 @@ struct DialerView: View {
             Empty(title: "List done", text: "Nobody left to call right now. \(session.skipped.count) skipped (see below).")
             SkippedList()
         default:
+            if CallCoach.shared.hasCard {
+                CoachCard()
+            }
             if let lead = session.lead {
                 LeadCard(lead: lead)
                 TodayCard(lead: lead)
@@ -300,6 +303,45 @@ private struct TodayCard: View {
     }
 }
 
+/// What the coach says to say right now (after Help me). Big words to read out loud, one small why.
+private struct CoachCard: View {
+    @Environment(Session.self) private var session
+    private var coach: CallCoach { CallCoach.shared }
+
+    var body: some View {
+        Card(script: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Say this", systemImage: "sparkles").font(.headline).foregroundStyle(Brand.teal)
+                    Spacer()
+                    if coach.isThinking { ProgressView().controlSize(.small) }
+                    Button("Ask again") { session.askCoach() }
+                        .buttonStyle(BrandQuietButton())
+                        .disabled(coach.isThinking)
+                    Button { coach.clear() } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless)
+                        .help("Hide")
+                }
+                switch coach.status {
+                case .failed(let why):
+                    Text(why).foregroundStyle(.orange)
+                case .thinking where coach.say.isEmpty:
+                    Text("Reading the call…").foregroundStyle(Brand.muted)
+                default:
+                    Text(coach.say)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Brand.text)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !coach.why.isEmpty {
+                        Text(coach.why).font(.callout).foregroundStyle(Brand.muted)
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The script. Click it to edit; Save shares it with everyone using it.
 private struct ScriptCard: View {
     @Environment(Store.self) private var store
@@ -463,6 +505,13 @@ private struct ActionBar: View {
                 Button(role: .destructive) { session.hangUp() } label: { Label("Hang up", systemImage: "phone.down.fill") }
                     .keyboardShortcut(".", modifiers: .command)
                     .buttonStyle(BrandPrimaryButton(color: Brand.stop))
+                Button { session.askCoach() } label: {
+                    Label(CallCoach.shared.isThinking ? "Thinking…" : "Help me", systemImage: "sparkles")
+                }
+                .buttonStyle(BrandPrimaryButton(color: Brand.blue))
+                .keyboardShortcut("j", modifiers: .command)
+                .disabled(CallCoach.shared.isThinking)
+                .help("⌘J. Opus reads the whole call so far and tells you what to say next to get the meeting.")
                 if store.settings.voicemailDrop, let vm = session.currentStep?.voicemail {
                     Button { session.dropVoicemail() } label: {
                         Label(session.attempt?.voicemailDropped == true ? "\(vm) dropped" : "Drop \(vm)", systemImage: "recordingtape")

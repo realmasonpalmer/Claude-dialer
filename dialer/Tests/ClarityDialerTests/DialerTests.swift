@@ -589,3 +589,26 @@ final class SessionTests: XCTestCase {
         XCTAssertNotNil(again.attempts.first?.salesforceTaskID)
     }
 }
+
+final class CallCoachTests: XCTestCase {
+    func testParseSplitsSayAndWhy() {
+        let p = CallCoach.parse("SAY: Totally fair. If I could show you in 15 minutes, would Tuesday at 2 work?\nWHY: Agrees, then asks for a time.")
+        XCTAssertEqual(p.say, "Totally fair. If I could show you in 15 minutes, would Tuesday at 2 work?")
+        XCTAssertEqual(p.why, "Agrees, then asks for a time.")
+    }
+
+    func testParseWhileStreaming() {
+        let p = CallCoach.parse("SAY: Totally fair. If I could")
+        XCTAssertEqual(p.say, "Totally fair. If I could")
+        XCTAssertEqual(p.why, "")
+    }
+
+    func testPromptHasLeadScriptAndCall() {
+        let text = CallCoach.prompt(lead: lead(), script: "Hi Dana, it's Mason.", rep: "Mason",
+                                    transcript: "Rep: Hi Dana.\nThem: We already have a partner.")
+        XCTAssertTrue(text.contains("Title: CFO"))
+        XCTAssertTrue(text.contains("Company: Northwind"))
+        XCTAssertTrue(text.contains("Hi Dana, it's Mason."))
+        XCTAssertTrue(text.contains("Them: We already have a partner."))
+    }
+}

@@ -92,7 +92,7 @@ private struct ConnectionsTab: View {
                     Text(claudeStatus).font(.caption).foregroundStyle(.secondary)
                 }
             } header: { Text("Call review (Claude)") } footer: {
-                Text("Reads each answered call's Aircall transcript to count real pickups (the lead, not a front desk) and meetings (a clear yes to a specific time). Needs Aircall call transcripts.")
+                Text("Reads each answered call's Aircall transcript to count real pickups (the lead, not a front desk) and meetings (a clear yes to a specific time). Needs Aircall call transcripts. The same key runs Help me (⌘J) during a call.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

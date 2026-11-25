@@ -246,8 +246,16 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
             onRepSpeech?()
         case "callAudio":
             ScreenerListener.shared.begin()
+            LiveTranscript.shared.begin(.them)
+        case "repAudio":
+            LiveTranscript.shared.begin(.rep)
         case "pcm":
-            if let b64 = body["b64"] as? String, let data = Data(base64Encoded: b64) { ScreenerListener.shared.feed(data) }
+            if let b64 = body["b64"] as? String, let data = Data(base64Encoded: b64) {
+                ScreenerListener.shared.feed(data)
+                LiveTranscript.shared.feed(data, from: .them)
+            }
+        case "pcmRep":
+            if let b64 = body["b64"] as? String, let data = Data(base64Encoded: b64) { LiveTranscript.shared.feed(data, from: .rep) }
         case "audio":
             Log.add("beep", (body["text"] as? String) ?? "")
         default: break
@@ -277,21 +285,10 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
               var lo = Math.floor(300 / hz), hi = Math.ceil(3400 / hz), tLo = Math.floor(400 / hz), tHi = Math.ceil(2000 / hz);
               var run = 0, runFreq = 0, started = Date.now(), stop = false;
               post({ kind: 'audio', text: 'listening to the other side for the voicemail beep (' + ctx.sampleRate + ' Hz)' });
-              // The first 25 s of the other side, as 16 kHz samples, for recognizing call screeners.
+              // The other side, as 16 kHz samples, for the whole call: call screeners (first 90 s)
+              // and the live transcript the Help me button sends to the coach.
               post({ kind: 'callAudio' });
-              try {
-                var proc = ctx.createScriptProcessor(4096, 1, 1), t0 = Date.now();
-                src.connect(proc); proc.connect(mute);
-                proc.onaudioprocess = function (e) {
-                  if (Date.now() - t0 > 90000) { proc.disconnect(); return; }
-                  var input = e.inputBuffer.getChannelData(0), ratio = ctx.sampleRate / 16000;
-                  var n = Math.floor(input.length / ratio), out = new Int16Array(n);
-                  for (var j = 0; j < n; j++) { var v = input[Math.floor(j * ratio)]; out[j] = Math.max(-1, Math.min(1, v)) * 32767; }
-                  var bytes = new Uint8Array(out.buffer), bin = '';
-                  for (var k = 0; k < bytes.length; k++) bin += String.fromCharCode(bytes[k]);
-                  post({ kind: 'pcm', b64: btoa(bin) });
-                };
-              } catch (e) {}
+              samples(src, mute, stream, 'pcm');
               var timer = setInterval(function () {
                 var tr = stream.getAudioTracks()[0];
                 if (!tr || tr.readyState === 'ended') { clearInterval(timer); return; }
@@ -311,6 +308,23 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
               }, 20);
             } catch (e) { post({ kind: 'audio', text: 'could not listen for the beep: ' + e }); }
           }
+          // Sends a stream's audio to the app as 16 kHz mono 16-bit samples until the call ends.
+          function samples(src, mute, stream, kind) {
+            try {
+              var proc = ctx.createScriptProcessor(4096, 1, 1);
+              src.connect(proc); proc.connect(mute);
+              proc.onaudioprocess = function (e) {
+                var tr = stream.getAudioTracks()[0];
+                if (!tr || tr.readyState === 'ended') { proc.disconnect(); return; }
+                var input = e.inputBuffer.getChannelData(0), ratio = ctx.sampleRate / 16000;
+                var n = Math.floor(input.length / ratio), out = new Int16Array(n);
+                for (var j = 0; j < n; j++) { var v = input[Math.floor(j * ratio)]; out[j] = Math.max(-1, Math.min(1, v)) * 32767; }
+                var bytes = new Uint8Array(out.buffer), bin = '';
+                for (var k = 0; k < bytes.length; k++) bin += String.fromCharCode(bytes[k]);
+                post({ kind: kind, b64: btoa(bin) });
+              };
+            } catch (e) {}
+          }
           // The rep's side: about a second of voice on the mic means they're talking to someone.
           function watchRep(stream) {
             try {
@@ -319,6 +333,9 @@ final class AircallPhone: NSObject, WKUIDelegate, WKScriptMessageHandler {
               var an = ctx.createAnalyser(); an.fftSize = 1024;
               var mute = ctx.createGain(); mute.gain.value = 0;
               src.connect(an); an.connect(mute); mute.connect(ctx.destination);
+              // The rep's words too, for the live transcript (Help me).
+              post({ kind: 'repAudio' });
+              samples(src, mute, stream, 'pcmRep');
               var buf = new Float32Array(an.fftSize), loud = 0, told = false;
               var t = setInterval(function () {
                 var tr = stream.getAudioTracks()[0];

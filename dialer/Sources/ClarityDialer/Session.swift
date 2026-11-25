@@ -183,6 +183,8 @@ final class Session {
         heardText = ""
         heardAt = .distantPast
         beepAt = nil
+        if isLive { LiveTranscript.shared.reset() }
+        CallCoach.shared.clear()
         if isLive, !ScreenerListener.authorized {
             Log.add("call", "speech recognition is NOT allowed: the app can't tell voicemail from a person, so it won't hang up or drop by itself (System Settings > Privacy & Security > Speech Recognition)")
         }
@@ -269,11 +271,20 @@ final class Session {
         if let id = attempt?.aircallCallID { finishedCallIDs.insert(id) }
         vmTask?.cancel(); vmTask = nil
         ScreenerListener.shared.end()
+        if isLive { LiveTranscript.shared.stop() }
         Log.add("call", "call ended: answered=\(answered) heard=\"\(heardText.suffix(80))\" voicemail=\(vmAt != nil) dropped=\(voicemailDropped) screener=\(screened) phoneMenu=\(phoneTree) badNumber=\(badNumber) youSpoke=\(repSpoke)")
         if badNumber { return log(.badNumber) }
         if voicemailDropped || vmAt != nil { return log(.voicemail) }
         if phoneTree { return log(.noAnswer) }
         log(answered ? .connected : .noAnswer)
+    }
+
+    // MARK: Help me (the coach)
+
+    /// Sends the call so far to the coach for one thing to say next.
+    func askCoach() {
+        let script = store.script?.render(for: lead, rep: settings.repName) ?? ""
+        CallCoach.shared.help(lead: lead, script: script, rep: settings.repName, transcript: LiveTranscript.shared.text)
     }
 
     // MARK: What answered (Live Coach's rules: words decide, the beep only times the drop)
