@@ -98,9 +98,16 @@ enum Merge {
             "City": lead?.city ?? "",
             "Rep": rep,
         ]
+        // Any spelling works: {{Company}}, {{company}}, {{ COMPANY }}, {{First Name}}, {{first_name}}.
+        var byKey: [String: (name: String, value: String)] = [:]
+        for (k, v) in values { byKey[k.lowercased()] = (k, v) }
+        let regex = try! NSRegularExpression(pattern: #"\{\{\s*([A-Za-z_ ]+?)\s*\}\}"#)
         var out = text
-        for (k, v) in values {
-            out = out.replacingOccurrences(of: "{{\(k)}}", with: v.isEmpty ? k.lowercased() : v)
+        for m in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let whole = Range(m.range, in: out), let inner = Range(m.range(at: 1), in: text) else { continue }
+            let key = text[inner].lowercased().replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
+            guard let field = byKey[key] else { continue } // unknown field: leave it as typed
+            out.replaceSubrange(whole, with: field.value.isEmpty ? field.name.lowercased() : field.value)
         }
         return out
     }

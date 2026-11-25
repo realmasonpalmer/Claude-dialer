@@ -42,17 +42,18 @@ struct DialerView: View {
             }
             .frame(minWidth: 560)
             Divider()
+            // Breathing covers only the Aircall panel, so the lead and script stay in view.
             AircallPane(width: 360)
+                .overlay {
+                    if let t = breathing {
+                        BreathingView(technique: t) { breathing = nil }
+                            .id(t)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.25), value: breathing)
         }
         .task { await loadLists() }
-        .overlay {
-            if let t = breathing {
-                BreathingView(technique: t) { breathing = nil }
-                    .id(t)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: breathing)
     }
 
     @ViewBuilder private var content: some View {
@@ -119,7 +120,7 @@ private struct TopBar: View {
             Menu {
                 ForEach(BreathingTechnique.allCases) { t in Button(t.menuLabel) { breathing = t } }
             } label: {
-                Image(systemName: "wind")
+                Label("Breathe", systemImage: "wind")
             }
             .menuStyle(.borderlessButton).fixedSize()
             .help("Breathing exercise: 4-7-8 or box breathing")

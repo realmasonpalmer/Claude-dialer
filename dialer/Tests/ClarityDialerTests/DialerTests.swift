@@ -612,3 +612,10 @@ final class CallCoachTests: XCTestCase {
         XCTAssertTrue(text.contains("Them: We already have a partner."))
     }
 }
+
+final class MergeTests: XCTestCase {
+    func testMergeFieldsIgnoreCaseAndSpaces() {
+        let out = Merge.fill("Hey {{FirstName}}, sales at {{company}}? {{ COMPANY }} {{First Name}} {{first_name}} {{Other}}", lead: lead(), rep: "Mason")
+        XCTAssertEqual(out, "Hey Dana, sales at Northwind? Northwind Dana Dana {{Other}}")
+    }
+}
